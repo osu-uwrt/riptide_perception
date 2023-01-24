@@ -8,7 +8,7 @@ from rcl_interfaces.msg import SetParametersResult
 from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TransformStamped, Vector3
 
-from riptide_mapping2.estimate import KalmanEstimate, euclideanDist
+from estimate import KalmanEstimate, euclideanDist
 from tf2_geometry_msgs import do_transform_pose_stamped
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from tf2_ros import TransformException
@@ -30,7 +30,8 @@ object_ids = {
     7 : "torpedoBootlegger",
     8 : "bootlegger",
     9 : "cash",
-    10: "gate"
+    10: "binBarrel",
+    11: "binPhone"
 }
 
 objects = {}
