@@ -35,7 +35,7 @@ class KalmanEstimate:
             # if inside check if converging or diverging
             # converging multiples by step and diverging multiplies by the inverse
             convDiv = posDiffEucNorm < posCovEucNorm / 2.0 and eucDist[5] < lastCovDist[5] / 2.0
-            #convDiv = convDiv and eucDist[3] < lastCovDist[3] / 2.0 and eucDist[4] < lastCovDist[4] / 2.0
+            convDiv = convDiv and eucDist[3] < lastCovDist[3] / 2.0 and eucDist[4] < lastCovDist[4] / 2.0
             newCov *= self.covStep if(convDiv) else 1.0 / self.covStep
 
             # lower bound newCov, assumes covariance is positive definite vector
@@ -44,7 +44,7 @@ class KalmanEstimate:
                 newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin
 
             # update the covariance on our estimate
-            self.lastPose.pose.covariance = newCov
+            poseWithCov.pose.covariance = newCov
 
             # merge the estimates in a proper weighted manner
             self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose)

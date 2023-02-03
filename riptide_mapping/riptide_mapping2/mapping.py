@@ -248,9 +248,7 @@ class MappingNode(Node):
                     continue
 
                 # transform camera pose into map frame
-                convertedPose = do_transform_pose_stamped(pose, trans)
-
-                
+                convertedPose = do_transform_pose_stamped(pose, trans)               
 
                 # Get the reading in the world frame message all together
                 reading_map_frame = PoseWithCovarianceStamped()
