@@ -10,7 +10,13 @@ def generate_launch_description():
         get_package_share_directory('riptide_mapping2'),
         'config',
         'config.yaml'
-        )
+    )
+    
+    dependentFrames = os.path.join(
+        get_package_share_directory('riptide_mapping2'),
+        'config',
+        'dependent_frames.yaml'
+    )
 
     return launch.LaunchDescription([
 
@@ -23,7 +29,7 @@ def generate_launch_description():
         # create the nodes    
         Node(
             package='riptide_mapping2',
-            executable='mapping',
+            executable='mapping.py',
             name='riptide_mapping2',
             respawn=True,
             output='screen',
@@ -31,6 +37,18 @@ def generate_launch_description():
             # use the parameters on the node
             parameters = [
                 config
+            ]
+        ),
+        
+        Node(
+            package='riptide_mapping2',
+            executable='dependentFramePublisher',
+            name='dependent_frame_publisher',
+            respawn=True,
+            output='screen',
+            
+            parameters = [
+                dependentFrames
             ]
         ),
 
