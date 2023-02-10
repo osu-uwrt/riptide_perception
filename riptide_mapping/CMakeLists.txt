@@ -31,9 +31,11 @@ install(
     DESTINATION lib/${PROJECT_NAME}
 )
 
+file(GLOB programs_to_install ${PROJECT_NAME}/*.py)
+
 #install programs
 install(
-    PROGRAMS ${PROJECT_NAME}/mapping.py ${PROJECT_NAME}/calibrate.py ${PROJECT_NAME}/estimate.py
+    PROGRAMS ${programs_to_install}
     DESTINATION lib/${PROJECT_NAME}
 )
 

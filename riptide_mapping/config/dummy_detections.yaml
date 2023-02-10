@@ -1,0 +1,9 @@
+/tempest/dummydetections:
+  ros__parameters:
+    topic: detected_objects
+    timer_rate: 0.1
+    detection_data:
+      gman:
+        pose: [1.0, 2.0, -0.25, 0.0, 0.0, 1.5707]
+        noise: 0.25
+        score: 0.8
