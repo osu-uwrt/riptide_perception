@@ -24,38 +24,45 @@ class KalmanEstimate:
 
         posDiffEucNorm = euclideanDist(eucDist[0:2])
         posCovEucNorm = euclideanDist(lastCovDist[0:2])
+        
+        newCov = np.array(self.lastPose.pose.covariance)
+        covs = [0, 7, 14, 21, 28, 35]
 
         # compare the euclidean position distance to the covariance
         # also compare the rpy distance
         # because zero isnt less than zero the roll and pitch checks are removed
         # eucDist[3] < lastCovDist[3] and eucDist[4] < lastCovDist[4]
         if(posDiffEucNorm < posCovEucNorm and eucDist[5] < lastCovDist[5]):
-            newCov = np.array(self.lastPose.pose.covariance)
+            #decrease covariance
+            newCov *= 1.0 - self.covStep
 
             # if inside check if converging or diverging
             # converging multiples by step and diverging multiplies by the inverse
-            convDiv = posDiffEucNorm < posCovEucNorm / 2.0 and eucDist[5] < lastCovDist[5] / 2.0
-            convDiv = convDiv and eucDist[3] < lastCovDist[3] / 2.0 and eucDist[4] < lastCovDist[4] / 2.0
-            newCov *= self.covStep if(convDiv) else 1.0 / self.covStep
+            # convDiv = posDiffEucNorm < posCovEucNorm / 2.0 and eucDist[5] < lastCovDist[5] / 2.0
+            # convDiv = convDiv and eucDist[3] < lastCovDist[3] / 2.0 and eucDist[4] < lastCovDist[4] / 2.0
+            # newCov *= self.covStep if(convDiv) else 1.0 / self.covStep
 
             # lower bound newCov, assumes covariance is positive definite vector
-            covs = [0, 7, 14, 21, 28, 35]
             for i in covs:
-                newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin
-
-            # update the covariance on our estimate
-            poseWithCov.pose.covariance = newCov
-
+                newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin    
+            
+            #update the covariance on our estimate
+            # self.lastPose.pose.covariance = newCov
+            poseWithCov.pose.covariance = self.lastPose.pose.covariance * 7
+            
             # merge the estimates in a proper weighted manner
             self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose)
-
-            print(f"added pose estimate")
-
+            self.lastPose.pose.covariance = newCov
+            
             # update the timestamp
             self.lastPose.header.stamp = poseWithCov.header.stamp
 
             return (True, "")
         else:
+            #increase covariance
+            newCov *= 1.0 / (1.0 - self.covStep)
+            self.lastPose.pose.covariance = newCov
+            
             # if outside, reject the detection
             if(posDiffEucNorm >= posCovEucNorm):
                 return(False, f"Detection position {posDiffEucNorm} observed outside covariance elipsoid {posCovEucNorm}")
@@ -125,14 +132,14 @@ class KalmanEstimate:
         rpy = [0.0, 0.0, 0.0]
 
         # update RPY covars and estimates
-        rpy[0], newPose.covariance[21] = updateValue(
-            pose1RPY[0], pose2RPY[0],
-            pose1.covariance[21], pose2.covariance[21]
-            )
-        rpy[1], newPose.covariance[28] = updateValue(
-            pose1RPY[1], pose2RPY[1],
-            pose1.covariance[28], pose2.covariance[28]
-            )
+        # rpy[0], newPose.covariance[21] = updateValue(
+        #     pose1RPY[0], pose2RPY[0],
+        #     pose1.covariance[21], pose2.covariance[21]
+        #     )
+        # rpy[1], newPose.covariance[28] = updateValue(
+        #     pose1RPY[1], pose2RPY[1],
+        #     pose1.covariance[28], pose2.covariance[28]
+        #     )
         rpy[2], newPose.covariance[35] = updateValue(
             pose1RPY[2], pose2RPY[2],
             pose1.covariance[35], pose2.covariance[35]
@@ -144,7 +151,7 @@ class KalmanEstimate:
 
         return newPose
 
-# Compute the size of the covariance elipsoids of a poseWithCovarainceStamped
+# Compute the size of the covariance elipsoids of a poseWithCovarianceStamped
 # takes the eigenvalues of the cov matrix and euclidean norms them to get the 
 # elipsoidal radius terms
 def covarDist(poseWithCov: PoseWithCovarianceStamped) -> np.ndarray:
@@ -171,7 +178,7 @@ def euclideanDist(vect: np.ndarray) -> float:
 # From https://ccrma.stanford.edu/~jos/sasp/Product_Two_Gaussian_PDFs.html,
 # Where estimate #1 is our current estimate and estimate #2 is the reading we just got in. 
 def updateValue(val1, val2, cov1, cov2):
-    new_mean = (val1 * cov2 + val2 * cov1) / (cov1 + cov2)
-    new_cov = (cov1 * cov2) / (cov1 + cov2)
+    new_mean = (val1 * (cov2**2) + val2 * (cov1**2)) / (cov1**2 + cov2**2)
+    # new_cov = (cov1 * cov2) / (cov1 + cov2)
 
-    return (new_mean, new_cov)
+    return (new_mean, cov1)
