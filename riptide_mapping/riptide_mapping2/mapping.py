@@ -10,7 +10,7 @@ from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TransformS
 
 from estimate import KalmanEstimate, euclideanDist
 from tf2_geometry_msgs import do_transform_pose_stamped
-from tf_transformations import quaternion_from_euler, euler_from_quaternion
+from transforms3d.euler import quat2euler, euler2quat
 from tf2_ros import TransformException
 import tf2_ros
 import numpy as np
@@ -117,6 +117,7 @@ class MappingNode(Node):
                 newTf.transform.translation = Vector3(x=output_pose.pose.pose.position.x, 
                     y=output_pose.pose.pose.position.y, z=output_pose.pose.pose.position.z)
                 newTf.transform.rotation = output_pose.pose.pose.orientation
+                
                 newTf.header.stamp = self.get_clock().now().to_msg()
                 newTf.child_frame_id = objectName + "_frame"
                 newTf.header.frame_id = self.mapFrame
@@ -144,8 +145,8 @@ class MappingNode(Node):
                     object_yaw = self.config['init_data.{}.pose.yaw'.format(objectName)] * DEG_TO_RAD # Need to convert this from degrees to radians.
                     
                     # convert rpy to quat
-                    quat = quaternion_from_euler(0, 0, object_yaw)
-
+                    quat = euler2quat(0, 0, object_yaw) #order defaults to sxyz
+                    
                     object_pose.pose.pose.orientation.w = quat[0]
                     object_pose.pose.pose.orientation.x = quat[1]
                     object_pose.pose.pose.orientation.y = quat[2]
@@ -236,7 +237,7 @@ class MappingNode(Node):
 
                 # check the angular difference between the robot and vision detection
                 angleMax = self.config["angle_cutoff"]
-                rpy = euler_from_quaternion([pose.pose.orientation.w, pose.pose.orientation.x,
+                rpy = quat2euler([pose.pose.orientation.w, pose.pose.orientation.x,
                                              pose.pose.orientation.y, pose.pose.orientation.z])
                 if(abs(rpy[2]) > angleMax):
                     self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}")
@@ -267,7 +268,7 @@ class MappingNode(Node):
         # Get the initial and current position of gman and bootlegger for comparison
 
         # TODO need to check that they exist in the config dict
-
+        
         if objects["gman"] and objects["gman"] and objects["gman"]["pose"] and objects["gman"]["pose"]:
             gman_init_position = Vector3(x=self.config["init_data.gman.pose.x"], y=self.config["init_data.gman.pose.y"], z=self.config["init_data.gman.pose.z"])
             gman_pose = objects["gman"]["pose"].getPoseEstim().pose.pose
@@ -289,7 +290,7 @@ class MappingNode(Node):
                 dy = gman_pose.position.y - bootlegger_pose.position.y
                 theta = atan2(dy, dx)
                 
-                quat = quaternion_from_euler(0, 0, theta)
+                quat = euler2quat(0, 0, theta)
 
                 gate_pose.pose.pose.orientation.w = quat[0]
                 gate_pose.pose.pose.orientation.x = quat[1]

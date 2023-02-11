@@ -1,6 +1,6 @@
 from typing import Tuple
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseWithCovariance
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from transforms3d.euler import quat2euler, euler2quat
 from math import pi
 import numpy as np
 
@@ -35,12 +35,6 @@ class KalmanEstimate:
         if(posDiffEucNorm < posCovEucNorm and eucDist[5] < lastCovDist[5]):
             #decrease covariance
             newCov *= 1.0 - self.covStep
-
-            # if inside check if converging or diverging
-            # converging multiples by step and diverging multiplies by the inverse
-            # convDiv = posDiffEucNorm < posCovEucNorm / 2.0 and eucDist[5] < lastCovDist[5] / 2.0
-            # convDiv = convDiv and eucDist[3] < lastCovDist[3] / 2.0 and eucDist[4] < lastCovDist[4] / 2.0
-            # newCov *= self.covStep if(convDiv) else 1.0 / self.covStep
 
             # lower bound newCov, assumes covariance is positive definite vector
             for i in covs:
@@ -86,11 +80,11 @@ class KalmanEstimate:
         zDist = abs(pose1.pose.pose.position.z - pose2.pose.pose.position.z)
 
         # convert quat to RPY
-        pose1RPY = euler_from_quaternion([
+        pose1RPY = quat2euler([
             pose1.pose.pose.orientation.w, pose1.pose.pose.orientation.x,
             pose1.pose.pose.orientation.y, pose1.pose.pose.orientation.z
         ])
-        pose2RPY = euler_from_quaternion([
+        pose2RPY = quat2euler([
             pose2.pose.pose.orientation.w, pose2.pose.pose.orientation.x,
             pose2.pose.pose.orientation.y, pose2.pose.pose.orientation.z
         ])
@@ -120,11 +114,11 @@ class KalmanEstimate:
             )
 
         # convert quat to RPY
-        pose1RPY = euler_from_quaternion([
+        pose1RPY = quat2euler([
             pose1.pose.orientation.w, pose1.pose.orientation.x,
             pose1.pose.orientation.y, pose1.pose.orientation.z
         ])
-        pose2RPY = euler_from_quaternion([
+        pose2RPY = quat2euler([
             pose2.pose.orientation.w, pose2.pose.orientation.x,
             pose2.pose.orientation.y, pose2.pose.orientation.z
         ])
@@ -147,8 +141,8 @@ class KalmanEstimate:
 
         # rebuild the quat
         (newPose.pose.orientation.w, newPose.pose.orientation.x, 
-        newPose.pose.orientation.y, newPose.pose.orientation.z) = quaternion_from_euler(rpy[0], rpy[1], rpy[2])
-
+        newPose.pose.orientation.y, newPose.pose.orientation.z) = euler2quat(rpy[0], rpy[1], rpy[2]) #order defaults to sxyz
+        
         return newPose
 
 # Compute the size of the covariance elipsoids of a poseWithCovarianceStamped
