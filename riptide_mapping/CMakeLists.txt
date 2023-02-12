@@ -13,7 +13,7 @@ find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
-#add c++ files
+#configure c++ executables
 add_executable(dependentFramePublisher ${PROJECT_NAME}/dependentFramePublisher.cpp)
 
 ament_target_dependencies(
@@ -25,9 +25,20 @@ ament_target_dependencies(
     tf2_geometry_msgs
 )
 
-#install c++
+add_executable(orientedFramePublisher ${PROJECT_NAME}/orientedFramePublisher.cpp)
+
+ament_target_dependencies(
+    orientedFramePublisher
+    rclcpp
+    tf2
+    tf2_ros
+    geometry_msgs
+    tf2_geometry_msgs
+)
+
+#install c++ executables
 install(
-    TARGETS dependentFramePublisher
+    TARGETS dependentFramePublisher orientedFramePublisher
     DESTINATION lib/${PROJECT_NAME}
 )
 
