@@ -143,13 +143,12 @@ class OrientedFramePublisher : public rclcpp::Node {
                 frame1 = frames.at(i),
                 frame2 = frames.at(i + 1);
             
-            geometry_msgs::msg::TransformStamped f1ToMap, f2ToMap, mapToF1, mapToF2, robotToMap;
+            geometry_msgs::msg::TransformStamped f1ToMap, f2ToMap, mapToF1, mapToF2;
             bool
                 f12M = getTransform(frame1, "map", f1ToMap),
                 f22M = getTransform(frame2, "map", f2ToMap),
                 m2F1 = getTransform("map", frame1, mapToF1),
-                m2F2 = getTransform("map", frame2, mapToF2),
-                r2F1 = getTransform(ROBOT_NAME + "/base_link", "map", robotToMap);
+                m2F2 = getTransform("map", frame2, mapToF2);
 
             //if frames were looked up successfully...
             if(f12M && f22M && m2F1 && m2F2) {
@@ -158,6 +157,30 @@ class OrientedFramePublisher : public rclcpp::Node {
                     frameXDiff = f2ToMap.transform.translation.x - f1ToMap.transform.translation.x,
                     frameYDiff = f2ToMap.transform.translation.y - f1ToMap.transform.translation.y,
                     thetaMap = atan2(frameYDiff, frameXDiff) + (M_PI / 2); //angle between two props plus 90 degrees
+
+                //figure out if yaw faces the correct direction
+                geometry_msgs::msg::Vector3
+                    frame1RPY = toRPY(f1ToMap.transform.rotation),
+                    frame2RPY = toRPY(f2ToMap.transform.rotation);
+                
+                double avgFrameYaw = (frame1RPY.z + frame2RPY.z) / 2;
+                RCLCPP_INFO(this->get_logger(), "frame1 %s, avg frame yaw: %f, thetamap: %f", frame1.c_str(), avgFrameYaw, thetaMap);
+                
+                double angDiff = avgFrameYaw - thetaMap;
+                angDiff += 2 * M_PI;
+                angDiff = fmod(angDiff, 2 * M_PI);
+                angDiff = (angDiff > M_PI ? (2 * M_PI) - angDiff : angDiff);
+
+                RCLCPP_INFO(this->get_logger(), "ang diff: %f", angDiff);
+
+                if(angDiff > M_PI / 2) {
+                    thetaMap += M_PI;
+                }
+
+                //ensure thetaMap is between -180 and 180
+                if(thetaMap > M_PI) {
+                    thetaMap -= 2 * M_PI;
+                }
 
                 //convert thetas from world frame to their respective object frames
                 geometry_msgs::msg::Vector3 f1Rpy, f2Rpy;

@@ -10,7 +10,8 @@ from vision_msgs.msg import (Detection3D, Detection3DArray,
                              ObjectHypothesisWithPose)
 
 objects = [
-    "gman"
+    "gman",
+    "bootlegger"
 ]
 
 pubs = [ ]
@@ -37,7 +38,7 @@ class DummyDetectionNode(Node):
         self.declare_parameter("topic", "detected_objects")
         
         for object in objects:
-            self.declare_parameter(f"detection_data.{object}.pose")
+            self.declare_parameter(f"detection_data.{object}.pose", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             self.declare_parameter(f"detection_data.{object}.noise", 0.0)
             self.declare_parameter(f"detection_data.{object}.score", 0.0)
             

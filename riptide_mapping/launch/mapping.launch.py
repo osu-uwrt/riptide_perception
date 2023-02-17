@@ -25,6 +25,7 @@ def generate_launch_description():
     )
 
     return launch.LaunchDescription([
+        PushRosNamespace("/tempest"),
 
         DeclareLaunchArgument(
             "log_level", 
