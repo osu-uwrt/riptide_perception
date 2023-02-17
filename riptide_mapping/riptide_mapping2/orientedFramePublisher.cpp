@@ -43,6 +43,19 @@ class OrientedFramePublisher : public rclcpp::Node {
 
     private:
     /**
+     * @brief Binds an angle in radians between the bounds [-pi, pi)
+     * 
+     * @param angle the angle to bind
+     * @return the same angle, bounded to [pi, pi)
+     */
+    double bindAngle(double angle) {
+        double a = angle + (2.0 * M_PI);
+        a = fmod(a, 2.0 * M_PI);
+        a = (a > M_PI ? (2 * M_PI) - a : a);
+        return a;
+    }
+
+    /**
      * @brief Looks up the transform from fromFrame to toFrame.
      * 
      * @param fromFrame The frame to look up from
@@ -163,16 +176,10 @@ class OrientedFramePublisher : public rclcpp::Node {
                     frame1RPY = toRPY(f1ToMap.transform.rotation),
                     frame2RPY = toRPY(f2ToMap.transform.rotation);
                 
-                double avgFrameYaw = (frame1RPY.z + frame2RPY.z) / 2;
-                RCLCPP_INFO(this->get_logger(), "frame1 %s, avg frame yaw: %f, thetamap: %f", frame1.c_str(), avgFrameYaw, thetaMap);
-                
-                double angDiff = avgFrameYaw - thetaMap;
-                angDiff += 2 * M_PI;
-                angDiff = fmod(angDiff, 2 * M_PI);
-                angDiff = (angDiff > M_PI ? (2 * M_PI) - angDiff : angDiff);
+                double avgFrameYaw = (bindAngle(frame1RPY.z) + bindAngle(frame2RPY.z)) / 2;
+                double angDiff = bindAngle(avgFrameYaw - thetaMap);
 
-                RCLCPP_INFO(this->get_logger(), "ang diff: %f", angDiff);
-
+                //rotate theta 180 degrees if the angle between the detection and the prop is obtuse
                 if(angDiff > M_PI / 2) {
                     thetaMap += M_PI;
                 }
