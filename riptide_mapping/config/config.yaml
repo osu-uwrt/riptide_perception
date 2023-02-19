@@ -114,6 +114,7 @@
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
     k_value: 0.01   # Covariance step size (< 1.0) applied per detection
+    detection_cov_factor: 7.0
 
     # relative position filter parameters
     angle_cutoff: 15.0

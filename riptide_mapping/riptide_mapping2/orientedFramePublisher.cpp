@@ -46,7 +46,7 @@ class OrientedFramePublisher : public rclcpp::Node {
      * @brief Binds an angle in radians between the bounds [-pi, pi)
      * 
      * @param angle the angle to bind
-     * @return the same angle, bounded to [pi, pi)
+     * @return the same angle, bounded to [-pi, pi)
      */
     double bindAngle(double angle) {
         double a = angle + (2.0 * M_PI);

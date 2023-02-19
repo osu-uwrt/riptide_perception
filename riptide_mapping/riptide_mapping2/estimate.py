@@ -9,10 +9,11 @@ RAD_TO_DEG = (180/pi) # Used for debug output
 ORIGIN_DEVIATION_LIMIT = 50
 
 class KalmanEstimate:
-    def __init__(self, initPoseWithCov: PoseWithCovarianceStamped, covStep: float, covMin: float):
+    def __init__(self, initPoseWithCov: PoseWithCovarianceStamped, covStep: float, covMin: float, detectionCovFactor: float):
         self.lastPose = initPoseWithCov
         self.covStep = covStep
         self.covMin = covMin
+        self.detectionCovFactor = detectionCovFactor
 
     # Takes in a new estimate in the map frame and attempts to add it to the current estimate
     def addPosEstim(self, poseWithCov: PoseWithCovarianceStamped) -> Tuple[bool, str]:
@@ -32,25 +33,25 @@ class KalmanEstimate:
         # also compare the rpy distance
         # because zero isnt less than zero the roll and pitch checks are removed
         # eucDist[3] < lastCovDist[3] and eucDist[4] < lastCovDist[4]
-        if(posDiffEucNorm < posCovEucNorm and eucDist[5] < lastCovDist[5]):
+        if(posDiffEucNorm < posCovEucNorm and eucDist[5] < lastCovDist[5]):            
+            #widen the covariance on our estimate so that it converges correctly
+            poseWithCov.pose.covariance = self.lastPose.pose.covariance * self.detectionCovFactor
+            
+            # merge the estimates in a weighted manner
+            self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose)
+            
             #decrease covariance
             newCov *= 1.0 - self.covStep
 
             # lower bound newCov, assumes covariance is positive definite vector
             for i in covs:
-                newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin    
-            
-            #update the covariance on our estimate
-            # self.lastPose.pose.covariance = newCov
-            poseWithCov.pose.covariance = self.lastPose.pose.covariance * 7
-            
-            # merge the estimates in a proper weighted manner
-            self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose)
+                newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin
+                
             self.lastPose.pose.covariance = newCov
             
             # update the timestamp
             self.lastPose.header.stamp = poseWithCov.header.stamp
-
+            
             return (True, "")
         else:
             #increase covariance
@@ -65,7 +66,7 @@ class KalmanEstimate:
             # elif(eucDist[4] >= lastCovDist[4]):
             #     return(False, "Detection pitch observed outside covariance elipsoid")
             elif(eucDist[5] >= lastCovDist[5]):
-                return(False, "Detection yaw observed outside covariance elipsoid")
+                return(False, f"Detection yaw {eucDist[5]} observed outside covariance elipsoid {lastCovDist[5]}")
             else:
                 return(False, "Unknown condition")
 
@@ -100,15 +101,15 @@ class KalmanEstimate:
     # as the orientation in RPY format
     def updatePose(self, pose1: PoseWithCovariance, pose2: PoseWithCovariance) -> PoseWithCovariance:
         newPose = PoseWithCovariance()
-        newPose.pose.position.x, newPose.covariance[0] = updateValue(
+        newPose.pose.position.x, _ = updateValue(
             pose1.pose.position.x, pose2.pose.position.x,
             pose1.covariance[0], pose2.covariance[0]
             )
-        newPose.pose.position.y, newPose.covariance[7] = updateValue(
+        newPose.pose.position.y, _ = updateValue(
             pose1.pose.position.y, pose2.pose.position.y,
             pose1.covariance[7], pose2.covariance[7]
             )
-        newPose.pose.position.z, newPose.covariance[14] = updateValue(
+        newPose.pose.position.z, _ = updateValue(
             pose1.pose.position.z, pose2.pose.position.z,
             pose1.covariance[14], pose2.covariance[14]
             )
@@ -171,8 +172,8 @@ def euclideanDist(vect: np.ndarray) -> float:
 # Reconciles two estimates, each with a given estimated value and covariance
 # From https://ccrma.stanford.edu/~jos/sasp/Product_Two_Gaussian_PDFs.html,
 # Where estimate #1 is our current estimate and estimate #2 is the reading we just got in. 
+# returns new_mean, cov1. Use to return a properly updated variance value, but it
+# didn't work very well, so instead we fudge the covariance in another part of the code
 def updateValue(val1, val2, cov1, cov2):
     new_mean = (val1 * (cov2**2) + val2 * (cov1**2)) / (cov1**2 + cov2**2)
-    # new_cov = (cov1 * cov2) / (cov1 + cov2)
-
     return (new_mean, cov1)

@@ -67,7 +67,8 @@ class MappingNode(Node):
                 # filtering parameters in camera frame
                 ('angle_cutoff', pi),
                 ('distance_limit', 10.0),
-                ('confidence_cutoff', .7)
+                ('confidence_cutoff', .7),
+                ('detection_cov_factor', 7.0)
             ])
         
         # declare the fields for all of the models in the dict
@@ -160,7 +161,7 @@ class MappingNode(Node):
                     # self.get_logger().info(f"initial pose: {object_pose}")
 
                     # Create a new Estimate object on reconfig.
-                    objects[objectName]["pose"] = KalmanEstimate(object_pose, self.config['k_value'], self.config['cov_limit'])
+                    objects[objectName]["pose"] = KalmanEstimate(object_pose, self.config['k_value'], self.config['cov_limit'], self.config['detection_cov_factor'])
 
                 except Exception as e:
                     eStr = "Exception: {}, Exception message: {}".format(type(e).__name__, e)
@@ -264,41 +265,6 @@ class MappingNode(Node):
                     self.get_logger().warning(f"Rejected {name}: {errStr}")
                 else:
                     self.get_logger().info(f"FOUND {name}")
-
-        # Get the initial and current position of gman and bootlegger for comparison
-
-        # TODO need to check that they exist in the config dict
-        
-        if objects["gman"] and objects["gman"] and objects["gman"]["pose"] and objects["gman"]["pose"]:
-            gman_init_position = Vector3(x=self.config["init_data.gman.pose.x"], y=self.config["init_data.gman.pose.y"], z=self.config["init_data.gman.pose.z"])
-            gman_pose = objects["gman"]["pose"].getPoseEstim().pose.pose
-            gman_current_position = Vector3(x=gman_pose.position.x, y=gman_pose.position.y, z=gman_pose.position.z)
-            
-            bootlegger_init_position = Vector3(x=self.config["init_data.bootlegger.pose.x"], y=self.config["init_data.bootlegger.pose.y"], z=self.config["init_data.bootlegger.pose.z"])
-            bootlegger_pose = objects["bootlegger"]["pose"].getPoseEstim().pose.pose
-            bootlegger_current_position = Vector3(x=bootlegger_pose.position.x, y=bootlegger_pose.position.y, z=bootlegger_pose.position.z)
-            
-            # Check that gman and bootlegger have both been updated from their initialized position
-            if(gman_init_position != gman_current_position and bootlegger_init_position != bootlegger_current_position):
-                # Get the midpoint between gman and bootlegger and call it the gate
-                gate_pose = PoseWithCovarianceStamped()
-                gate_pose.pose.pose.position.x = (bootlegger_pose.position.x + gman_pose.position.x) / 2
-                gate_pose.pose.pose.position.y = (bootlegger_pose.position.y + gman_pose.position.y) / 2
-                gate_pose.pose.pose.position.z = (bootlegger_pose.position.z + gman_pose.position.z) / 2
-
-                dx = gman_pose.position.x - bootlegger_pose.position.x
-                dy = gman_pose.position.y - bootlegger_pose.position.y
-                theta = atan2(dy, dx)
-                
-                quat = euler2quat(0, 0, theta)
-
-                gate_pose.pose.pose.orientation.w = quat[0]
-                gate_pose.pose.pose.orientation.x = quat[1]
-                gate_pose.pose.pose.orientation.y = quat[2]
-                gate_pose.pose.pose.orientation.z = quat[3]
-
-                self.get_logger().warning(f"the angle between gman and bootlegger is: {theta}")
-        
             
 
 def main(args=None):
