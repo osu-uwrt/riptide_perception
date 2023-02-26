@@ -93,7 +93,7 @@ class KalmanEstimate:
         # euler angle distance
         rollDist = abs(pose1RPY[0] - pose2RPY[0])
         pitchDist = abs(pose1RPY[1] - pose2RPY[1])
-        yawDist = abs(pose1RPY[2] - pose2RPY[2])
+        yawDist = abs(pose1RPY[2] - makeContinuous(pose2RPY[2], pose1RPY[2]))
 
         return np.array([xDist, yDist, zDist, rollDist, pitchDist, yawDist])
 
@@ -136,7 +136,7 @@ class KalmanEstimate:
         #     pose1.covariance[28], pose2.covariance[28]
         #     )
         rpy[2], newPose.covariance[35] = updateValue(
-            pose1RPY[2], pose2RPY[2],
+            pose1RPY[2], makeContinuous(pose2RPY[2], pose1RPY[2]),
             pose1.covariance[35], pose2.covariance[35]
             )
 
@@ -168,6 +168,17 @@ def covarDist(poseWithCov: PoseWithCovarianceStamped) -> np.ndarray:
 def euclideanDist(vect: np.ndarray) -> float:
         sumSq = np.dot(vect.T, vect)
         return np.sqrt(sumSq)
+    
+    
+def makeContinuous(angle: float, base: float):
+    angle -= 2 * pi
+    while abs(angle - base) > pi:
+        angle += 2 * pi
+    
+    if abs(angle - base) > pi:
+        angle = (2 * pi) - angle
+    
+    return angle
 
 # Reconciles two estimates, each with a given estimated value and covariance
 # From https://ccrma.stanford.edu/~jos/sasp/Product_Two_Gaussian_PDFs.html,
