@@ -8,9 +8,9 @@ from rcl_interfaces.msg import SetParametersResult
 from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TransformStamped, Vector3
 
-from riptide_mapping2.estimate import KalmanEstimate, euclideanDist
+from estimate import KalmanEstimate, euclideanDist
 from tf2_geometry_msgs import do_transform_pose_stamped
-from tf_transformations import quaternion_from_euler, euler_from_quaternion
+from transforms3d.euler import quat2euler, euler2quat
 from tf2_ros import TransformException
 import tf2_ros
 import numpy as np
@@ -30,7 +30,8 @@ object_ids = {
     7 : "torpedoBootlegger",
     8 : "bootlegger",
     9 : "cash",
-    10: "gate"
+    10: "binBarrel",
+    11: "binPhone"
 }
 
 objects = {}
@@ -66,7 +67,8 @@ class MappingNode(Node):
                 # filtering parameters in camera frame
                 ('angle_cutoff', pi),
                 ('distance_limit', 10.0),
-                ('confidence_cutoff', .7)
+                ('confidence_cutoff', .7),
+                ('detection_cov_factor', 7.0)
             ])
         
         # declare the fields for all of the models in the dict
@@ -116,6 +118,7 @@ class MappingNode(Node):
                 newTf.transform.translation = Vector3(x=output_pose.pose.pose.position.x, 
                     y=output_pose.pose.pose.position.y, z=output_pose.pose.pose.position.z)
                 newTf.transform.rotation = output_pose.pose.pose.orientation
+                
                 newTf.header.stamp = self.get_clock().now().to_msg()
                 newTf.child_frame_id = objectName + "_frame"
                 newTf.header.frame_id = self.mapFrame
@@ -143,8 +146,8 @@ class MappingNode(Node):
                     object_yaw = self.config['init_data.{}.pose.yaw'.format(objectName)] * DEG_TO_RAD # Need to convert this from degrees to radians.
                     
                     # convert rpy to quat
-                    quat = quaternion_from_euler(0, 0, object_yaw)
-
+                    quat = euler2quat(0, 0, object_yaw) #order defaults to sxyz
+                    
                     object_pose.pose.pose.orientation.w = quat[0]
                     object_pose.pose.pose.orientation.x = quat[1]
                     object_pose.pose.pose.orientation.y = quat[2]
@@ -158,7 +161,7 @@ class MappingNode(Node):
                     # self.get_logger().info(f"initial pose: {object_pose}")
 
                     # Create a new Estimate object on reconfig.
-                    objects[objectName]["pose"] = KalmanEstimate(object_pose, self.config['k_value'], self.config['cov_limit'])
+                    objects[objectName]["pose"] = KalmanEstimate(object_pose, self.config['k_value'], self.config['cov_limit'], self.config['detection_cov_factor'])
 
                 except Exception as e:
                     eStr = "Exception: {}, Exception message: {}".format(type(e).__name__, e)
@@ -235,7 +238,7 @@ class MappingNode(Node):
 
                 # check the angular difference between the robot and vision detection
                 angleMax = self.config["angle_cutoff"]
-                rpy = euler_from_quaternion([pose.pose.orientation.w, pose.pose.orientation.x,
+                rpy = quat2euler([pose.pose.orientation.w, pose.pose.orientation.x,
                                              pose.pose.orientation.y, pose.pose.orientation.z])
                 if(abs(rpy[2]) > angleMax):
                     self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}")
@@ -250,8 +253,6 @@ class MappingNode(Node):
                 # transform camera pose into map frame
                 convertedPose = do_transform_pose_stamped(pose, trans)
 
-                
-
                 # Get the reading in the world frame message all together
                 reading_map_frame = PoseWithCovarianceStamped()
                 reading_map_frame.header.stamp = msg.header.stamp
@@ -264,41 +265,6 @@ class MappingNode(Node):
                     self.get_logger().warning(f"Rejected {name}: {errStr}")
                 else:
                     self.get_logger().info(f"FOUND {name}")
-
-        # Get the initial and current position of gman and bootlegger for comparison
-
-        # TODO need to check that they exist in the config dict
-
-        if objects["gman"] and objects["gman"] and objects["gman"]["pose"] and objects["gman"]["pose"]:
-            gman_init_position = Vector3(x=self.config["init_data.gman.pose.x"], y=self.config["init_data.gman.pose.y"], z=self.config["init_data.gman.pose.z"])
-            gman_pose = objects["gman"]["pose"].getPoseEstim().pose.pose
-            gman_current_position = Vector3(x=gman_pose.position.x, y=gman_pose.position.y, z=gman_pose.position.z)
-            
-            bootlegger_init_position = Vector3(x=self.config["init_data.bootlegger.pose.x"], y=self.config["init_data.bootlegger.pose.y"], z=self.config["init_data.bootlegger.pose.z"])
-            bootlegger_pose = objects["bootlegger"]["pose"].getPoseEstim().pose.pose
-            bootlegger_current_position = Vector3(x=bootlegger_pose.position.x, y=bootlegger_pose.position.y, z=bootlegger_pose.position.z)
-            
-            # Check that gman and bootlegger have both been updated from their initialized position
-            if(gman_init_position != gman_current_position and bootlegger_init_position != bootlegger_current_position):
-                # Get the midpoint between gman and bootlegger and call it the gate
-                gate_pose = PoseWithCovarianceStamped()
-                gate_pose.pose.pose.position.x = (bootlegger_pose.position.x + gman_pose.position.x) / 2
-                gate_pose.pose.pose.position.y = (bootlegger_pose.position.y + gman_pose.position.y) / 2
-                gate_pose.pose.pose.position.z = (bootlegger_pose.position.z + gman_pose.position.z) / 2
-
-                dx = gman_pose.position.x - bootlegger_pose.position.x
-                dy = gman_pose.position.y - bootlegger_pose.position.y
-                theta = atan2(dy, dx)
-                
-                quat = quaternion_from_euler(0, 0, theta)
-
-                gate_pose.pose.pose.orientation.w = quat[0]
-                gate_pose.pose.pose.orientation.x = quat[1]
-                gate_pose.pose.pose.orientation.y = quat[2]
-                gate_pose.pose.pose.orientation.z = quat[3]
-
-                self.get_logger().warning(f"the angle between gman and bootlegger is: {theta}")
-        
             
 
 def main(args=None):
