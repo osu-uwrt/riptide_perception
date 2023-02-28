@@ -42,63 +42,65 @@ def generate_launch_description():
             description="log level to use",
         ),
 
-        # create the nodes    
-        Node(
-            package='riptide_mapping2',
-            executable='mapping.py',
-            name='riptide_mapping2',
-            respawn=True,
-            output='screen',
+        launch.actions.GroupAction([
+            # create the nodes    
+            Node(
+                package='riptide_mapping2',
+                executable='mapping.py',
+                name='riptide_mapping2',
+                respawn=True,
+                output='screen',
+                
+                # use the parameters on the node
+                parameters = [
+                    config
+                ]
+            ),
             
-            # use the parameters on the node
-            parameters = [
-                config
-            ]
-        ),
-        
-        Node(
-            package='riptide_mapping2',
-            executable='dependentFramePublisher',
-            name='dependent_frame_publisher',
-            respawn=True,
-            output='screen',
+            Node(
+                package='riptide_mapping2',
+                executable='dependentFramePublisher',
+                name='dependent_frame_publisher',
+                respawn=True,
+                output='screen',
+                
+                parameters = [
+                    dependentFrames
+                ]
+            ),
             
-            parameters = [
-                dependentFrames
-            ]
-        ),
-        
-        Node(
-            package='riptide_mapping2',
-            executable='orientedFramePublisher',
-            name='oriented_frame_publisher',
-            respawn=True,
-            output='screen',
-            
-            parameters = [
-                orientedFrames
-            ]
-        ),
+            Node(
+                package='riptide_mapping2',
+                executable='orientedFramePublisher',
+                name='oriented_frame_publisher',
+                respawn=True,
+                output='screen',
+                
+                parameters = [
+                    orientedFrames
+                ]
+            ),
 
-        Node(
-        package="chameleon_tf",
-        executable="chameleon_tf",
-        name="world_to_map",
-        output="screen",
-        respawn=True,
-        parameters=[
-            {"source_frame": "world"},
-            {"target_frame": "map"},
-            {"initial_translation": [
-                0.0,
-                0.0,
-                0.0
-            ]},
-            {"initial_rotation": [
-                0.0,
-                0.0,
-                0.0
-            ]},
-        ]
-    )
+            Node(
+            package="chameleon_tf",
+            executable="chameleon_tf",
+            name="world_to_map",
+            output="screen",
+            respawn=True,
+            parameters=[
+                {"source_frame": "world"},
+                {"target_frame": "map"},
+                {"initial_translation": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]},
+                {"initial_rotation": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]},
+                ]
+            )
+        ], scoped=True),
     ])
