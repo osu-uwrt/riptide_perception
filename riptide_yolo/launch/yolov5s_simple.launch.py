@@ -27,6 +27,8 @@ def generate_launch_description():
     )
 
     return launch.LaunchDescription([
-        webcam,
-        yolov5_ros,
+        launch.actions.GroupAction([
+            webcam,
+            yolov5_ros,
+        ], scoped=True)
     ])

@@ -21,17 +21,18 @@ def generate_launch_description():
             default_value="INFO",
             description="log level to use",
         ),
-
-        # create the nodes    
-        Node(
-            package='riptide_mapping2',
-            executable='dummydetections.py',
-            name='dummydetections',
-            respawn=True,
-            output='screen',
-            
-            parameters = [
-                config
-            ]
-        ),
+        launch.actions.GroupAction([
+            # create the nodes    
+            Node(
+                package='riptide_mapping2',
+                executable='dummydetections.py',
+                name='dummydetections',
+                respawn=True,
+                output='screen',
+                
+                parameters = [
+                    config
+                ]
+            ),
+            ], scoped=True),
     ])

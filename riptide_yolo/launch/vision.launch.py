@@ -27,6 +27,8 @@ def generate_launch_description():
         PushRosNamespace(
             LC("namespace"),
         ),
-        
-        riptide_vision,
+
+        launch.actions.GroupAction([
+            riptide_vision,
+        ], scoped=True)
     ])
