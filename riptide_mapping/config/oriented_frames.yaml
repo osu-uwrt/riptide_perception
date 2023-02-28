@@ -1,4 +1,4 @@
-/tempest/oriented_frame_publisher:
+/**/oriented_frame_publisher:
   ros__parameters:
     timer_period: 0.25 #seconds
     locked_frames: [ #every two entries in the array is a "pair" that has a locked orientation.

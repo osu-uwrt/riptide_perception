@@ -1,4 +1,4 @@
-/tempest/dummydetections:
+/**/dummydetections:
   ros__parameters:
     topic: detected_objects
     timer_rate: 0.1

@@ -8,8 +8,6 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2/exceptions.h>
 
-static const std::string ROBOT_NAME = "tempest"; //TODO: dont hardcode
-
 /**
  * ROS node that publishes "oriented" mapping frames based off of the parameters in oriented_frames.yaml.
  * Pairs of frames will be oriented to face the direction perpendicular to the line in the XY plane that connects them.

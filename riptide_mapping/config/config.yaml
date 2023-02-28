@@ -1,4 +1,4 @@
-/tempest/riptide_mapping2:
+/**/riptide_mapping2:
   ros__parameters:
     init_data:
       binBarrel:
