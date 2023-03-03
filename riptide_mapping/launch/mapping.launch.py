@@ -10,7 +10,7 @@ from launch.substitutions import LaunchConfiguration as LC
 cfg_36h11 = {
     "image_transport": "raw",
     "family": "36h11",
-    "size": 0.12065,
+    "size": 0.508,
     "max_hamming": 0,
     "z_up": True
 }
@@ -40,37 +40,6 @@ def generate_launch_description():
         get_package_share_directory('riptide_mapping2'),
         'config',
         'oriented_frames.yaml'
-    )
-
-    tag_node = ComposableNode(
-        name='apriltag_36h11',
-        namespace='apriltag',
-        package='apriltag_ros', plugin='AprilTagNode',
-        remappings=[
-            # This maps the 'raw' images for simplicity of demonstration.
-            # In practice, this will have to be the rectified 'rect' images.
-            ("/apriltag/image_rect", "/zed2i/zed_node/right_raw/image_raw_color"),
-            ("/apriltag/camera_info", "/zed2i/zed_node/right_raw/camera_info"),
-        ],
-        parameters=[cfg_36h11],
-        extra_arguments=[{'use_intra_process_comms': True}],
-    )
-
-    container = ComposableNodeContainer(
-        name='tag_container',
-        namespace='apriltag',
-        package='rclcpp_components',
-        executable='component_container',
-        composable_node_descriptions=[tag_node],
-        output='screen'
-    )
-
-    surface_frame_node = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='surface_frame_node',
-        arguments=["0", "0", "0.4572", "0", "0", "0",
-                   "tag36h11:0", "estimated_origin_frame"]
     )
 
     return launch.LaunchDescription([
@@ -144,7 +113,36 @@ def generate_launch_description():
             ]
         ),
 
-        container,
+        ComposableNodeContainer(
+            name='tag_container',
+            namespace="apriltag",
+            package='rclcpp_components',
+            executable='component_container',
+            composable_node_descriptions=[
+                ComposableNode(
+                    name='apriltag_36h11',
+                    namespace="apriltag",
+                    package='apriltag_ros', plugin='AprilTagNode',
+                    remappings=[
+                        # This maps the 'raw' images for simplicity of demonstration.
+                        # In practice, this will have to be the rectified 'rect' images.
+                        ("image_rect",
+                         "/zed2i/zed_node/left_raw/image_raw_color"),
+                        ("camera_info",
+                         "/zed2i/zed_node/left_raw/camera_info"),
+                    ],
+                    parameters=[cfg_36h11],
+                    extra_arguments=[{'use_intra_process_comms': True}],
+                )
+            ],
+            output='screen'
+        ),
 
-        surface_frame_node
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='surface_frame_node',
+            arguments=["0", "0.4572", "0", "0", "-1.5707", "-1.5707",
+                       "tag36h11:0", "estimated_origin_frame"]
+        )
     ])
