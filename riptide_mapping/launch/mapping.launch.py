@@ -32,10 +32,6 @@ def generate_launch_description():
     )
 
     return launch.LaunchDescription([
-        PushRosNamespace(
-            LC("robot")
-        ),
-
         DeclareLaunchArgument(
             "log_level", 
             default_value="INFO",
@@ -43,6 +39,10 @@ def generate_launch_description():
         ),
 
         launch.actions.GroupAction([
+            PushRosNamespace(
+                LC("robot")
+            ),
+
             # create the nodes    
             Node(
                 package='riptide_mapping2',
