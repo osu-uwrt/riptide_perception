@@ -1,4 +1,4 @@
-/tempest/dummydetections:
+/**/dummydetections:
   ros__parameters:
     topic: detected_objects
     timer_rate: 0.1
@@ -7,7 +7,9 @@
         pose: [0.0, 0.0, -0.25, 0.0, 0.0, -3.1415]
         noise: 0.1
         score: 0.8
+        pub_invalid_orientation: false
       bootlegger:
         pose: [0.0, -1.0, -0.25, 0.0, 0.0, -3.1415]
         noise: 0.1
         score: 0.8
+        pub_invalid_orientation: false

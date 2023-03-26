@@ -1,4 +1,4 @@
-/tempest/dependent_frame_publisher:
+/**/dependent_frame_publisher:
   ros__parameters:  
     gate_frame: #numbers purely for testing at the moment and does not reflect actual frame location
       parent: gman_frame

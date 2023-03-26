@@ -3,6 +3,7 @@ import launch
 from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node, PushRosNamespace
+from launch.substitutions import LaunchConfiguration as LC
 
 def generate_launch_description():
     # declare the launch args to read for this file
@@ -14,12 +15,20 @@ def generate_launch_description():
 
     return launch.LaunchDescription([
         
-        PushRosNamespace("/tempest"),
-        
         DeclareLaunchArgument(
             "log_level", 
             default_value="INFO",
             description="log level to use",
+        ),
+        
+        DeclareLaunchArgument(
+            "robot",
+            default_value="tempest",
+            description="name of the robot"
+        ),
+        
+        PushRosNamespace(
+            LC("robot")
         ),
 
         # create the nodes    

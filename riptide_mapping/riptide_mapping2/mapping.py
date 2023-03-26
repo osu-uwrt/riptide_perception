@@ -260,7 +260,7 @@ class MappingNode(Node):
                 reading_map_frame.pose.pose = convertedPose.pose          
 
                 # Merge the given position into our position for that object
-                valid, errStr = objects[name]["pose"].addPosEstim(reading_map_frame)
+                valid, errStr = objects[name]["pose"].addPosEstim(reading_map_frame, result.pose.pose.orientation.w <= 1)
                 if(not valid):
                     self.get_logger().warning(f"Rejected {name}: {errStr}")
                 else:

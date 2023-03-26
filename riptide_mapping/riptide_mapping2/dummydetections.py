@@ -41,6 +41,7 @@ class DummyDetectionNode(Node):
             self.declare_parameter(f"detection_data.{object}.pose", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             self.declare_parameter(f"detection_data.{object}.noise", 0.0)
             self.declare_parameter(f"detection_data.{object}.score", 0.0)
+            self.declare_parameter(f"detection_data.{object}.publish_invalid_orientation", False)
             
           
     def timerCB(self):
@@ -58,6 +59,7 @@ class DummyDetectionNode(Node):
             poseArr = self.get_parameter(f"detection_data.{object}.pose").value
             noise = self.get_parameter(f"detection_data.{object}.noise").value
             score = self.get_parameter(f"detection_data.{object}.score").value
+            publishInvalid = self.get_parameter(f"detection_data.{object}.publish_invalid_orientation").value
             
             if poseArr is not None:
                 pose = PoseWithCovariance()
@@ -73,9 +75,12 @@ class DummyDetectionNode(Node):
                 r = poseArr[3] + noise[3]
                 p = poseArr[4] + noise[4]
                 y = poseArr[5] + noise[5]
-                            
+                
                 #rpy to quat that boi
                 newQuat = euler2quat(r, p, y) #returns in WXYZ order
+                if publishInvalid:
+                    newQuat = [2.0, 2.0, 2.0, 2.0] #invalid quaternion indicating that mapping should not merge orientation
+                
                 pose.pose.orientation.w = newQuat[0]
                 pose.pose.orientation.x = newQuat[1]
                 pose.pose.orientation.y = newQuat[2]
