@@ -13,8 +13,7 @@ def generate_launch_description():
         'dummy_detections.yaml'
     )
 
-    return launch.LaunchDescription([
-        
+    return launch.LaunchDescription([        
         DeclareLaunchArgument(
             "log_level", 
             default_value="INFO",

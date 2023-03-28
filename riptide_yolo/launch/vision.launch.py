@@ -1,12 +1,14 @@
 import launch
 import os
-import launch_ros.actions
+from launch_ros.actions import Node, PushRosNamespace
 from ament_index_python.packages import get_package_share_directory
+from launch.substitutions import LaunchConfiguration as LC
+from launch.actions import DeclareLaunchArgument
 
 def generate_launch_description():
     riptide_vision_share_dir = get_package_share_directory('riptide_yolo')
 
-    riptide_vision = launch_ros.actions.Node(
+    riptide_vision = Node(
         package="riptide_yolo", executable="vision",
         parameters=[
                        {"weights":os.path.join(riptide_vision_share_dir,"weights/last.pt")},
@@ -16,6 +18,15 @@ def generate_launch_description():
     )
 
     return launch.LaunchDescription([
-        launch_ros.actions.PushRosNamespace("tempest"),
+        DeclareLaunchArgument(
+            "namespace", 
+            default_value="talos",
+            description="Namespace of the vehicle",
+        ),
+
+        PushRosNamespace(
+            LC("namespace"),
+        ),
+        
         riptide_vision,
     ])
