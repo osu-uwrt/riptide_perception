@@ -6,7 +6,6 @@ from launch_ros.actions import Node, PushRosNamespace, ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 from launch.substitutions import LaunchConfiguration as LC
 
-
 cfg_36h11 = {
     "image_transport": "raw",
     "family": "36h11",
@@ -14,7 +13,6 @@ cfg_36h11 = {
     "max_hamming": 0,
     "z_up": True
 }
-
 
 def generate_launch_description():
     # declare the launch args to read for this file
@@ -47,6 +45,12 @@ def generate_launch_description():
             "log_level",
             default_value="INFO",
             description="log level to use",
+        ),
+        
+        DeclareLaunchArgument(
+            "robot",
+            default_value="tempest",
+            description="name of the robot"
         ),
 
         GroupAction([

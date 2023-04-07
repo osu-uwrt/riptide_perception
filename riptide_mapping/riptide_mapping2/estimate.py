@@ -16,7 +16,7 @@ class KalmanEstimate:
         self.detectionCovFactor = detectionCovFactor
 
     # Takes in a new estimate in the map frame and attempts to add it to the current estimate
-    def addPosEstim(self, poseWithCov: PoseWithCovarianceStamped) -> Tuple[bool, str]:
+    def addPosEstim(self, poseWithCov: PoseWithCovarianceStamped, withOrientation: bool) -> Tuple[bool, str]:
         # find the eigienvals of the last pose
         lastCovDist = covarDist(self.lastPose)
 
@@ -33,15 +33,20 @@ class KalmanEstimate:
         # also compare the rpy distance
         # because zero isnt less than zero the roll and pitch checks are removed
         # eucDist[3] < lastCovDist[3] and eucDist[4] < lastCovDist[4]
-        if(posDiffEucNorm < posCovEucNorm and eucDist[5] < lastCovDist[5]):            
+        # yaw error will not be considered if orientation is not being merged (withOrientation == True)
+        if(posDiffEucNorm < posCovEucNorm and (eucDist[5] < lastCovDist[5] or not withOrientation)):            
             #widen the covariance on our estimate so that it converges correctly
             poseWithCov.pose.covariance = self.lastPose.pose.covariance * self.detectionCovFactor
             
             # merge the estimates in a weighted manner
-            self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose)
+            self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose, withOrientation)
             
             #decrease covariance
             newCov *= 1.0 - self.covStep
+            
+            #if orientation is not being merged, its covariance should not change
+            if not withOrientation:
+                newCov[35] = self.lastPose.pose.covariance[35]
 
             # lower bound newCov, assumes covariance is positive definite vector
             for i in covs:
@@ -99,7 +104,8 @@ class KalmanEstimate:
 
     # compute a fused pose based on the covariance of the position vector as well
     # as the orientation in RPY format
-    def updatePose(self, pose1: PoseWithCovariance, pose2: PoseWithCovariance) -> PoseWithCovariance:
+    def updatePose(self, pose1: PoseWithCovariance, pose2: PoseWithCovariance, updateOrientation: bool) -> PoseWithCovariance:
+        #can update later to also update covariances (currently put into _) when updateValue can properly give them
         newPose = PoseWithCovariance()
         newPose.pose.position.x, _ = updateValue(
             pose1.pose.position.x, pose2.pose.position.x,
@@ -125,24 +131,30 @@ class KalmanEstimate:
         ])
 
         rpy = [0.0, 0.0, 0.0]
+        
+        #vision will send an invalid quaternion (components greater than 1) if the orientation could not be determined.
+        #so, only merge the orientation if it has a w component less than 1
+        if updateOrientation:
+            # update RPY covars and estimates
+            # rpy[0], newPose.covariance[21] = updateValue(
+            #     pose1RPY[0], pose2RPY[0],
+            #     pose1.covariance[21], pose2.covariance[21]
+            #     )
+            # rpy[1], newPose.covariance[28] = updateValue(
+            #     pose1RPY[1], pose2RPY[1],
+            #     pose1.covariance[28], pose2.covariance[28]
+            #     )
+            rpy[2], newPose.covariance[35] = updateValue(
+                pose1RPY[2], makeContinuous(pose2RPY[2], pose1RPY[2]),
+                pose1.covariance[35], pose2.covariance[35]
+                )
 
-        # update RPY covars and estimates
-        # rpy[0], newPose.covariance[21] = updateValue(
-        #     pose1RPY[0], pose2RPY[0],
-        #     pose1.covariance[21], pose2.covariance[21]
-        #     )
-        # rpy[1], newPose.covariance[28] = updateValue(
-        #     pose1RPY[1], pose2RPY[1],
-        #     pose1.covariance[28], pose2.covariance[28]
-        #     )
-        rpy[2], newPose.covariance[35] = updateValue(
-            pose1RPY[2], makeContinuous(pose2RPY[2], pose1RPY[2]),
-            pose1.covariance[35], pose2.covariance[35]
-            )
-
-        # rebuild the quat
-        (newPose.pose.orientation.w, newPose.pose.orientation.x, 
-        newPose.pose.orientation.y, newPose.pose.orientation.z) = euler2quat(rpy[0], rpy[1], rpy[2]) #order defaults to sxyz
+            # rebuild the quat
+            (newPose.pose.orientation.w, newPose.pose.orientation.x, 
+            newPose.pose.orientation.y, newPose.pose.orientation.z) = euler2quat(rpy[0], rpy[1], rpy[2]) #order defaults to sxyz
+        else:
+            newPose.pose.orientation = pose1.pose.orientation
+            newPose.covariance[35] = pose1.covariance[35]
         
         return newPose
 
