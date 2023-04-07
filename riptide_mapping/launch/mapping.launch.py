@@ -52,10 +52,6 @@ def generate_launch_description():
             default_value="tempest",
             description="name of the robot"
         ),
-        
-        PushRosNamespace(
-            LC("robot")
-        ),
 
         GroupAction([
             PushRosNamespace(
