@@ -1,4 +1,5 @@
 import bpy
+import math
 import os
 import random
 import mathutils
@@ -8,7 +9,7 @@ def randomizeScene(obj_name):
     #Get particle system named Particle Area in main collection
     particles = bpy.data.collections['Main'].objects['Particle Area'].particle_systems[0].particles
     #change seed to random number
-    particles.seed = random.randint(0, 100000)
+#    particles.seed = random.randint(0, 100000)
     #Get object obj_name
     obj = bpy.data.objects[obj_name]
     #Set object's rotation/position to be within a 2x2 sphere
@@ -28,7 +29,7 @@ def main():
     # get the args passed to blender after "--", all of which are ignored by
     # blender so scripts may receive their own arguments
     argv = sys.argv
-    bpy.ops.wm.open_mainfile(filepath="./UWRTBase.blend")
+
     if "--" not in argv:
         argv = []  # as if no args are passed
     else:
@@ -70,31 +71,32 @@ def main():
         parser.print_help()
         return
 
-    if training_obj not in training_names:
-        print("Object name "+training_obj+" not trainable, try "+training_names_helper)
+    if args.training_obj not in training_names:
+        print("Object name "+args.training_obj+" not trainable, try "+training_names_helper)
         return
     
-    output_path = Path(output_path)
+    output_path = Path(args.output_path)
+    print(output_path.resolve())
     output_path.mkdir(parents=True, exist_ok=True)
-    img_output_dir = output_path.joinpath('images/')
+    img_output_dir = output_path / 'images/'
     img_output_dir.mkdir(parents=True, exist_ok=True)
-    label_output_dir = output_path.joinpath('labels/')
+    label_output_dir = output_path / 'labels/'
     label_output_dir.mkdir(parents=True, exist_ok=True)
-    bounding_box_file = open(output_path+"/image_bounding_boxes.txt","w")
+    bounding_box_file = open(output_path / "image_bounding_boxes.txt","w")
     # Run the example function
-    for i in range(number_datapoints):
-        randomlyPlaceObject(training_obj)
+    for i in range(args.number_datapoints):
+        randomizeScene(args.training_obj)
         
         #Get output paths for img and data
         img_output = img_output_dir / f"im{i}.jpg"        
         label_output = label_output_dir / f"im{i}.txt" 
         
         # Render image
-        bpy.context.scene.render.filepath = str(output_path)
+        bpy.context.scene.render.filepath = str(img_output.resolve())
         bpy.ops.render.render(write_still=True)
         
         # Get object's 2D image bounding box
-        obj = bpy.data.objects[obj_name]
+        obj = bpy.data.objects[args.training_obj]
         bbox_2d = obj.bound_box[:]
         bbox_2d = [mathutils.Vector((bbox_2d[i][0], bbox_2d[i][1])) for i in range(8)]
         min_x = min([p.x for p in bbox_2d])

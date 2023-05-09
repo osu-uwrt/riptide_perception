@@ -8,7 +8,8 @@ Inside the UWRTBase.blend file there are three collections:
 
 To run:
 ```
-python3 data_generator.py -n {number of datapoints} -o {output path} -t {name of test object}
+blender --background .\UWRTBase.blend --python ./data_generator.py --  -o ./lol -t TrainObj1 -n 10
 ```
 
-(Note probably are bugs as I wrote the code without having bpy installed due to literally having megabytes of storage left on my pc, patches to come)
+make sure that blender is on the path, and that the console is in this directory.
+
