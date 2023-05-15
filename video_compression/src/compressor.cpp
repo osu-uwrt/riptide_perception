@@ -5,35 +5,42 @@ using namespace std::placeholders;
 const std_msgs::msg::Header hdr;
 namespace video_compression {
 
-    Compressor::Compressor(const rclcpp::Node::SharedPtr node, image_transport::ImageTransport& it, const std::string& inputTopic, const std::string& outputTopic, const int desiredWidth) 
+    Compressor::Compressor(const rclcpp::Node::SharedPtr node, image_transport::ImageTransport& it, const std::string& inputTopic, const std::string& outputTopic, const int desiredWidth, const int maxFps) 
     : desiredWidth(desiredWidth),
+      maxPeriod(1 / (double) maxFps),
       node(node)
     {
         sub = it.subscribe(inputTopic, 1, &Compressor::callback, this);
         pub = it.advertise(outputTopic, 1);
+        lastPublishTime = node->get_clock()->now();
     }
 
     void Compressor::callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg) {
-        try {
-            cv::Mat img = cv_bridge::toCvShare(msg, "bgr8")->image;
-            if(img.empty()) {
-                RCLCPP_WARN(node->get_logger(), "Empty image on topic %s", sub.getTopic().c_str());
-                return;
-            }
+        rclcpp::Time currentTime = this->node->get_clock()->now();
+        if((currentTime - lastPublishTime).seconds() > maxPeriod) {
+            lastPublishTime = currentTime;
             
-            //figure out size to resize to based on aspect ratio and desired width
-            cv::Size sz;
-            sz.width = desiredWidth;
-            sz.height = (int) (img.rows * (desiredWidth / (double) img.cols));
+            try {
+                cv::Mat img = cv_bridge::toCvShare(msg, "bgr8")->image;
+                if(img.empty()) {
+                    RCLCPP_WARN(node->get_logger(), "Empty image on topic %s", sub.getTopic().c_str());
+                    return;
+                }
+                
+                //figure out size to resize to based on aspect ratio and desired width
+                cv::Size sz;
+                sz.width = desiredWidth;
+                sz.height = (int) (img.rows * (desiredWidth / (double) img.cols));
 
-            //resize image
-            cv::resize(img, img, sz);
+                //resize image
+                cv::resize(img, img, sz);
 
-            //convert back to correct type and publish
-            std::shared_ptr<sensor_msgs::msg::Image> out = cv_bridge::CvImage(hdr, "bgr8", img).toImageMsg();
-            pub.publish(out);
-        } catch (const cv_bridge::Exception& e) {
-            RCLCPP_ERROR(node->get_logger(), "Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+                //convert back to correct type and publish
+                std::shared_ptr<sensor_msgs::msg::Image> out = cv_bridge::CvImage(hdr, "bgr8", img).toImageMsg();
+                pub.publish(out);
+            } catch (const cv_bridge::Exception& e) {
+                RCLCPP_ERROR(node->get_logger(), "Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
+            }
         }
     }
 

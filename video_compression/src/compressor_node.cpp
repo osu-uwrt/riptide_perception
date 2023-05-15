@@ -25,6 +25,7 @@ namespace video_compression {
         node->declare_parameter("video0.input_topic", "");
         node->declare_parameter("video0.output_topic", "");
         node->declare_parameter("video0.desired_width", 0);
+        node->declare_parameter("video0.max_fps", 1);
 
         while(hasParametersForVideo(node, videoIdx)) {
             videoIdx++;
@@ -34,6 +35,7 @@ namespace video_compression {
             node->declare_parameter(prefix + ".input_topic", "");
             node->declare_parameter(prefix + ".output_topic", "");
             node->declare_parameter(prefix + ".desired_width", 0);
+            node->declare_parameter(prefix + ".max_fps", 1);
         }
 
         //the value of videoIdx is the number of video streams defined in the config
@@ -46,9 +48,11 @@ namespace video_compression {
 
             //get parameters for this stream
             std::string
-                inputTopic = node->get_parameter(prefix + ".input_topic").as_string(),
+                inputTopic  = node->get_parameter(prefix + ".input_topic").as_string(),
                 outputTopic = node->get_parameter(prefix + ".output_topic").as_string();
-            int desiredWidth = node->get_parameter(prefix + ".desired_width").as_int();
+            int
+                desiredWidth = node->get_parameter(prefix + ".desired_width").as_int(),
+                maxFps       = node->get_parameter(prefix + ".max_fps").as_int();
 
             RCLCPP_INFO(node->get_logger(), 
                 "Streaming %s to %s at fixed width %i", 
@@ -57,7 +61,7 @@ namespace video_compression {
                 desiredWidth
             );
 
-            compressors[i] = std::make_shared<Compressor>(node, it, inputTopic, outputTopic, desiredWidth);
+            compressors[i] = std::make_shared<Compressor>(node, it, inputTopic, outputTopic, desiredWidth, maxFps);
         }
     }
 
