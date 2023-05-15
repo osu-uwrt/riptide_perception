@@ -6,7 +6,7 @@ std::string fullTopicName(rclcpp::Node::SharedPtr node, const std::string& topic
         return topic;
     }
 
-    return node->get_namespace() + topic;
+    return node->get_namespace() + std::string("/") + topic;
 }
 
 namespace video_compression {
@@ -55,10 +55,11 @@ namespace video_compression {
                 maxFps       = node->get_parameter(prefix + ".max_fps").as_int();
 
             RCLCPP_INFO(node->get_logger(), 
-                "Streaming %s to %s at fixed width %i", 
+                "Streaming %s to %s at fixed width %i at max %i FPS", 
                 fullTopicName(node, inputTopic).c_str(), 
                 fullTopicName(node, outputTopic).c_str(), 
-                desiredWidth
+                desiredWidth,
+                maxFps
             );
 
             compressors[i] = std::make_shared<Compressor>(node, it, inputTopic, outputTopic, desiredWidth, maxFps);
