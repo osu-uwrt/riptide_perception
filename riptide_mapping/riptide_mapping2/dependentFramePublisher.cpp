@@ -202,8 +202,8 @@ class DependentFramePublisher : public rclcpp::Node {
             auto coordinates = poseFromXYZRPY(x, y, z, roll, pitch, yaw);
             
             try {
-                //look up transform from parent frame to world
-                auto parentToWorld = tfBuffer->lookupTransform("world", parent, tf2::TimePointZero);
+                //look up transform from parent frame to map
+                auto parentToMap = tfBuffer->lookupTransform("map", parent, tf2::TimePointZero);
                 
                 //initialize relative pose as the raw coordinates in the parameters
                 geometry_msgs::msg::Pose relPose = coordinates;
@@ -211,16 +211,16 @@ class DependentFramePublisher : public rclcpp::Node {
                 //zero out absolute coordinates
                 relPose = applyAbsoluteCoordinates(relPose, absoluteCoordinates, geometry_msgs::msg::Pose());
 
-                //transform the relative pose to world frame
+                //transform the relative pose to map frame
                 geometry_msgs::msg::Pose transformedPose;
-                tf2::doTransform(relPose, transformedPose, parentToWorld);
+                tf2::doTransform(relPose, transformedPose, parentToMap);
 
                 //apply absolute coordinates
                 transformedPose = applyAbsoluteCoordinates(transformedPose, absoluteCoordinates, coordinates);
 
                 //assemble transform to broadcast
                 geometry_msgs::msg::TransformStamped childTransform;
-                childTransform.header.frame_id = "world",
+                childTransform.header.frame_id = "map",
                 childTransform.header.stamp = get_clock()->now();
                 childTransform.child_frame_id = id;
                 childTransform.transform.translation.x = transformedPose.position.x;
@@ -230,7 +230,7 @@ class DependentFramePublisher : public rclcpp::Node {
 
                 tfBroadcaster->sendTransform(childTransform);
             } catch(tf2::TransformException& ex) {
-                RCLCPP_WARN(get_logger(), "Could not look up transform from world to %s: %s", parent.c_str(), ex.what());
+                RCLCPP_WARN(get_logger(), "Could not look up transform from map to %s: %s", parent.c_str(), ex.what());
             }
         }
     }

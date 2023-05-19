@@ -1,0 +1,8 @@
+/**/video_compressor:
+  ros__parameters:
+    video0:
+      input_topic: zed2i/zed_node/left_raw/image_raw_color
+      output_topic: zed_left_raw_viewable
+      desired_width: 480
+      max_fps: 5
+
