@@ -1,0 +1,8 @@
+/**/video_compressor:
+  ros__parameters:
+    video0:
+      input_topic: /underwater_cam/image_raw
+      output_topic: /underwater_cam_viewable
+      desired_width: 480
+      max_fps: 5
+
