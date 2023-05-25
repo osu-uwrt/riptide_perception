@@ -126,15 +126,14 @@ def generate_launch_description():
                 composable_node_descriptions=[
                     ComposableNode(
                         name='apriltag_36h11',
-                        namespace="apriltag",
                         package='apriltag_ros', plugin='AprilTagNode',
                         remappings=[
                             # This maps the 'raw' images for simplicity of demonstration.
                             # In practice, this will have to be the rectified 'rect' images.
                             ("image_rect",
-                            "/zed2i/zed_node/left_raw/image_raw_color"),
+                            "zed2i/zed_node/left/image_rect_color"),
                             ("camera_info",
-                            "/zed2i/zed_node/left_raw/camera_info"),
+                            "zed2i/zed_node/left/camera_info"),
                         ],
                         parameters=[cfg_36h11],
                         extra_arguments=[{'use_intra_process_comms': True}],
