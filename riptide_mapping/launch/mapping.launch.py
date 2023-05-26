@@ -103,6 +103,7 @@ def generate_launch_description():
                 output="screen",
                 respawn=True,
                 parameters=[
+                    {"stddev_threshold": 0.5},
                     {"source_frame": "world"},
                     {"target_frame": "map"},
                     {"initial_translation": [

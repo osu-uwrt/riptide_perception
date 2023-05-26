@@ -8,9 +8,9 @@
           yaw: 1.0
           z: 1.0
         pose:
-          x: 0.0
-          y: 0.0
-          yaw: 0.0
+          x: 1.0
+          y: 1.0
+          yaw: 1.0
           z: 1.0
       binPhone:
         covar:
@@ -36,15 +36,15 @@
           z: 1.0
       gman:
         covar:
-          x: 10.0 #2.0099095090803996e-06
-          y: 10.0 #7.273919994657607e-07
-          yaw: 10.0 #2.2062454055223684e-05
-          z: 10.0 #2.372778249389679e-06
+          x: 1.0 #2.0099095090803996e-06
+          y: 1.0 #7.273919994657607e-07
+          yaw: 1.0 #2.2062454055223684e-05
+          z: 1.0 #2.372778249389679e-06
         pose:
-          x: 1.5
-          y: 1.0
-          yaw: 0.0
-          z: 1.0
+          x: 2.0
+          y: 0.0
+          yaw: 180.0
+          z: -0.75
       bootlegger:
         covar:
           x: 1.0 #2.0099095090803996e-06
@@ -107,10 +107,10 @@
           yaw: 1.0 #2.2062454055223684e-05
           z: 1.0 #2.372778249389679e-06
         pose:
-          x: 0.0
-          y: 20.0
-          yaw: 0.0
-          z: 1.0
+          x: 4.0
+          y: 0.0
+          yaw: 180.0
+          z: -0.75
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
     k_value: 0.01   # Covariance step size (< 1.0) applied per detection
