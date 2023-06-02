@@ -66,7 +66,7 @@ class OrientedFramePublisher : public rclcpp::Node {
             transform = tfBuffer->lookupTransform(toFrame, fromFrame, tf2::TimePointZero);
             return true;
         } catch(tf2::LookupException& ex) {
-            RCLCPP_WARN(this->get_logger(), "Could not look up tranform from %s to %s.", fromFrame.c_str(), toFrame.c_str());
+            RCLCPP_WARN_SKIPFIRST_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Could not look up tranform from %s to %s.", fromFrame.c_str(), toFrame.c_str());
         }
 
         return false;

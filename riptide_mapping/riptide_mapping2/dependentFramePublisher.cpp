@@ -230,7 +230,7 @@ class DependentFramePublisher : public rclcpp::Node {
 
                 tfBroadcaster->sendTransform(childTransform);
             } catch(tf2::TransformException& ex) {
-                RCLCPP_WARN(get_logger(), "Could not look up transform from map to %s: %s", parent.c_str(), ex.what());
+                RCLCPP_WARN_SKIPFIRST_THROTTLE(get_logger(), *this->get_clock(), 1000, "Could not look up transform from map to %s: %s", parent.c_str(), ex.what());
             }
         }
     }
