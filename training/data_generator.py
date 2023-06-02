@@ -94,15 +94,23 @@ def main():
         # Render image
         bpy.context.scene.render.filepath = str(img_output.resolve())
         bpy.ops.render.render(write_still=True)
+
+        # need to look at this to compute proper bbox
+        # https://blender.stackexchange.com/questions/185296/find-the-size-of-an-object-in-camera-frame-for-bounding-box-creation
+        # the bbox method below spits out world cordinates for the 8 verticies of the 3d bbox
+        # this is another similar version 
+        # https://blender.stackexchange.com/questions/7198/save-the-2d-bounding-box-of-an-object-in-rendered-image-to-a-text-file/
         
         # Get object's 2D image bounding box
         obj = bpy.data.objects[args.training_obj]
+        print(obj.bound_box)
         bbox_2d = obj.bound_box[:]
-        bbox_2d = [mathutils.Vector((bbox_2d[i][0], bbox_2d[i][1])) for i in range(8)]
-        min_x = min([p.x for p in bbox_2d])
-        max_x = max([p.x for p in bbox_2d])
-        min_y = min([p.y for p in bbox_2d])
-        max_y = max([p.y for p in bbox_2d])
+        bbox_2d = [(bbox_2d[i][0], bbox_2d[i][1]) for i in range(8)]
+        print(bbox_2d)
+        min_x = min([p[0] for p in bbox_2d])
+        max_x = max([p[0] for p in bbox_2d])
+        min_y = min([p[1] for p in bbox_2d])
+        max_y = max([p[1] for p in bbox_2d])
         
         # Output 2D bounding box to text file
         with open(label_output, "w") as f:
