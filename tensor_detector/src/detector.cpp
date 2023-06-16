@@ -12,7 +12,7 @@ using namespace nvonnxparser;
 class Logger : public ILogger
 {
     void log(Severity sev, const char * msg) noexcept override{
-        if(sev <= Severity::kWARNING){
+        if(sev <= Severity::kINFO){
             std::cout << msg << std::endl;
         }
     }
@@ -42,26 +42,42 @@ int main(int argc, char **argv)
         std::cout << parser->getError(i)->desc() << std::endl;
     }
 
+    printf("onnx file loaded\n");
+
     // configure the model builder
-    IBuilderConfig * buildercfg = builder->createBuilderConfig();
-    buildercfg->setMemoryPoolLimit(MemoryPoolType::kWORKSPACE, 1U << 25);
+    IBuilderConfig * builderConfig = builder->createBuilderConfig();
+    builderConfig->setMemoryPoolLimit(MemoryPoolType::kWORKSPACE, 1U << 25);
+    builderConfig->setFlag(BuilderFlag::kFP16);
+
+    bool useDLA = false;
+
+    if(useDLA){
+        // try to enable the DLA cores for this where possible dont need stadalone though
+        builderConfig->setDefaultDeviceType(DeviceType::kDLA);
+        builderConfig->setFlag(BuilderFlag::kGPU_FALLBACK);
+        builderConfig->setFlag(BuilderFlag::kDIRECT_IO);
+    }
 
     // serialize the network
-    IHostMemory * serializedModel = builder->buildSerializedNetwork(*network, *buildercfg);
+    IHostMemory * serializedModel = builder->buildSerializedNetwork(*network, *builderConfig);
 
-    // can remove all of the configuration stuff
-    delete parser; 
-    delete network;
-    delete buildercfg;
-    delete builder;
+    printf("TRT serialization complete, saving\n");    
 
     std::ofstream ofs("serialized_engine.trt", std::ios::out | std::ios::binary);
     ofs.write((char*)(serializedModel->data()), serializedModel->size());
     ofs.close();
 
+    printf("TRT serialization written to disk\n");    
+    
+
     // this model should now be saved and be re-opened for further use
     // the serialization process can take a hot minute
 
+    // can remove all of the configuration stuff
+    delete parser; 
+    delete network;
+    delete builderConfig;
+    delete builder;
     delete serializedModel;
 
     return 0;
