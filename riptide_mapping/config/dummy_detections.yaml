@@ -10,7 +10,7 @@
         max_visible_dist: 2.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
       bootlegger:
         # pose: [0.0, -1.0, -0.25, 0.0, 0.0, -3.1415]
-        pose: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        pose: [3.5, 0.0, -2.0, 0.0, 0.0, -3.14159]
         noise: 0.1
         score: 0.8
         pub_invalid_orientation: false
@@ -22,4 +22,4 @@
     #the following settings are only used when simulate_pool is TRUE
     camera_hfov: 60 #degrees. used to determine if robot is actually looking at the object.
     camera_vfov: 40 #degrees. used just like the hfov but not horizontal
-    camera_frame: stereo/left_link #robot name will be inserted to the beginning of this frame to become <robot>/<frame_name>
+    camera_frame: zed2i_left_camera_frame #robot name will be inserted to the beginning of this frame to become <robot>/<frame_name>
