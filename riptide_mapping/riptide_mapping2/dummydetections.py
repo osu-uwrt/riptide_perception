@@ -83,7 +83,7 @@ class DummyDetectionNode(Node):
                 
         # cameraFrameName = f"{self.cameraFrame}"
         try:
-            robotTransform = self.tfBuffer.lookup_transform("world", self.cameraFrame, rclpy.time.Time())
+            robotTransform = self.tfBuffer.lookup_transform("map", self.cameraFrame, rclpy.time.Time())
             dX = objectPos[0] - robotTransform.transform.translation.x
             dY = objectPos[1] - robotTransform.transform.translation.y
             dZ = objectPos[2] - robotTransform.transform.translation.z
@@ -106,6 +106,11 @@ class DummyDetectionNode(Node):
             vAngleDeg = abs(p - vertHeadingToObj) * 180.0 / pi
             vAngleDeg += 360
             vAngleDeg %= 360
+            
+            if abs(vAngleDeg) > 90:
+                vAngleDeg -= 180
+            
+            self.get_logger().info(f"dist: {dist}, hangledeg: {hAngleDeg}, vangledeg: {vAngleDeg}")
                         
             return dist < maxDist and hAngleDeg < self.cameraHFov and vAngleDeg < self.cameraVFov
         except TransformException as ex:
@@ -124,7 +129,7 @@ class DummyDetectionNode(Node):
         
         #formulate header
         header = Header()
-        header.frame_id = "world"
+        header.frame_id = "map"
         header.stamp = self.get_clock().now().to_msg()
         
         detectArray.header = header
