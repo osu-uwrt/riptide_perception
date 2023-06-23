@@ -81,9 +81,9 @@ class DummyDetectionNode(Node):
         name = self.get_namespace() + "/"
         robot = name[1 : name.find('/', 1)] #start substr at 1 to omit leading /
                 
-        cameraFrameName = f"{robot}/{self.cameraFrame}"
+        # cameraFrameName = f"{self.cameraFrame}"
         try:
-            robotTransform = self.tfBuffer.lookup_transform("map", cameraFrameName, rclpy.time.Time())
+            robotTransform = self.tfBuffer.lookup_transform("map", self.cameraFrame, rclpy.time.Time())
             dX = objectPos[0] - robotTransform.transform.translation.x
             dY = objectPos[1] - robotTransform.transform.translation.y
             dZ = objectPos[2] - robotTransform.transform.translation.z
@@ -113,7 +113,7 @@ class DummyDetectionNode(Node):
                         
             return dist < maxDist and abs(hAngleDeg) < self.cameraHFov and abs(vAngleDeg) < self.cameraVFov
         except TransformException as ex:
-            self.get_logger().warn(f"Could not look up transform from {cameraFrameName} to world! {ex}", throttle_duration_sec = 1, skip_first = True)
+            self.get_logger().warn(f"Could not look up transform from {self.cameraFrame} to world! {ex}")
             return False
           
         
