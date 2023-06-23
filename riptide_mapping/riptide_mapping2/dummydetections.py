@@ -21,8 +21,9 @@ from vision_msgs.msg import (Detection3D, Detection3DArray,
 TOPIC_NAME = "detected_objects"
 
 objects = [
-    # "gman",
-    "bootlegger"
+    "gate",
+    "buoy",
+    "earth"
 ]
 
 class DummyDetectionNode(Node):

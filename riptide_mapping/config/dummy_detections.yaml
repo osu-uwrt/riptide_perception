@@ -2,15 +2,20 @@
   ros__parameters:
     timer_rate: 0.1
     detection_data:
-      gman:
+      gate:
         pose: [0.0, 0.0, -0.25, 0.0, 0.0, -3.1415]
         noise: 0.1
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      bootlegger:
-        # pose: [0.0, -1.0, -0.25, 0.0, 0.0, -3.1415]
+      buoy:
         pose: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        noise: 0.1
+        score: 0.8
+        pub_invalid_orientation: false
+        max_visible_dist: 2.0
+      earth:
+        pose: [-0.25, 0.5, -0.125, 0.0, 0.0, -3.1415]
         noise: 0.1
         score: 0.8
         pub_invalid_orientation: false

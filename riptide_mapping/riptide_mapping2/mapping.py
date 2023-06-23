@@ -20,18 +20,9 @@ DEG_TO_RAD = (pi/180)
 
 #Used to translate between DOPE ids and names of objects
 object_ids = {
-    0 : "BinBarrel",
-    1 : "BinPhone", 
-    2 : "TommyGun", 
-    3 : "gman", 
-    4 : "axe", 
-    5 : "torpedoGman", 
-    6 : "badge",
-    7 : "torpedoBootlegger",
-    8 : "bootlegger",
-    9 : "cash",
-    10: "binBarrel",
-    11: "binPhone"
+    0 : "gate",
+    1 : "earth", 
+    2 : "buoy"
 }
 
 objects = {}
@@ -76,6 +67,7 @@ class MappingNode(Node):
             self.declare_parameters(
                 namespace='',
                 parameters=[
+                    ('init_data.{}.parent'.format(object), "map"),
                     ('init_data.{}.pose.x'.format(object), 0.0),
                     ('init_data.{}.pose.y'.format(object), 0.0),
                     ('init_data.{}.pose.z'.format(object), 0.0),
@@ -137,7 +129,7 @@ class MappingNode(Node):
 
                     # Get pose data from reconfig and update our map accordingly
                     object_pose = PoseWithCovarianceStamped()
-                    object_pose.header.frame_id = self.config['init_data.{}.parent_frame'.format(objectName)]
+                    object_pose.header.frame_id = self.config['init_data.{}.parent'.format(objectName)]
                     
                     object_pose.pose.pose.position.x = self.config['init_data.{}.pose.x'.format(objectName)]
                     object_pose.pose.pose.position.y = self.config['init_data.{}.pose.y'.format(objectName)]
@@ -222,7 +214,7 @@ class MappingNode(Node):
                 distance = euclideanDist(np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]))
                 dist_lim = self.config["distance_limit"]
                 if(distance > dist_lim):
-                    self.get_logger().warning(f"Rejected {name}: distance {distance}m outside limit of {dist_lim}")
+                    self.get_logger().warning(f"Rejected {name}: distance {distance}m outside limit of {dist_lim}", throttle_duration_sec = 1)
                     continue
 
                 # check the angular difference between the robot and vision detection
@@ -230,25 +222,24 @@ class MappingNode(Node):
                 rpy = quat2euler([pose.pose.orientation.w, pose.pose.orientation.x,
                                              pose.pose.orientation.y, pose.pose.orientation.z])
                 if(abs(rpy[2]) > angleMax):
-                    self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}")
+                    self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}", throttle_duration_sec = 1)
                     continue
 
                 # theshold the confidence of the detection is above the min
                 min = self.config["confidence_cutoff"]
                 if(result.hypothesis.score <  min):
-                    self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}")
+                    self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}", throttle_duration_sec = 1)
                     continue
                 
                 #transform pose into parent frame and feed to estimate
-                now = Time(seconds=msg.header.stamp.sec, nanoseconds=msg.header.stamp.nanosec)
                 parentFrame = objects[name]["pose"].getPoseEstim().header.frame_id
                 try:
                     trans = self.tf_buffer.lookup_transform(
                         parentFrame,
                         detection.header.frame_id,
-                        now)
+                        Time())
                 except TransformException as ex:
-                    self.get_logger().error(f'Could not transform {detection.header.frame_id} to {parentFrame}: {ex}')
+                    self.get_logger().error(f'Could not transform {detection.header.frame_id} to {parentFrame}: {ex}', throttle_duration_sec = 1)
                     return
 
                 # transform camera pose into map frame
@@ -263,9 +254,9 @@ class MappingNode(Node):
                 # Merge the given position into our position for that object
                 valid, errStr = objects[name]["pose"].addPosEstim(reading_parent_frame, result.pose.pose.orientation.w <= 1)
                 if(not valid):
-                    self.get_logger().warning(f"Rejected {name}: {errStr}")
+                    self.get_logger().warning(f"Rejected {name}: {errStr}", throttle_duration_sec = 1)
                 else:
-                    self.get_logger().info(f"FOUND {name}")
+                    self.get_logger().info(f"FOUND {name}", throttle_duration_sec = 1)
             
 
 def main(args=None):
