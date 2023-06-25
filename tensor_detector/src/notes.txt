@@ -1,0 +1,7 @@
+For getting xyz info from the pixel i,j pair in depth https://stackoverflow.com/questions/38909696/2d-coordinate-to-3d-world-coordinate
+
+
+inference module for TRT https://github.com/NVIDIA/TensorRT/blob/release/7.2/include/NvInfer.h#L7191
+TRT docs https://docs.nvidia.com/deeplearning/tensorrt/developer-guide/index.html#gpu_fallback
+
+better docs from *not nvidia* https://learnopencv.com/how-to-run-inference-using-tensorrt-c-api/

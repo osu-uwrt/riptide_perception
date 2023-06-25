@@ -11,6 +11,9 @@ find_package(rclcpp REQUIRED)
 find_package(vision_msgs REQUIRED)
 find_package(zed_interfaces REQUIRED)
 
+# get opencv
+find_package(OpenCV 4 REQUIRED)
+
 # setup CUDA
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/utils/cuda" )
 find_package(CUDA)
@@ -39,6 +42,7 @@ target_include_directories(detector PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_compile_features(detector PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_link_libraries(detector nvinfer nvinfer_plugin nvcaffe_parser nvonnxparser)
+ament_target_dependencies(detector OpenCV)
 
 install(TARGETS detector
   DESTINATION lib/${PROJECT_NAME})
