@@ -102,7 +102,7 @@ public:
             void** buffer_ptr;
             auto binding_size = getSizeByDim(engine_ptr->getBindingDimensions(i)) * sizeof(float);
             if(cudaMalloc(buffer_ptr, binding_size) != cudaSuccess)
-                throw std::runtime_error("GPU malloc failed while reserving memeory buffers for NN I/O");
+                throw std::runtime_error("GPU malloc failed while reserving memeory buffers for NN I/O " + std::to_string(binding_size));
 
             // put the buffer ptr onto the right vector
             (engine_ptr->bindingIsInput(i) ? input_buffers : output_buffers).push_back(buffer_ptr);
@@ -124,6 +124,8 @@ public:
         cv::cuda::GpuMat gpu_frame;
         gpu_frame.upload(input_image);
 
+        printf("Input frame copied to GPU memory\n");
+
         // dims is ordered # channels, width, height
         // should only be one input at index 0
         auto final_size = cv::Size(input_dims.at(0).d[2], input_dims.at(0).d[1]);
@@ -132,14 +134,20 @@ public:
         cv::cuda::GpuMat resized;
         cv::cuda::resize(gpu_frame, resized, final_size, 0, 0, cv::INTER_NEAREST);
 
+        printf("Input image underwent resize\n");
+
         // pre-normalize the input image
         cv::cuda::GpuMat flt_image;
         resized.convertTo(flt_image, CV_32FC3, 1.f / 255.f);
         cv::cuda::subtract(flt_image, cv::Scalar(0.485f, 0.456f, 0.406f), flt_image, cv::noArray(), -1);
         cv::cuda::divide(flt_image, cv::Scalar(0.229f, 0.224f, 0.225f), flt_image, 1, -1);
 
+        printf("Input image normalized\n");
+
         // prepare the memcpy on the gpu so it doesnt need to go back to the CPU
-        cudaMemcpyAsync(input_buffers.at(0), flt_image.ptr<uint8_t>(), flt_image.channels() * flt_image.rows * flt_image.step, cudaMemcpyDeviceToDevice);
+        auto copy_err = cudaMemcpyAsync(input_buffers.at(0), flt_image.ptr<void*>(), flt_image.channels() * flt_image.rows * flt_image.step, cudaMemcpyDeviceToDevice);
+        if(copy_err != cudaSuccess)
+            throw std::runtime_error(std::string("GPU copy operation failed on NN input ") + cudaGetErrorString(copy_err));
     }
 
     void inferLoadedImg(){
@@ -166,6 +174,14 @@ int main(int argc, char **argv)
     YoloInfer infer = YoloInfer(engine_file);
 
     printf("Model loading complete, preparing to infer\n");
+
+    cv::Mat frame = cv::imread(input_file);
+
+    printf("Input image opened\n");
+
+    infer.loadNextImage(frame);
+
+    printf("Input image loaded\n");
 
     return 0;
 }
