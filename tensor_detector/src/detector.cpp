@@ -106,6 +106,61 @@ void postprocessResults(float *gpu_output, const nvinfer1::Dims &dims)
     }
 }
 
+size_t loadEngine(std::string engine_file, void* serialized_engine){
+    std::ifstream file(engine_file.c_str(), std::ios::binary);
+    if (!file.good())
+    {
+        throw std::runtime_error("Failed to open file: " + engine_file);
+    }
+
+    // get the size of the file and seek back
+    size_t size = 0;
+    file.seekg(0, file.end);
+    size = file.tellg();
+    file.seekg(0, file.beg);
+
+    serialized_engine = new char[size];
+    file.read(serialized_engine, size);
+    file.close();
+
+    return size;
+}
+
+size_t createEngine(std::string onnx_file, void* serialized_engine){
+    //define trt flags for network
+    uint32_t flags = 1U << static_cast<uint32_t>(NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+
+    IBuilder * builder = createInferBuilder(logger);
+    INetworkDefinition * network = builder->createNetworkV2(flags); 
+    IParser * parser = createParser(*network, logger);
+
+    // load a model
+    parser->parseFromFile(onnx_file.c_str(), static_cast<uint32_t>(ILogger::Severity::kINFO));
+    
+    // check for errors
+    for(size_t i = 0; i < parser->getNbErrors(); i++){
+        std::cout << parser->getError(i)->desc() << std::endl;
+    }
+
+    printf("onnx file loaded\n");
+
+    // configure the model builder
+    IBuilderConfig * builderConfig = builder->createBuilderConfig();
+
+    // serialize the network
+    IHostMemory * serializedModel = builder->buildSerializedNetwork(*network, *builderConfig);
+
+    // memory leak w/o this :/
+    delete builder;
+    delete network;
+    delete builderConfig;
+    delete builder;
+
+    serialized_engine = serializedModel->data();
+
+    return serializedModel->size();  
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -114,19 +169,27 @@ int main(int argc, char **argv)
     printf("hello world tensor_detector package\n");
 
     // model info
-    std::string inference_path = "durr.png";
-    std::string modelFile = "/home/coalman321/colcon_deploy/src/riptide_yolo/weights/best.onnx";
+    std::string input_file = "durr.png";
+    // std::string engine_file = "yolo.engine";
     std::vector<std::string> input_blobs = {};
     std::vector<std::string> output_blobs = {};
 
     // open the file
-    char *engine_data;
-    size_t engine_size;
+    // char *engine_data;
+    // size_t engine_size = loadEngine(engine_file, engine_data);
+
+    std::string modelFile = "best.onnx";
+
+    // open the file
+    void *engine_data;
+    size_t engine_size = createEngine(modelFile, engine_data);
+
 
     // make the inference runtime
     std::unique_ptr<IRuntime> runtime = std::unique_ptr<IRuntime>(createInferRuntime(logger));
 
     // load the model and context
+    printf("Loading engine\n");
     std::unique_ptr<ICudaEngine> engine = std::unique_ptr<ICudaEngine>(runtime->deserializeCudaEngine(engine_data, engine_size));
     std::unique_ptr<IExecutionContext> context = std::unique_ptr<IExecutionContext>(engine->createExecutionContext());
 
@@ -134,6 +197,7 @@ int main(int argc, char **argv)
     context->setDebugSync(true);
 
     // try to get the io dims
+    printf("Binding I/O\n");
     std::vector<nvinfer1::Dims> input_dims;               // we expect only one input
     std::vector<nvinfer1::Dims> output_dims;              // and one output
     std::vector<void *> buffers(engine->getNbBindings()); // buffers for input and output data
@@ -157,7 +221,7 @@ int main(int argc, char **argv)
     }
 
     // preprocess input data
-    preprocessImage(inference_path, (float *)buffers[0], input_dims[0]);
+    preprocessImage(input_file, (float *)buffers[0], input_dims[0]);
     // inference
     context->enqueue(1, buffers.data(), 0, nullptr);
     // post-process results

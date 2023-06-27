@@ -44,7 +44,14 @@ target_compile_features(detector PUBLIC c_std_99 cxx_std_17)  # Require C99 and 
 target_link_libraries(detector nvinfer nvinfer_plugin nvcaffe_parser nvonnxparser)
 ament_target_dependencies(detector OpenCV)
 
-install(TARGETS detector
+cuda_add_executable(converter src/converter.cpp)
+target_include_directories(converter PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(converter PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+target_link_libraries(converter nvinfer nvinfer_plugin nvcaffe_parser nvonnxparser)
+
+install(TARGETS detector converter
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
