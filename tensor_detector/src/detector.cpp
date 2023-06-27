@@ -54,13 +54,14 @@ class YoloInfer
 {
 private:
     // TRT runtime system data
-    UniquePtr<nvinfer1::ICudaEngine> enginePtr;
-    UniquePtr<nvinfer1::IExecutionContext> contextPtr;
+    UniquePtr<nvinfer1::ICudaEngine> engine_ptr;
+    UniquePtr<nvinfer1::IExecutionContext> context_ptr;
 
     // I/O bindings for the network
     std::vector<nvinfer1::Dims> input_dims;  // we expect only one input
+    std::vector<void *> input_buffers;       // should only be one input buffer too
     std::vector<nvinfer1::Dims> output_dims; // and four outputs
-    std::vector<void *> buffers;             // buffers for input and output data
+    std::vector<void *> output_buffers;      // should be four output buffers too
 
 public:
     /**
@@ -87,23 +88,27 @@ public:
 
         // Try create the TRT Runtime and load the engine
         UniquePtr<nvinfer1::IRuntime> runtime{nvinfer1::createInferRuntime(logger)};
-        enginePtr.reset(runtime->deserializeCudaEngine(engineData.data(), engineSize, nullptr));
-        assert(enginePtr.get() != nullptr);
+        engine_ptr.reset(runtime->deserializeCudaEngine(engineData.data(), engineSize, nullptr));
+        assert(engine_ptr.get() != nullptr);
 
         // load the execution context
-        contextPtr.reset(enginePtr->createExecutionContext());
-        assert(contextPtr.get() != nullptr);
+        context_ptr.reset(engine_ptr->createExecutionContext());
+        assert(context_ptr.get() != nullptr);
 
         // prepare I/O Bindings
-        buffers.reserve(enginePtr->getNbBindings());
-        for (int i = 0; i < enginePtr->getNbBindings(); ++i)
+        for (int i = 0; i < engine_ptr->getNbBindings(); ++i)
         {
             // reserve GPU memory for the input and mark it
-            auto binding_size = getSizeByDim(enginePtr->getBindingDimensions(i)) * sizeof(float);
-            cudaMalloc(&buffers[i], binding_size);
+            void** buffer_ptr;
+            auto binding_size = getSizeByDim(engine_ptr->getBindingDimensions(i)) * sizeof(float);
+            if(cudaMalloc(buffer_ptr, binding_size) != cudaSuccess)
+                throw std::runtime_error("GPU malloc failed while reserving memeory buffers for NN I/O");
+
+            // put the buffer ptr onto the right vector
+            (engine_ptr->bindingIsInput(i) ? input_buffers : output_buffers).push_back(buffer_ptr);
 
             // load the binding into the corresponding list
-            (enginePtr->bindingIsInput(i) ? input_dims : output_dims).emplace_back(enginePtr->getBindingDimensions(i));
+            (engine_ptr->bindingIsInput(i) ? input_dims : output_dims).push_back(engine_ptr->getBindingDimensions(i));
         }
 
         // Verify we have at least 1 input and 1 output otherwise we have an issue
@@ -119,7 +124,26 @@ public:
         cv::cuda::GpuMat gpu_frame;
         gpu_frame.upload(input_image);
 
-        // run a resize to get down to network input size
+        // dims is ordered # channels, width, height
+        // should only be one input at index 0
+        auto final_size = cv::Size(input_dims.at(0).d[2], input_dims.at(0).d[1]);
+
+        // resize the image to match the nn input tensor size
+        cv::cuda::GpuMat resized;
+        cv::cuda::resize(gpu_frame, resized, final_size, 0, 0, cv::INTER_NEAREST);
+
+        // pre-normalize the input image
+        cv::cuda::GpuMat flt_image;
+        resized.convertTo(flt_image, CV_32FC3, 1.f / 255.f);
+        cv::cuda::subtract(flt_image, cv::Scalar(0.485f, 0.456f, 0.406f), flt_image, cv::noArray(), -1);
+        cv::cuda::divide(flt_image, cv::Scalar(0.229f, 0.224f, 0.225f), flt_image, 1, -1);
+
+        // prepare the memcpy on the gpu so it doesnt need to go back to the CPU
+        cudaMemcpyAsync(input_buffers.at(0), flt_image.ptr<uint8_t>(), flt_image.channels() * flt_image.rows * flt_image.step, cudaMemcpyDeviceToDevice);
+    }
+
+    void inferLoadedImg(){
+
     }
 
     ~YoloInfer()
