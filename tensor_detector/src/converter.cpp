@@ -63,7 +63,7 @@ int main(int argc, char **argv)
 
     printf("TRT serialization complete, saving\n");    
 
-    std::ofstream ofs("serialized_engine.trt", std::ios::out | std::ios::binary);
+    std::ofstream ofs("yolo.engine", std::ios::out | std::ios::binary);
     ofs.write((char*)(serializedModel->data()), serializedModel->size());
     ofs.close();
 
