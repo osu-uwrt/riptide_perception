@@ -23,7 +23,7 @@ class Logger : public ILogger
     {
         if (sev <= Severity::kINFO)
         {
-            std::cout << msg << std::endl;
+            std::cout << "[TRT] " << msg << std::endl;
         }
     }
 } logger;
@@ -150,10 +150,12 @@ size_t createEngine(std::string onnx_file, void* serialized_engine){
     // serialize the network
     IHostMemory * serializedModel = builder->buildSerializedNetwork(*network, *builderConfig);
 
+    printf("Engine created\n");
+
     // memory leak w/o this :/
-    delete builder;
-    delete network;
     delete builderConfig;
+    delete parser;
+    delete network;
     delete builder;
 
     serialized_engine = serializedModel->data();
@@ -189,7 +191,7 @@ int main(int argc, char **argv)
     std::unique_ptr<IRuntime> runtime = std::unique_ptr<IRuntime>(createInferRuntime(logger));
 
     // load the model and context
-    printf("Loading engine\n");
+    printf("Deserializing engine\n");
     std::unique_ptr<ICudaEngine> engine = std::unique_ptr<ICudaEngine>(runtime->deserializeCudaEngine(engine_data, engine_size));
     std::unique_ptr<IExecutionContext> context = std::unique_ptr<IExecutionContext>(engine->createExecutionContext());
 
