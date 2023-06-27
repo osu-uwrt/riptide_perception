@@ -106,25 +106,25 @@ void postprocessResults(float *gpu_output, const nvinfer1::Dims &dims)
     }
 }
 
-size_t loadEngine(std::string engine_file, void* serialized_engine){
-    std::ifstream file(engine_file.c_str(), std::ios::binary);
-    if (!file.good())
-    {
-        throw std::runtime_error("Failed to open file: " + engine_file);
-    }
+// size_t loadEngine(std::string engine_file, void* serialized_engine){
+//     std::ifstream file(engine_file.c_str(), std::ios::binary);
+//     if (!file.good())
+//     {
+//         throw std::runtime_error("Failed to open file: " + engine_file);
+//     }
 
-    // get the size of the file and seek back
-    size_t size = 0;
-    file.seekg(0, file.end);
-    size = file.tellg();
-    file.seekg(0, file.beg);
+//     // get the size of the file and seek back
+//     size_t size = 0;
+//     file.seekg(0, file.end);
+//     size = file.tellg();
+//     file.seekg(0, file.beg);
 
-    serialized_engine = new char[size];
-    file.read(serialized_engine, size);
-    file.close();
+//     serialized_engine = new char[size];
+//     file.read(serialized_engine, size);
+//     file.close();
 
-    return size;
-}
+//     return size;
+// }
 
 size_t createEngine(std::string onnx_file, void* serialized_engine){
     //define trt flags for network
