@@ -73,7 +73,7 @@ private:
     // post processor info
     int num_classes = 0;
     bool mutli_label = false;
-    float iou_min_thresh = 0.4;
+    float iou_thresh = 0.4; // upper bound for iou
     float min_conf = 0.015;
 
 public:
@@ -204,21 +204,28 @@ public:
         }
     }
 
-    void nonMaximumSuppression(const cv::Mat &out_tensor, std::vector<YoloDetect> &detections)
+    /**
+     * Function assumes detections is empty
+     */
+    void nonMaximumSuppression(const cv::Mat &out_tensor, std::vector<std::vector<YoloDetect>> &classed_detections)
     {
         // create a vector for the hypotheses
-        std::vector<YoloDetect> raw_detections;
-
-        // WARNING THIS IS AN ARBITRARY ASSUMPTION!!!!!!
-        // to speed things up, I assume that at most 20% of the detections availaible will be emplaced into the detections
-        // this will only speed things up IF less than 20% of the detections have a confidence above min_conf
-        // raw_detections.reserve(out_tensor.rows * 0.40);
-        raw_detections.reserve(out_tensor.rows);
+        std::vector<std::vector<YoloDetect>> raw_detections;
 
         // create a variable used for finding the class
         int class_id[2];
 
         const int cols = out_tensor.cols;
+
+        raw_detections.reserve(cols - 5);
+        for (int i = 0; i < cols - 5; i++)
+        {
+            raw_detections.emplace_back(std::vector<YoloDetect>());
+
+            // WARNING THIS IS AN ARBITRARY ASSUMPTION!!!!!!
+            // to save on memory, I assume that at most 50% of the detections availaible will be a single class
+            // raw_detections.at(i).reserve(out_tensor.rows * 0.5);
+        }
 
         // work each hypothesis
         for (int row_idx = 0; row_idx < out_tensor.rows; row_idx++)
@@ -227,8 +234,6 @@ public:
             const float conf = out_tensor.at<float>(row_idx, 4);
             if (conf > min_conf)
             {
-
-                // auto init_time = std::chrono::steady_clock::now();
 
                 // make sure that the conf never exceeds 1.0
                 assert(conf <= 1.0f);
@@ -240,7 +245,12 @@ public:
                 const int width = out_tensor.at<float>(row_idx, 3);
 
                 // find the argmax of this detection
+                // watch the pointer arith with minMaxIdx
                 cv::Mat class_hyps = out_tensor(cv::Range(row_idx, row_idx + 1), cv::Range(5, cols));
+
+                // should always be fixed size
+                assert(class_hyps.rows == 1 && class_hyps.cols == cols - 5 && class_hyps.channels() == 1);
+
                 cv::minMaxIdx(class_hyps, NULL, NULL, NULL, (int *)class_id);
 
                 // TODO rescale the coords back to the og image
@@ -248,49 +258,58 @@ public:
                 // build the detection
                 YoloDetect detection = {
                     cv::Rect(),
-                    class_id[0],
+                    class_id[1],
                     conf};
 
-                raw_detections.emplace_back(detection);
+                // printf("0: %i, 1: %i\n", class_id[0], class_id[1]);
 
-                // printf("hyp mat size -> rows: %i, cols: %i\ndetection -> cx: %i, cy: %i h: %i, w: %i\n",
-                //        class_hyp.rows, class_hyp.cols, center_x, center_y, height, width);
-
-                // auto diff = std::chrono::steady_clock::now() - init_time;
-                // printf("reg det in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
+                raw_detections.at(class_id[1]).emplace_back(detection);
             }
         }
 
-        printf("sorting raw detections\n");
+        classed_detections.reserve(cols - 5);
+        for (int i = 0; i < cols - 5; i++)
+        {
+            classed_detections.emplace_back(std::vector<YoloDetect>());
+        }
 
-        // sort the raw detections vector by confidence
-        std::sort(raw_detections.begin(), raw_detections.end(), std::greater<YoloDetect>());
+        // run IOU top down on the raw detections and preserve those that dont overlap by a certain threshold
+        for (int class_idx = 0; class_idx < raw_detections.size(); class_idx++)
+        {
 
-        // clear bboxes to prep for injection
-        detections.clear();
+            auto iou_class_vector = raw_detections.at(class_idx);
 
-        // for (int c = 0; c < ObjectClass::NUM_CLASS; ++c)
-        // {
+            if (iou_class_vector.size() > 0)
+            {
+                // sort the raw detections vector by confidence descending
+                std::sort(iou_class_vector.begin(), iou_class_vector.end(), std::greater<YoloDetect>());
 
-        //     std::sort(bboxes[c].begin(), bboxes[c].end(), BoundingBox::sortComparisonFunction);
-        //     const size_t bboxes_size = bboxes[c].size();
-        //     size_t valid_count = 0;
+                // automatically take the first detection
+                classed_detections.at(class_idx).emplace_back(iou_class_vector.at(0));
 
-        //     for (size_t i = 0; i < bboxes_size && valid_count < MAX_OUTPUT_BBOX_COUNT; ++i)
-        //     {
-        //         if (!bboxes[c][i].valid_)
-        //         {
-        //             continue;
-        //         }
+                for (int det_idx = 1; det_idx < iou_class_vector.size(); det_idx++)
+                {
+                    bool low_overlap = true;
 
-        //         for (size_t j = i + 1; j < bboxes_size; ++j)
-        //         {
-        //             bboxes[c][i].compareWith(bboxes[c][j], NMS_THRESH);
-        //         }
+                    for (auto const passed_detections : classed_detections.at(class_idx))
+                    {
+                        cv::Rect intersection = iou_class_vector.at(det_idx).bounds & iou_class_vector.at(det_idx).bounds;
+                        cv::Rect union_rect = iou_class_vector.at(det_idx).bounds | iou_class_vector.at(det_idx).bounds;
 
-        //         ++valid_count;
-        //     }
-        // }
+                        // want to keep low options and get rid of high IOU
+                        if (intersection.area() / union_rect.area() > iou_thresh)
+                        {
+                            low_overlap &= false;
+                        }
+                    }
+
+                    if (low_overlap)
+                    {
+                        classed_detections.at(class_idx).emplace_back(iou_class_vector.at(det_idx));
+                    }
+                }
+            }
+        }
     }
 
     void postProcessResults(std::vector<YoloDetect> &detections)
@@ -305,8 +324,19 @@ public:
         cv::Mat cpu_tensor;
         gpu_tensor.download(cpu_tensor);
 
+        std::vector<std::vector<YoloDetect>> raw_detections;
+
         // run NMS to get the true bboxes
-        nonMaximumSuppression(cpu_tensor, detections);
+        nonMaximumSuppression(cpu_tensor, raw_detections);
+
+        // need to empty the results
+        detections.clear();
+
+        // flatten detections with low copy
+        for (auto const &class_vector : raw_detections)
+        {
+            detections.insert(detections.end(), class_vector.begin(), class_vector.end());
+        }
     }
 
     ~YoloInfer()
@@ -347,6 +377,13 @@ int main(int argc, char **argv)
         // get the results
         std::vector<YoloDetect> detections;
         infer.postProcessResults(detections);
+
+        printf("Input image returned %li detections\n", detections.size());
+
+        for (int i = 0; i < detections.size(); i++)
+        {
+            printf("\t det %i -> class %i \n", i, detections.at(i).class_id);
+        }
 
         auto diff = std::chrono::steady_clock::now() - init_time;
         printf("Input image inferred in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
