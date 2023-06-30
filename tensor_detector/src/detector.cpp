@@ -91,7 +91,13 @@ public:
             auto binding_size = getSizeByDim(engine_ptr->getBindingDimensions(i)) * sizeof(float);
             auto cuda_err = cudaMalloc(&buffer_ptr, binding_size);
             if (cuda_err != cudaSuccess)
-                throw std::runtime_error(std::string("GPU malloc failed while reserving memeory buffers for NN I/O ") + cudaGetErrorString(cuda_err));
+            {
+                for (auto ptr : ordered_buffers)
+                    cudaFree(ptr);
+                ordered_buffers.clear();
+                throw std::runtime_error(std::string("GPU malloc failed while reserving memeory buffers for NN I/O ") +
+                                         cudaGetErrorString(cuda_err));
+            }
 
             // printf("%s nominal binding size %li\n", engine_ptr->getBindingName(i), binding_size);
 
@@ -112,9 +118,20 @@ public:
 
         // Verify we have at least 1 input and 1 output otherwise we have an issue
         if (input_dims == nullptr)
+        {
+            for (auto ptr : ordered_buffers)
+                cudaFree(ptr);
+            ordered_buffers.clear();
             throw std::runtime_error("Model did not contain any inputs when loaded");
+        }
+
         else if (output_dims.empty())
+        {
+            for (auto ptr : ordered_buffers)
+                cudaFree(ptr);
+            ordered_buffers.clear();
             throw std::runtime_error("Model did not contain any outputs when loaded");
+        }
     }
 
     void loadNextImage(const cv::cuda::GpuMat &gpu_frame)
@@ -159,12 +176,18 @@ public:
     {
         if (!context_ptr->executeV2(ordered_buffers.data()))
         {
+            for (auto ptr : ordered_buffers)
+                cudaFree(ptr);
+            ordered_buffers.clear();
             throw std::runtime_error("NN inference failed :(");
         }
     }
 
     ~YoloInfer()
     {
+        for (auto ptr : ordered_buffers)
+            cudaFree(ptr);
+        ordered_buffers.clear();
     }
 };
 
