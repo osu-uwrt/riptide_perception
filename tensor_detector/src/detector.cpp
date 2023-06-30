@@ -44,12 +44,14 @@ struct YoloDetect
 };
 
 // comparison operator for sort
-bool operator<(const YoloDetect & a, const YoloDetect & b){
+bool operator<(const YoloDetect &a, const YoloDetect &b)
+{
     return a.conf < b.conf;
 }
 
 // comparison operator for sort
-bool operator>(const YoloDetect & a, const YoloDetect & b){
+bool operator>(const YoloDetect &a, const YoloDetect &b)
+{
     return a.conf > b.conf;
 }
 
@@ -72,7 +74,7 @@ private:
     int num_classes = 0;
     bool mutli_label = false;
     float iou_min_thresh = 0.4;
-    float min_conf = 0.3;
+    float min_conf = 0.015;
 
 public:
     /**
@@ -206,57 +208,64 @@ public:
     {
         // create a vector for the hypotheses
         std::vector<YoloDetect> raw_detections;
-        raw_detections.reserve(out_tensor.rows);
+
+        // WARNING THIS IS AN ARBITRARY ASSUMPTION!!!!!!
+        // to speed things up, I assume that at most 20% of the detections availaible will be emplaced into the detections
+        // this will only speed things up IF less than 20% of the detections have a confidence above min_conf
+        raw_detections.reserve(out_tensor.rows * 0.40);
 
         // create a variable used for finding the class
         int class_id;
         bool found = false;
+
+        printf("Iterating raw detections\n");
 
         // work each hypothesis
         auto cols = out_tensor.cols;
         for (int row = 0; row < out_tensor.rows; row++)
         {
             // order in the tensor is center_x, center_y, width, height, conf, class 1, class 2, ..., class n
-            // the type casting here is intentional to narrow back to an int
-            const int center_x = out_tensor.at<float>(row, 0);
-            const int center_y = out_tensor.at<float>(row, 1);
-            const int height = out_tensor.at<float>(row, 2);
-            const int width = out_tensor.at<float>(row, 3);
             const float conf = out_tensor.at<float>(row, 4);
             if (conf > min_conf)
             {
+                // make sure that the conf never exceeds 1.0
                 assert(conf <= 1.0f);
+
+                // the type casting here is intentional to narrow back to an int
+                const int center_x = out_tensor.at<float>(row, 0);
+                const int center_y = out_tensor.at<float>(row, 1);
+                const int height = out_tensor.at<float>(row, 2);
+                const int width = out_tensor.at<float>(row, 3);
 
                 // find the argmax of this detection
                 cv::Mat class_hyp = out_tensor(cv::Range(row, row + 1), cv::Range(5, cols));
                 cv::minMaxIdx(class_hyp, NULL, NULL, NULL, &class_id);
 
-                // rescale the coords back to the og image
-
+                // TODO rescale the coords back to the og image
 
                 // build the detection
                 YoloDetect detection = {
                     cv::Rect(),
                     class_id,
-                    conf
-                };
-                
+                    conf};
+
                 raw_detections.emplace_back(detection);
 
                 if (!found)
                 {
 
-                    printf("hyp mat size -> rows: %i, cols: %i\ndetection -> cx: %i, cy: %i h: %i, w: %i\n", 
-                        class_hyp.rows, class_hyp.cols, center_x, center_y, height, width);
+                    printf("hyp mat size -> rows: %i, cols: %i\ndetection -> cx: %i, cy: %i h: %i, w: %i\n",
+                           class_hyp.rows, class_hyp.cols, center_x, center_y, height, width);
 
                     found = true;
                 }
             }
         }
 
+        printf("sorting raw detections\n");
+
         // sort the raw detections vector by confidence
         std::sort(raw_detections.begin(), raw_detections.end(), std::greater<YoloDetect>());
-
 
         // clear bboxes to prep for injection
         detections.clear();
@@ -312,7 +321,7 @@ public:
 int main(int argc, char **argv)
 {
     // model info
-    std::string input_file = "durr.png";
+    std::string input_file = "durr_3.png";
     std::string engine_file = "yolo.engine";
 
     // Load the inference engine and context
