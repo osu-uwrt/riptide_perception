@@ -13,6 +13,7 @@
 #include <fstream>
 #include <memory>
 #include <numeric>
+#include <chrono>
 
 class Logger : public nvinfer1::ILogger
 {
@@ -92,7 +93,7 @@ public:
             if (cuda_err != cudaSuccess)
                 throw std::runtime_error(std::string("GPU malloc failed while reserving memeory buffers for NN I/O ") + cudaGetErrorString(cuda_err));
 
-            printf("%s nominal binding size %li\n", engine_ptr->getBindingName(i), binding_size);
+            // printf("%s nominal binding size %li\n", engine_ptr->getBindingName(i), binding_size);
 
             // check to see if we have an input buffer
             if (engine_ptr->bindingIsInput(i))
@@ -110,50 +111,48 @@ public:
         }
 
         // Verify we have at least 1 input and 1 output otherwise we have an issue
-        if (!input_dims)
+        if (input_dims == nullptr)
             throw std::runtime_error("Model did not contain any inputs when loaded");
         else if (output_dims.empty())
             throw std::runtime_error("Model did not contain any outputs when loaded");
     }
 
-    void loadNextImage(const cv::Mat &input_image)
+    void loadNextImage(const cv::cuda::GpuMat &gpu_frame)
     {
-        // Take the cv image and CUDA load it to GPU
-        cv::cuda::GpuMat gpu_frame;
-        gpu_frame.upload(input_image);
-
-        printf("Input frame copied to GPU memory\n");
-
         // dims is ordered # channels, width, height
         // should only be one input at index 0
         auto final_size = cv::Size(input_dims->d[2], input_dims->d[1]);
 
         // resize the image to match the nn input tensor size
         cv::cuda::GpuMat resized;
+        // takes about 67 ms
         cv::cuda::resize(gpu_frame, resized, final_size, 0, 0, cv::INTER_NEAREST);
 
-        printf("Input image underwent resize\n");
+        // printf("Input image underwent resize\n");
 
         // pre-normalize the input image
         cv::cuda::GpuMat flt_image;
         resized.convertTo(flt_image, CV_32FC3, 1.f / 255.f);
+
+        // expensive but idk why -- about 231 ms right now
         cv::cuda::subtract(flt_image, cv::Scalar(0.485f, 0.456f, 0.406f), flt_image, cv::noArray(), -1);
+
+        // takes about 3 ms
         cv::cuda::divide(flt_image, cv::Scalar(0.229f, 0.224f, 0.225f), flt_image, 1, -1);
 
-        printf("Input image normalized\n");
+        // printf("Input image normalized\n");
 
         // sync form of the copy operation in a sneaky manner
         std::vector<cv::cuda::GpuMat> chw;
 
         // setup a list of gpu mats pointing into our input address space
-        for (size_t i = 0; i < flt_image.channels(); ++i)
+        for (int i = 0; i < flt_image.channels(); ++i)
         {
             chw.emplace_back(cv::cuda::GpuMat(final_size, CV_32FC1, input_buffer + i * flt_image.rows * flt_image.step));
         }
 
         // copy the data from the normalized image to the input tensors
         cv::cuda::split(flt_image, chw);
-
     }
 
     void inferLoadedImg()
@@ -171,11 +170,6 @@ public:
 
 int main(int argc, char **argv)
 {
-    (void)argc;
-    (void)argv;
-
-    printf("hello world tensor_detector package\n");
-
     // model info
     std::string input_file = "durr.png";
     std::string engine_file = "yolo.engine";
@@ -187,15 +181,31 @@ int main(int argc, char **argv)
 
     cv::Mat frame = cv::imread(input_file);
 
-    printf("Input image opened\n");
+    // Take the cv image and CUDA load it to GPU
+    cv::cuda::GpuMat gpu_frame;
+    gpu_frame.upload(frame);
 
-    infer.loadNextImage(frame);
+    auto init_time = std::chrono::steady_clock::now();
 
-    printf("Input image loaded\n");
+    // pre-load and modify the image to fit in the input tensor
+    infer.loadNextImage(gpu_frame);
 
+    // run the inference cycle on the new input
     infer.inferLoadedImg();
 
-    printf("Input image inferred\n");
+    auto end_time = std::chrono::steady_clock::now();
+
+    auto diff = end_time - init_time;
+    printf("Input image inferred in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
 
     return 0;
 }
+
+/*
+
+auto init_time = std::chrono::steady_clock::now();
+
+auto diff = std::chrono::steady_clock::now() - init_time;
+printf("Filter processed in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
+
+*/
