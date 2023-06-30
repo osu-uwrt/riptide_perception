@@ -43,12 +43,12 @@ private:
     std::unique_ptr<nvinfer1::IExecutionContext> context_ptr;
 
     // I/O bindings for the network
-    std::unique_ptr<nvinfer1::Dims> input_dims;  // we expect only one input
-    std::vector<nvinfer1::Dims> output_dims;     // and four outputs
+    std::unique_ptr<nvinfer1::Dims> input_dims; // we expect only one input
+    std::vector<nvinfer1::Dims> output_dims;    // and four outputs
 
-    std::unique_ptr<void *> input_buffer;       // should only be one input buffer too
-    std::vector<void *> output_buffers;         // should be four output buffers too
-    std::vector<void *> ordered_buffers;        // all the buffers in order that they need to be passed in
+    void *input_buffer = nullptr;        // should only be one input buffer too
+    std::vector<void *> output_buffers;  // should be four output buffers too
+    std::vector<void *> ordered_buffers; // all the buffers in order that they need to be passed in
 
 public:
     /**
@@ -86,16 +86,22 @@ public:
         for (int i = 0; i < engine_ptr->getNbBindings(); i++)
         {
             // reserve GPU memory for the input and mark it
-            void** buffer_ptr = nullptr;
+            void *buffer_ptr = nullptr;
             auto binding_size = getSizeByDim(engine_ptr->getBindingDimensions(i)) * sizeof(float);
-            if(cudaMalloc(buffer_ptr, binding_size) != cudaSuccess)
-                throw std::runtime_error("GPU malloc failed while reserving memeory buffers for NN I/O " + std::to_string(binding_size));
+            auto cuda_err = cudaMalloc(&buffer_ptr, binding_size);
+            if (cuda_err != cudaSuccess)
+                throw std::runtime_error(std::string("GPU malloc failed while reserving memeory buffers for NN I/O ") + cudaGetErrorString(cuda_err));
+
+            printf("%s nominal binding size %li\n", engine_ptr->getBindingName(i), binding_size);
 
             // check to see if we have an input buffer
-            if(engine_ptr->bindingIsInput(i)){
-                input_buffer.reset(buffer_ptr);
+            if (engine_ptr->bindingIsInput(i))
+            {
+                input_buffer = buffer_ptr;
                 input_dims = std::make_unique<nvinfer1::Dims>(engine_ptr->getBindingDimensions(i));
-            } else {
+            }
+            else
+            {
                 output_buffers.push_back(buffer_ptr);
                 output_dims.push_back(engine_ptr->getBindingDimensions(i));
             }
@@ -136,14 +142,24 @@ public:
 
         printf("Input image normalized\n");
 
-        // prepare the memcpy on the gpu so it doesnt need to go back to the CPU
-        auto copy_err = cudaMemcpyAsync(input_buffer.get(), flt_image.ptr<void*>(), flt_image.channels() * flt_image.rows * flt_image.step, cudaMemcpyDeviceToDevice, 0);
-        if(copy_err != cudaSuccess)
-            throw std::runtime_error(std::string("GPU copy operation failed on NN input ") + cudaGetErrorString(copy_err));
+        // sync form of the copy operation in a sneaky manner
+        std::vector<cv::cuda::GpuMat> chw;
+
+        // setup a list of gpu mats pointing into our input address space
+        for (size_t i = 0; i < flt_image.channels(); ++i)
+        {
+            chw.emplace_back(cv::cuda::GpuMat(final_size, CV_32FC1, input_buffer + i * flt_image.rows * flt_image.step));
+        }
+
+        // copy the data from the normalized image to the input tensors
+        cv::cuda::split(flt_image, chw);
+
     }
 
-    void inferLoadedImg(){
-        if(! context_ptr->executeV2(ordered_buffers.data())){
+    void inferLoadedImg()
+    {
+        if (!context_ptr->executeV2(ordered_buffers.data()))
+        {
             throw std::runtime_error("NN inference failed :(");
         }
     }
