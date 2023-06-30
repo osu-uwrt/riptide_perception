@@ -35,33 +35,20 @@ size_t getSizeByDim(const nvinfer1::Dims &dims)
     return size;
 }
 
-struct InferDeleter
-{
-    template <typename T>
-    void operator()(T *obj) const
-    {
-        if (obj)
-        {
-            obj->destroy();
-        }
-    }
-};
-
-template <typename T>
-using UniquePtr = std::unique_ptr<T, InferDeleter>;
-
 class YoloInfer
 {
 private:
     // TRT runtime system data
-    UniquePtr<nvinfer1::ICudaEngine> engine_ptr;
-    UniquePtr<nvinfer1::IExecutionContext> context_ptr;
+    std::unique_ptr<nvinfer1::ICudaEngine> engine_ptr;
+    std::unique_ptr<nvinfer1::IExecutionContext> context_ptr;
 
     // I/O bindings for the network
-    std::vector<nvinfer1::Dims> input_dims;  // we expect only one input
-    std::vector<void *> input_buffers;       // should only be one input buffer too
-    std::vector<nvinfer1::Dims> output_dims; // and four outputs
-    std::vector<void *> output_buffers;      // should be four output buffers too
+    std::unique_ptr<nvinfer1::Dims> input_dims;  // we expect only one input
+    std::vector<nvinfer1::Dims> output_dims;     // and four outputs
+
+    std::unique_ptr<void *> input_buffer;       // should only be one input buffer too
+    std::vector<void *> output_buffers;         // should be four output buffers too
+    std::vector<void *> ordered_buffers;        // all the buffers in order that they need to be passed in
 
 public:
     /**
@@ -87,8 +74,8 @@ public:
         engineFile.read(engineData.data(), engineSize);
 
         // Try create the TRT Runtime and load the engine
-        UniquePtr<nvinfer1::IRuntime> runtime{nvinfer1::createInferRuntime(logger)};
-        engine_ptr.reset(runtime->deserializeCudaEngine(engineData.data(), engineSize, nullptr));
+        std::unique_ptr<nvinfer1::IRuntime> runtime{nvinfer1::createInferRuntime(logger)};
+        engine_ptr.reset(runtime->deserializeCudaEngine(engineData.data(), engineSize));
         assert(engine_ptr.get() != nullptr);
 
         // load the execution context
@@ -96,23 +83,28 @@ public:
         assert(context_ptr.get() != nullptr);
 
         // prepare I/O Bindings
-        for (int i = 0; i < engine_ptr->getNbBindings(); ++i)
+        for (int i = 0; i < engine_ptr->getNbBindings(); i++)
         {
             // reserve GPU memory for the input and mark it
-            void** buffer_ptr;
+            void** buffer_ptr = nullptr;
             auto binding_size = getSizeByDim(engine_ptr->getBindingDimensions(i)) * sizeof(float);
             if(cudaMalloc(buffer_ptr, binding_size) != cudaSuccess)
                 throw std::runtime_error("GPU malloc failed while reserving memeory buffers for NN I/O " + std::to_string(binding_size));
 
-            // put the buffer ptr onto the right vector
-            (engine_ptr->bindingIsInput(i) ? input_buffers : output_buffers).push_back(buffer_ptr);
+            // check to see if we have an input buffer
+            if(engine_ptr->bindingIsInput(i)){
+                input_buffer.reset(buffer_ptr);
+                input_dims = std::make_unique<nvinfer1::Dims>(engine_ptr->getBindingDimensions(i));
+            } else {
+                output_buffers.push_back(buffer_ptr);
+                output_dims.push_back(engine_ptr->getBindingDimensions(i));
+            }
 
-            // load the binding into the corresponding list
-            (engine_ptr->bindingIsInput(i) ? input_dims : output_dims).push_back(engine_ptr->getBindingDimensions(i));
+            ordered_buffers.push_back(buffer_ptr);
         }
 
         // Verify we have at least 1 input and 1 output otherwise we have an issue
-        if (input_dims.empty())
+        if (!input_dims)
             throw std::runtime_error("Model did not contain any inputs when loaded");
         else if (output_dims.empty())
             throw std::runtime_error("Model did not contain any outputs when loaded");
@@ -128,7 +120,7 @@ public:
 
         // dims is ordered # channels, width, height
         // should only be one input at index 0
-        auto final_size = cv::Size(input_dims.at(0).d[2], input_dims.at(0).d[1]);
+        auto final_size = cv::Size(input_dims->d[2], input_dims->d[1]);
 
         // resize the image to match the nn input tensor size
         cv::cuda::GpuMat resized;
@@ -145,13 +137,15 @@ public:
         printf("Input image normalized\n");
 
         // prepare the memcpy on the gpu so it doesnt need to go back to the CPU
-        auto copy_err = cudaMemcpyAsync(input_buffers.at(0), flt_image.ptr<void*>(), flt_image.channels() * flt_image.rows * flt_image.step, cudaMemcpyDeviceToDevice);
+        auto copy_err = cudaMemcpyAsync(input_buffer.get(), flt_image.ptr<void*>(), flt_image.channels() * flt_image.rows * flt_image.step, cudaMemcpyDeviceToDevice, 0);
         if(copy_err != cudaSuccess)
             throw std::runtime_error(std::string("GPU copy operation failed on NN input ") + cudaGetErrorString(copy_err));
     }
 
     void inferLoadedImg(){
-
+        if(! context_ptr->executeV2(ordered_buffers.data())){
+            throw std::runtime_error("NN inference failed :(");
+        }
     }
 
     ~YoloInfer()
@@ -182,6 +176,10 @@ int main(int argc, char **argv)
     infer.loadNextImage(frame);
 
     printf("Input image loaded\n");
+
+    infer.inferLoadedImg();
+
+    printf("Input image inferred\n");
 
     return 0;
 }
