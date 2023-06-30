@@ -378,15 +378,14 @@ int main(int argc, char **argv)
         std::vector<YoloDetect> detections;
         infer.postProcessResults(detections);
 
-        printf("Input image returned %li detections\n", detections.size());
+        auto diff = std::chrono::steady_clock::now() - init_time;
+        printf("Input image inferred in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
+        printf("Input image has %li detections\n", detections.size());
 
         for (int i = 0; i < detections.size(); i++)
         {
             printf("\t det %i -> class %i \n", i, detections.at(i).class_id);
         }
-
-        auto diff = std::chrono::steady_clock::now() - init_time;
-        printf("Input image inferred in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
     }
 
     return 0;
