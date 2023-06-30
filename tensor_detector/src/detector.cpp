@@ -212,53 +212,52 @@ public:
         // WARNING THIS IS AN ARBITRARY ASSUMPTION!!!!!!
         // to speed things up, I assume that at most 20% of the detections availaible will be emplaced into the detections
         // this will only speed things up IF less than 20% of the detections have a confidence above min_conf
-        raw_detections.reserve(out_tensor.rows * 0.40);
+        // raw_detections.reserve(out_tensor.rows * 0.40);
+        raw_detections.reserve(out_tensor.rows);
 
         // create a variable used for finding the class
-        int class_id;
-        bool found = false;
+        int class_id[2];
 
-        printf("Iterating raw detections\n");
+        const int cols = out_tensor.cols;
 
         // work each hypothesis
-        auto cols = out_tensor.cols;
-        for (int row = 0; row < out_tensor.rows; row++)
+        for (int row_idx = 0; row_idx < out_tensor.rows; row_idx++)
         {
             // order in the tensor is center_x, center_y, width, height, conf, class 1, class 2, ..., class n
-            const float conf = out_tensor.at<float>(row, 4);
+            const float conf = out_tensor.at<float>(row_idx, 4);
             if (conf > min_conf)
             {
+
+                // auto init_time = std::chrono::steady_clock::now();
+
                 // make sure that the conf never exceeds 1.0
                 assert(conf <= 1.0f);
 
                 // the type casting here is intentional to narrow back to an int
-                const int center_x = out_tensor.at<float>(row, 0);
-                const int center_y = out_tensor.at<float>(row, 1);
-                const int height = out_tensor.at<float>(row, 2);
-                const int width = out_tensor.at<float>(row, 3);
+                const int center_x = out_tensor.at<float>(row_idx, 0);
+                const int center_y = out_tensor.at<float>(row_idx, 1);
+                const int height = out_tensor.at<float>(row_idx, 2);
+                const int width = out_tensor.at<float>(row_idx, 3);
 
                 // find the argmax of this detection
-                cv::Mat class_hyp = out_tensor(cv::Range(row, row + 1), cv::Range(5, cols));
-                cv::minMaxIdx(class_hyp, NULL, NULL, NULL, &class_id);
+                cv::Mat class_hyps = out_tensor(cv::Range(row_idx, row_idx + 1), cv::Range(5, cols));
+                cv::minMaxIdx(class_hyps, NULL, NULL, NULL, (int *)class_id);
 
                 // TODO rescale the coords back to the og image
 
                 // build the detection
                 YoloDetect detection = {
                     cv::Rect(),
-                    class_id,
+                    class_id[0],
                     conf};
 
                 raw_detections.emplace_back(detection);
 
-                if (!found)
-                {
+                // printf("hyp mat size -> rows: %i, cols: %i\ndetection -> cx: %i, cy: %i h: %i, w: %i\n",
+                //        class_hyp.rows, class_hyp.cols, center_x, center_y, height, width);
 
-                    printf("hyp mat size -> rows: %i, cols: %i\ndetection -> cx: %i, cy: %i h: %i, w: %i\n",
-                           class_hyp.rows, class_hyp.cols, center_x, center_y, height, width);
-
-                    found = true;
-                }
+                // auto diff = std::chrono::steady_clock::now() - init_time;
+                // printf("reg det in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
             }
         }
 
