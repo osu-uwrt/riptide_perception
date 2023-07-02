@@ -116,6 +116,14 @@ def generate_launch_description():
                         0.0,
                         0.0
                     ]},
+                    {"transform_locks": [
+                        False,      # unlock x
+                        False,      # unlock y
+                        True,       # lock z
+                        True,       # lock roll
+                        True,       # lock pitch
+                        False       # unlock yaw
+                    ]}
                 ]
             ),
 
