@@ -116,6 +116,14 @@ def generate_launch_description():
                         0.0,
                         0.0
                     ]},
+                    {"transform_locks": [
+                        False,
+                        False,
+                        True,
+                        True,
+                        True,
+                        False
+                    ]}
                 ]
             ),
 
