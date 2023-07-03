@@ -82,9 +82,9 @@ class DummyDetectionNode(Node):
         name = self.get_namespace() + "/"
         robot = name[1 : name.find('/', 1)] #start substr at 1 to omit leading /
                 
-        cameraFrameName = f"{robot}/{self.cameraFrame}"
+        # cameraFrameName = f"{self.cameraFrame}"
         try:
-            robotTransform = self.tfBuffer.lookup_transform("map", cameraFrameName, rclpy.time.Time())
+            robotTransform = self.tfBuffer.lookup_transform("map", self.cameraFrame, rclpy.time.Time())
             dX = objectPos[0] - robotTransform.transform.translation.x
             dY = objectPos[1] - robotTransform.transform.translation.y
             dZ = objectPos[2] - robotTransform.transform.translation.z
@@ -99,23 +99,22 @@ class DummyDetectionNode(Node):
                                   robotTransform.transform.rotation.z])
             
             horizHeadingToObj = atan2(dY, dX)
-            hAngleDeg = abs(y - horizHeadingToObj) * 180.0 / pi
-            hAngleDeg += 360
-            hAngleDeg %= 360
+            horizHeadingToObj *= 180.0 / pi
+            y *= 180.0 / pi
+            hAngleDeg = y - horizHeadingToObj
+            hAngleDeg = (hAngleDeg + 180) % 360 - 180
             
             vertHeadingToObj = atan2(dZ, dX)
-            vAngleDeg = abs(p - vertHeadingToObj) * 180.0 / pi
-            vAngleDeg += 360
-            vAngleDeg %= 360
-            
-            if abs(vAngleDeg) > 90:
-                vAngleDeg -= 180
-            
+            vertHeadingToObj *= 180.0 / pi
+            p *= 180.0 / pi
+            vAngleDeg = p - vertHeadingToObj
+            vAngleDeg = (vAngleDeg + 180) % 360 - 180
+
             self.get_logger().info(f"dist: {dist}, hangledeg: {hAngleDeg}, vangledeg: {vAngleDeg}")
                         
-            return dist < maxDist and hAngleDeg < self.cameraHFov and vAngleDeg < self.cameraVFov
+            return dist < maxDist and abs(hAngleDeg) < self.cameraHFov and abs(vAngleDeg) < self.cameraVFov
         except TransformException as ex:
-            self.get_logger().warn(f"Could not look up transform from {cameraFrameName} to world! {ex}", throttle_duration_sec = 1, skip_first = True)
+            self.get_logger().warn(f"Could not look up transform from {self.cameraFrame} to world! {ex}")
             return False
           
         

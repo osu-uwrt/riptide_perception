@@ -38,7 +38,7 @@
           z: -1.0
           yaw: 180.0
       
-      
+
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
     k_value: 0.01   # Covariance step size (< 1.0) applied per detection
@@ -47,6 +47,6 @@
     # relative position filter parameters
     angle_cutoff: 15.0
     distance_limit: 10.0
-    confidence_cutoff: .7
+    confidence_cutoff: 0.7
         
   
