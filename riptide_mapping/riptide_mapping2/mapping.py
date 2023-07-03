@@ -20,18 +20,9 @@ DEG_TO_RAD = (pi/180)
 
 #Used to translate between DOPE ids and names of objects
 object_ids = {
-    0 : "BinBarrel",
-    1 : "BinPhone", 
-    2 : "TommyGun", 
-    3 : "gman", 
-    4 : "axe", 
-    5 : "torpedoGman", 
-    6 : "badge",
-    7 : "torpedoBootlegger",
-    8 : "bootlegger",
-    9 : "cash",
-    10: "binBarrel",
-    11: "binPhone"
+    0 : "gate",
+    1 : "earth", 
+    2 : "buoy"
 }
 
 objects = {}
@@ -76,6 +67,7 @@ class MappingNode(Node):
             self.declare_parameters(
                 namespace='',
                 parameters=[
+                    ('init_data.{}.parent'.format(object), "map"),
                     ('init_data.{}.pose.x'.format(object), 0.0),
                     ('init_data.{}.pose.y'.format(object), 0.0),
                     ('init_data.{}.pose.z'.format(object), 0.0),
@@ -110,7 +102,6 @@ class MappingNode(Node):
             if not objects[objectName]["pose"] is None:
                 # Publish that object's data out 
                 output_pose = objects[objectName]["pose"].getPoseEstim()
-                output_pose.header.frame_id = self.mapFrame
                 objects[objectName]["publisher"].publish(output_pose)
 
                 # Publish /tf data for the given object 
@@ -121,7 +112,7 @@ class MappingNode(Node):
                 
                 newTf.header.stamp = self.get_clock().now().to_msg()
                 newTf.child_frame_id = objectName + "_frame"
-                newTf.header.frame_id = self.mapFrame
+                newTf.header.frame_id = output_pose.header.frame_id
                 self.tf_brod.sendTransform(newTf)
 
     # This timer will fire 1 second after paramter updates
@@ -138,7 +129,8 @@ class MappingNode(Node):
 
                     # Get pose data from reconfig and update our map accordingly
                     object_pose = PoseWithCovarianceStamped()
-
+                    object_pose.header.frame_id = self.config['init_data.{}.parent'.format(objectName)]
+                    
                     object_pose.pose.pose.position.x = self.config['init_data.{}.pose.x'.format(objectName)]
                     object_pose.pose.pose.position.y = self.config['init_data.{}.pose.y'.format(objectName)]
                     object_pose.pose.pose.position.z = self.config['init_data.{}.pose.z'.format(objectName)]
@@ -199,17 +191,6 @@ class MappingNode(Node):
         # Context: This loop will run <number of different objects DOPE thinks it sees on screen> times
         # `detection` is of type Detection3D (http://docs.ros.org/en/lunar/api/vision_msgs/html/msg/Detection3D.html)
         for detection in msg.detections:
-            now = Time(seconds=msg.header.stamp.sec, nanoseconds=msg.header.stamp.nanosec)
-            
-            try:
-                trans = self.tf_buffer.lookup_transform(
-                    self.mapFrame,
-                    detection.header.frame_id,
-                    now)
-            except TransformException as ex:
-                self.get_logger().error(f'Could not transform {detection.header.frame_id} to {self.mapFrame}: {ex}')
-                return
-
             # Note that we don't change the first loop to `detection in msg.detections.results` because we want the timestamp from the Detection3D object
             # Context: This loop will run <number of objects DOPE can identify> times 
             # `result` is of type ObjectHypothesisWithPose (http://docs.ros.org/en/lunar/api/vision_msgs/html/msg/ObjectHypothesisWithPose.html)
@@ -233,7 +214,7 @@ class MappingNode(Node):
                 distance = euclideanDist(np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]))
                 dist_lim = self.config["distance_limit"]
                 if(distance > dist_lim):
-                    self.get_logger().warning(f"Rejected {name}: distance {distance}m outside limit of {dist_lim}")
+                    self.get_logger().warning(f"Rejected {name}: distance {distance}m outside limit of {dist_lim}", throttle_duration_sec = 1)
                     continue
 
                 # check the angular difference between the robot and vision detection
@@ -241,30 +222,41 @@ class MappingNode(Node):
                 rpy = quat2euler([pose.pose.orientation.w, pose.pose.orientation.x,
                                              pose.pose.orientation.y, pose.pose.orientation.z])
                 if(abs(rpy[2]) > angleMax):
-                    self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}")
+                    self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}", throttle_duration_sec = 1)
                     continue
 
                 # theshold the confidence of the detection is above the min
                 min = self.config["confidence_cutoff"]
                 if(result.hypothesis.score <  min):
-                    self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}")
+                    self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}", throttle_duration_sec = 1)
                     continue
+                
+                #transform pose into parent frame and feed to estimate
+                parentFrame = objects[name]["pose"].getPoseEstim().header.frame_id
+                try:
+                    trans = self.tf_buffer.lookup_transform(
+                        parentFrame,
+                        detection.header.frame_id,
+                        Time())
+                except TransformException as ex:
+                    self.get_logger().error(f'Could not transform {detection.header.frame_id} to {parentFrame}: {ex}', throttle_duration_sec = 1)
+                    return
 
                 # transform camera pose into map frame
                 convertedPose = do_transform_pose_stamped(pose, trans)
 
                 # Get the reading in the world frame message all together
-                reading_map_frame = PoseWithCovarianceStamped()
-                reading_map_frame.header.stamp = msg.header.stamp
-                reading_map_frame.header.frame_id = self.mapFrame
-                reading_map_frame.pose.pose = convertedPose.pose          
+                reading_parent_frame = PoseWithCovarianceStamped()
+                reading_parent_frame.header.stamp = msg.header.stamp
+                reading_parent_frame.header.frame_id = parentFrame
+                reading_parent_frame.pose.pose = convertedPose.pose          
 
                 # Merge the given position into our position for that object
-                valid, errStr = objects[name]["pose"].addPosEstim(reading_map_frame, result.pose.pose.orientation.w <= 1)
+                valid, errStr = objects[name]["pose"].addPosEstim(reading_parent_frame, result.pose.pose.orientation.w <= 1)
                 if(not valid):
-                    self.get_logger().warning(f"Rejected {name}: {errStr}")
+                    self.get_logger().warning(f"Rejected {name}: {errStr}", throttle_duration_sec = 1)
                 else:
-                    self.get_logger().info(f"FOUND {name}")
+                    self.get_logger().info(f"FOUND {name}", throttle_duration_sec = 1)
             
 
 def main(args=None):

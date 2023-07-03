@@ -1,116 +1,44 @@
 /**/riptide_mapping2:
   ros__parameters:
     init_data:
-      binBarrel:
+      gate:
+        parent: map
         covar:
           x: 1.0
           y: 1.0
+          z: 1.0
           yaw: 1.0
-          z: 1.0
-        pose:
-          x: 1.0
-          y: 1.0
-          yaw: 1.0
-          z: 1.0
-      binPhone:
-        covar:
-          x: 1.0
-          y: 1.0
-          yaw: 1.0
-          z: 1.0
-        pose:
-          x: 0.0
-          y: 2.0
-          yaw: 0.0
-          z: 1.0
-      TommyGun:
-        covar:
-          x: 2.0099095090803996e-06
-          y: 7.273919994657607e-07
-          yaw: 2.2062454055223684e-05
-          z: 2.372778249389679e-06
-        pose:
-          x: -0.5
-          y: 1.0
-          yaw: 0.0
-          z: 1.0
-      gman:
-        covar:
-          x: 1.0 #2.0099095090803996e-06
-          y: 1.0 #7.273919994657607e-07
-          yaw: 1.0 #2.2062454055223684e-05
-          z: 1.0 #2.372778249389679e-06
-        pose:
-          x: 4.5
-          y: 0.0
-          yaw: 180.0
-          z: -2.5
-      bootlegger:
-        covar:
-          x: 1.0 #2.0099095090803996e-06
-          y: 1.0 #7.273919994657607e-07
-          yaw: 1.0 #2.2062454055223684e-05
-          z: 1.0 #2.372778249389679e-06
         pose:
           x: 3.5
           y: 0.0
+          z: -1.75
           yaw: 180.0
-          z: -2.0
-      badge:
-        covar:
-          x: 10.0 #2.0099095090803996e-06
-          y: 10.0 #7.273919994657607e-07
-          yaw: 3.0 #2.2062454055223684e-05
-          z: 10.0 #2.372778249389679e-06
-        pose:
-          x: 4.0
-          y: 0.0
-          yaw: 180.0
-          z: -1.0
-      axe:
+      earth:
+        parent: gate_frame
         covar:
           x: 1.0
           y: 1.0
+          z: 1.0
           yaw: 1.0
-          z: 1.0
         pose:
-          x: 0.0
-          y: 14.0
-          yaw: 0.0
-          z: 1.0
-      torpedoGman:
-        covar:
-          x: 1.0 #2.0099095090803996e-06
-          y: 1.0 #7.273919994657607e-07
-          yaw: 1.0 #2.2062454055223684e-05
-          z: 1.0 #2.372778249389679e-06
-        pose:
-          x: 0.0
-          y: 16.0
-          yaw: 0.0
-          z: 1.0
-      torpedoBootlegger:
-        covar:
-          x: 1.0 #2.0099095090803996e-06
-          y: 1.0 #7.273919994657607e-07
-          yaw: 1.0 #2.2062454055223684e-05
-          z: 1.0 #2.372778249389679e-06
-        pose:
-          x: 0.0
-          y: 18.0
-          yaw: 0.0
-          z: 1.0
-      cash:
-        covar:
-          x: 1.0 #2.0099095090803996e-06
-          y: 1.0 #7.273919994657607e-07
-          yaw: 1.0 #2.2062454055223684e-05
-          z: 1.0 #2.372778249389679e-06
-        pose:
-          x: 15.2
+          x: 0.25
           y: 0.0
+          z: 0.0
+          yaw: 0.0
+      buoy:
+        parent: map
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 5.0
+          y: -3.0
+          z: -1.0
           yaw: 180.0
-          z: -2.5
+      
+
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
     k_value: 0.01   # Covariance step size (< 1.0) applied per detection

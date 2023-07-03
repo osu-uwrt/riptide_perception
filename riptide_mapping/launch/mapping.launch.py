@@ -28,17 +28,17 @@ def generate_launch_description():
         'config.yaml'
     )
 
-    dependentFrames = os.path.join(
-        get_package_share_directory('riptide_mapping2'),
-        'config',
-        'dependent_frames.yaml'
-    )
+    # dependentFrames = os.path.join(
+    #     get_package_share_directory('riptide_mapping2'),
+    #     'config',
+    #     'dependent_frames.yaml'
+    # )
 
-    orientedFrames = os.path.join(
-        get_package_share_directory('riptide_mapping2'),
-        'config',
-        'oriented_frames.yaml'
-    )
+    # orientedFrames = os.path.join(
+    #     get_package_share_directory('riptide_mapping2'),
+    #     'config',
+    #     'oriented_frames.yaml'
+    # )
 
     return launch.LaunchDescription([
         DeclareLaunchArgument(
@@ -72,29 +72,29 @@ def generate_launch_description():
                 ]
             ),
 
-            Node(
-                package='riptide_mapping2',
-                executable='dependentFramePublisher',
-                name='dependent_frame_publisher',
-                respawn=True,
-                output='screen',
+            # Node(
+            #     package='riptide_mapping2',
+            #     executable='dependentFramePublisher',
+            #     name='dependent_frame_publisher',
+            #     respawn=True,
+            #     output='screen',
 
-                parameters=[
-                    dependentFrames
-                ]
-            ),
+            #     parameters=[
+            #         dependentFrames
+            #     ]
+            # ),
 
-            Node(
-                package='riptide_mapping2',
-                executable='orientedFramePublisher',
-                name='oriented_frame_publisher',
-                respawn=True,
-                output='screen',
+            # Node(
+            #     package='riptide_mapping2',
+            #     executable='orientedFramePublisher',
+            #     name='oriented_frame_publisher',
+            #     respawn=True,
+            #     output='screen',
 
-                parameters=[
-                    orientedFrames
-                ]
-            ),
+            #     parameters=[
+            #         orientedFrames
+            #     ]
+            # ),
 
             Node(
                 package="chameleon_tf",
