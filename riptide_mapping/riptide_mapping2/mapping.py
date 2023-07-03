@@ -21,8 +21,10 @@ DEG_TO_RAD = (pi/180)
 #Used to translate between DOPE ids and names of objects
 object_ids = {
     0 : "gate",
-    1 : "earth", 
-    2 : "buoy"
+    1 : "earth_glyph", 
+    2 : "buoy",
+    3 : "buoy_glyph_1",
+    4 : "buoy_glyph_2"
 }
 
 objects = {}

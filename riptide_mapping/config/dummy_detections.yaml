@@ -8,14 +8,26 @@
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      earth:
+      earth_glyph:
         pose: [4.0, -0.25, -1.5, 0.0, 0.0, -3.1415]
         noise: 0.1
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       buoy:
-        pose: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        pose: [4.0, -2.0, -1.5, 0.0, 0.0, -3.1415]
+        noise: 0.1
+        score: 0.8
+        pub_invalid_orientation: false
+        max_visible_dist: 2.0
+      buoy_glyph_1:
+        pose: [4.0, -2.125, -1.375, 0.0, 0.0, 3.1415]
+        noise: 0.1
+        score: 0.8
+        pub_invalid_orientation: false
+        max_visible_dist: 2.0
+      buoy_glyph_2:
+        pose: [4.0, -1.875, -1.625, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         pub_invalid_orientation: false
