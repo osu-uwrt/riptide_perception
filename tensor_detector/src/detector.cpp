@@ -1,9 +1,9 @@
-#include <NvInfer.h>
+
+#include "tensor_detector/detector.hpp"
+
 #include <cuda_runtime_api.h>
 #include <NvOnnxParser.h>
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/core/cuda.hpp>
 #include <opencv2/cudawarping.hpp>
 #include <opencv2/cudaimgproc.hpp>
 #include <opencv2/cudaarithm.hpp>
@@ -11,79 +11,49 @@
 #include <cstdio>
 #include <iostream>
 #include <fstream>
-#include <memory>
 #include <numeric>
 #include <chrono>
 
-class Logger : public nvinfer1::ILogger
+namespace tensor_detector
 {
-    void log(Severity sev, const char *msg) noexcept override
+
+    void Logger::log(Severity sev, const char *msg) noexcept
     {
         if (sev <= Severity::kINFO)
         {
             std::cout << "[TRT] " << msg << std::endl;
         }
     }
-} logger;
 
-size_t getSizeByDim(const nvinfer1::Dims &dims)
-{
-    int size = 1;
-    for (int i = 0; i < dims.nbDims; ++i)
+    size_t getSizeByDim(const nvinfer1::Dims &dims)
     {
-        size *= dims.d[i];
+        int size = 1;
+        for (int i = 0; i < dims.nbDims; ++i)
+        {
+            size *= dims.d[i];
+        }
+        return size;
     }
-    return size;
-}
 
-struct YoloDetect
-{
-    cv::Rect bounds;
-    int class_id;
-    float conf;
-};
+    // comparison operator for sort
+    bool operator<(const YoloDetect &a, const YoloDetect &b)
+    {
+        return a.conf < b.conf;
+    }
 
-// comparison operator for sort
-bool operator<(const YoloDetect &a, const YoloDetect &b)
-{
-    return a.conf < b.conf;
-}
+    // comparison operator for sort
+    bool operator>(const YoloDetect &a, const YoloDetect &b)
+    {
+        return a.conf > b.conf;
+    }
 
-// comparison operator for sort
-bool operator>(const YoloDetect &a, const YoloDetect &b)
-{
-    return a.conf > b.conf;
-}
-
-class YoloInfer
-{
-private:
-    // TRT runtime system data
-    std::unique_ptr<nvinfer1::ICudaEngine> engine_ptr;
-    std::unique_ptr<nvinfer1::IExecutionContext> context_ptr;
-
-    // I/O bindings for the network
-    std::unique_ptr<nvinfer1::Dims> input_dims;  // we expect only one input
-    std::unique_ptr<nvinfer1::Dims> output_dims; // and one output
-
-    void *input_buffer = nullptr;        // only one input tensor
-    void *output_buffer = nullptr;       // one output tensor
-    std::vector<void *> ordered_buffers; // all the buffers in order that they need to be passed in
-
-    // post processor info
-    int num_classes = 0;
-    bool mutli_label = false;
-    float iou_thresh = 0.4; // upper bound for iou
-    float min_conf = 0.015;
-
-public:
     /**
      * Constructor for the inference engine. Loads the model from the compiled binary engine and builds the
      * runtime needed for TRT to inference on the target
      *
      * @param engine_file_path, a string locating the binary engine file. can be absolute or relative.
      */
-    YoloInfer(const std::string &engine_file_path)
+    YoloInfer::YoloInfer(const std::string &engine_file_path)
     {
         std::ifstream engineFile(engine_file_path, std::ios::binary);
 
@@ -156,7 +126,7 @@ public:
         mutli_label = num_classes > 1;
     }
 
-    void loadNextImage(const cv::cuda::GpuMat &gpu_frame)
+    void YoloInfer::loadNextImage(const cv::cuda::GpuMat &gpu_frame)
     {
         // dims is ordered # channels, width, height
         // should only be one input at index 0
@@ -193,7 +163,7 @@ public:
         cv::cuda::split(resized, chw);
     }
 
-    void inferLoadedImg()
+    void YoloInfer::inferLoadedImg()
     {
         if (!context_ptr->executeV2(ordered_buffers.data()))
         {
@@ -207,7 +177,7 @@ public:
     /**
      * Function assumes detections is empty
      */
-    void nonMaximumSuppression(const cv::Mat &out_tensor, std::vector<std::vector<YoloDetect>> &classed_detections)
+    void YoloInfer::nonMaximumSuppression(const cv::Mat &out_tensor, std::vector<std::vector<YoloDetect>> &classed_detections)
     {
         // create a vector for the hypotheses
         std::vector<std::vector<YoloDetect>> raw_detections;
@@ -312,7 +282,7 @@ public:
         }
     }
 
-    void postProcessResults(std::vector<YoloDetect> &detections)
+    void YoloInfer::postProcessResults(std::vector<YoloDetect> &detections)
     {
 
         auto out_size = cv::Size(output_dims->d[2], output_dims->d[1]);
@@ -339,13 +309,14 @@ public:
         }
     }
 
-    ~YoloInfer()
+    YoloInfer::~YoloInfer()
     {
         for (auto ptr : ordered_buffers)
             cudaFree(ptr);
         ordered_buffers.clear();
     }
-};
+
+} // namespace tensor_detector
 
 int main(int argc, char **argv)
 {
@@ -354,7 +325,7 @@ int main(int argc, char **argv)
     std::string engine_file = "yolo.engine";
 
     // Load the inference engine and context
-    YoloInfer infer = YoloInfer(engine_file);
+    tensor_detector::YoloInfer infer = tensor_detector::YoloInfer(engine_file);
 
     printf("Model loading complete, preparing to infer\n");
 
@@ -375,7 +346,7 @@ int main(int argc, char **argv)
         infer.inferLoadedImg();
 
         // get the results
-        std::vector<YoloDetect> detections;
+        std::vector<tensor_detector::YoloDetect> detections;
         infer.postProcessResults(detections);
 
         auto diff = std::chrono::steady_clock::now() - init_time;
