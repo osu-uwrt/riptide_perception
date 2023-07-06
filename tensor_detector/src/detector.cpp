@@ -25,16 +25,6 @@ namespace tensor_detector
         }
     }
 
-    size_t getSizeByDim(const nvinfer1::Dims &dims)
-    {
-        int size = 1;
-        for (int i = 0; i < dims.nbDims; ++i)
-        {
-            size *= dims.d[i];
-        }
-        return size;
-    }
-
     // comparison operator for sort
     bool operator<(const YoloDetect &a, const YoloDetect &b)
     {
@@ -307,6 +297,16 @@ namespace tensor_detector
         {
             detections.insert(detections.end(), class_vector.begin(), class_vector.end());
         }
+    }
+
+    size_t YoloInfer::getSizeByDim(const nvinfer1::Dims &dims)
+    {
+        int size = 1;
+        for (int i = 0; i < dims.nbDims; ++i)
+        {
+            size *= dims.d[i];
+        }
+        return size;
     }
 
     YoloInfer::~YoloInfer()

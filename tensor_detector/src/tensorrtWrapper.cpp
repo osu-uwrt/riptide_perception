@@ -9,7 +9,7 @@
 
 using namespace std::chrono_literals;
 
-#include "detector.hpp"
+#include "tensor_detector/detector.hpp"
 
 class TensorrtWrapper : public rclcpp::Node {
     public:
@@ -26,17 +26,21 @@ class TensorrtWrapper : public rclcpp::Node {
             cv::Mat frame;
 
             frame = cv_bridge::toCvCopy(msg, msg->encoding);
-
+            
             std::string engine_file = "yolo.engine";
 
-            YoloInfer infer = YoloInfer(engine_file);
+            // okay, NO dont do this. I should explain the API better but this is really bad
+            // this will re-load the tensorrt model every time as well as throw out the CUDA piplining in opencv::cuda
+            // im not 100% sure this would be worst case, but I would expect processing times to be over 300ms per frame
+            // move this out to the constructor for the class and load it once
+            tensor_detector::YoloInfer infer = tensor_detector::YoloInfer(engine_file);
 
             cv::cuda::GpuMat gpu_frame;
             gpu_frame.upload(frame);
 
             infer.inferLoadedImg();
 
-            std::vector<YoloDetect> detections;
+            std::vector<tensor_detector::YoloDetect> detections;
             infer.postProcessResults(detections)
 
             vision_msgs::msg::Detection3DArray detections3d;
