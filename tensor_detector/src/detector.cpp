@@ -124,30 +124,25 @@ namespace tensor_detector
 
         // resize the image to match the nn input tensor size
         cv::cuda::GpuMat resized;
-        // takes about 67 ms
         cv::cuda::resize(gpu_frame, resized, final_size, 0, 0, cv::INTER_NEAREST);
 
         // printf("Input image underwent resize\n");
 
         // pre-normalize the input image
         resized.convertTo(resized, CV_32FC3, 1.f / 255.f);
-
-        // expensive but idk why -- about 231 ms right now
         cv::cuda::subtract(resized, cv::Scalar(0.485f, 0.456f, 0.406f), resized, cv::noArray(), -1);
-
-        // takes about 3 ms
         cv::cuda::divide(resized, cv::Scalar(0.229f, 0.224f, 0.225f), resized, 1, -1);
 
         // printf("Input image normalized\n");
+
+        // right now i think this is actually correct, im wondering if its other pre-processing steps that are missing
 
         // sync form of the copy operation in a sneaky manner
         std::vector<cv::cuda::GpuMat> chw;
 
         // setup a list of gpu mats pointing into our input address space
         for (int i = 0; i < resized.channels(); ++i)
-        {
             chw.emplace_back(cv::cuda::GpuMat(final_size, CV_32FC1, input_buffer + i * resized.rows * resized.step));
-        }
 
         // copy the data from the normalized image to the input tensors
         cv::cuda::split(resized, chw);
@@ -217,7 +212,7 @@ namespace tensor_detector
 
                 // build the detection
                 YoloDetect detection = {
-                    cv::Rect(),
+                    cv::Rect(center_x - width / 2, center_y + height / 2, width, height),
                     class_id[1],
                     conf};
 
@@ -355,7 +350,7 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < detections.size(); i++)
         {
-            printf("\t det %i -> class %i \n", i, detections.at(i).class_id);
+            printf("\t det %i -> class %i, conf %f, xy (%i, %i), wh(%i, %i)\n", i, detections.at(i).class_id, detections.at(i).conf, detections.at(i).bounds.x, detections.at(i).bounds.y, detections.at(i).bounds.width, detections.at(i).bounds.height);
         }
     }
 

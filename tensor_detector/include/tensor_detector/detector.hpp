@@ -10,17 +10,18 @@
 namespace tensor_detector
 {
 
-    class Logger : public nvinfer1::ILogger{
+    class Logger : public nvinfer1::ILogger
+    {
         void log(Severity sev, const char *msg) noexcept override;
     };
 
     /**
      * Contaier for detection results
-     * 
+     *
      * @param bounds, The image space bounds of the detection
      * @param class_id, The integer class id of the detection as the model was trained
      * @param conf, The confidence of the class of the detection
-    */
+     */
     struct YoloDetect
     {
         cv::Rect bounds;
@@ -76,25 +77,24 @@ namespace tensor_detector
         /**
          * Ingest the gpu transferred image, preprocess it and copy it into the pipeline.
          * Call this function before the infer step with each new frame you intend to operate on
-         * 
+         *
          * @param gpu_frame, the input frame already uploaded to the GPU
-         * 
-         */        
+         *
+         */
         void loadNextImage(const cv::cuda::GpuMat &gpu_frame);
-
 
         /**
          * Take the loaded and pre-processed image and run it through the tensorrt system synchronously.
          * Should be called after an image has been loaded previously.
-        */
+         */
         void inferLoadedImg();
 
         /**
          * Take the results copied from the inference buffer back to the CPU, and determine all detections.
          * Also applies IOU and NMS algorithms to clean up overlapped boxes
-         * 
+         *
          * @param detections, the vector to put the resulting YoloDetect detections in
-        */
+         */
         void postProcessResults(std::vector<YoloDetect> &detections);
 
         ~YoloInfer();
