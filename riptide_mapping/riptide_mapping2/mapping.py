@@ -24,7 +24,10 @@ object_ids = {
     1 : "earth_glyph", 
     2 : "buoy",
     3 : "buoy_glyph_1",
-    4 : "buoy_glyph_2"
+    4 : "buoy_glyph_2",
+    5 : "torpedo",
+    6 : "torpedo_upper_hole",
+    7 : "torpedo_lower_hole"
 }
 
 objects = {}

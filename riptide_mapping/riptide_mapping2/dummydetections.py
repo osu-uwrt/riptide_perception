@@ -25,7 +25,10 @@ objects = [
     "buoy",
     "earth_glyph",
     "buoy_glyph_1",
-    "buoy_glyph_2"
+    "buoy_glyph_2",
+    "torpedo",
+    "torpedo_upper_hole",
+    "torpedo_lower_hole"
 ]
 
 class DummyDetectionNode(Node):
@@ -112,11 +115,11 @@ class DummyDetectionNode(Node):
             vAngleDeg = p - vertHeadingToObj
             vAngleDeg = (vAngleDeg + 180) % 360 - 180
 
-            self.get_logger().info(f"dist: {dist}, hangledeg: {hAngleDeg}, vangledeg: {vAngleDeg}")
+            self.get_logger().debug(f"dist: {dist}, hangledeg: {hAngleDeg}, vangledeg: {vAngleDeg}")
                         
             return dist < maxDist and abs(hAngleDeg) < self.cameraHFov and abs(vAngleDeg) < self.cameraVFov
         except TransformException as ex:
-            self.get_logger().warn(f"Could not look up transform from {cameraFrameName} to world! {ex}")
+            self.get_logger().warn(f"Could not look up transform from {cameraFrameName} to world! {ex}", throttle_duration_sec = 0.5)
             return False
           
         
@@ -138,6 +141,8 @@ class DummyDetectionNode(Node):
         
         for i in range(0, len(objects)):
             object = objects[i]
+            self.get_logger().debug(f"Processing dummy detection for {object}")
+            
             poseArr = self.get_parameter(f"detection_data.{object}.pose").value
             noise = self.get_parameter(f"detection_data.{object}.noise").value
             score = self.get_parameter(f"detection_data.{object}.score").value

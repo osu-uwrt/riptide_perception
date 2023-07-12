@@ -41,6 +41,10 @@ def generate_launch_description():
                 
                 parameters = [
                     config
+                ],
+                
+                arguments=[
+                    "--ros-args", "--log-level", LC("log_level")
                 ]
             )
         ], scoped=True)
