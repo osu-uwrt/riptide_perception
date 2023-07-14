@@ -102,9 +102,10 @@ def main():
         #https://blender.stackexchange.com/questions/7198/save-the-2d-bounding-box-of-an-object-in-rendered-image-to-a-text-file/
         bbox_2d = camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, obj)
         
+        r = bpy.context.scene.render
         # Output 2D bounding box to text file
         with open(label_output, "w") as f:
-            f.write(f"0 {bbox_2d.x} {bbox_2d.y} {bbox_2d.width} {bbox_2d.height}\n")       
+            f.write(f"0 {(bbox_2d.x + (bbox_2d.width/2))/r.resolution_x} {(bbox_2d.y+(bbox_2d.height/2))/r.resolution_y} {bbox_2d.width/r.resolution_x} {bbox_2d.height/r.resolution_y}\n")       
         
 
     print("Generation finished, exiting")
@@ -169,7 +170,8 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
     """
 
     mat = cam_ob.matrix_world.normalized().inverted()
-    me = me_ob.to_mesh(scene, True, 'PREVIEW')
+    # me = me_ob.to_mesh(scene, True, 'PREVIEW')
+    me = me_ob.to_mesh()
     me.transform(me_ob.matrix_world)
     me.transform(mat)
 
@@ -208,7 +210,7 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
     min_y = clamp(min(ly), 0.0, 1.0)
     max_y = clamp(max(ly), 0.0, 1.0)
 
-    bpy.data.meshes.remove(me)
+    # bpy.data.meshes.remove(me)
 
     r = scene.render
     fac = r.resolution_percentage * 0.01
