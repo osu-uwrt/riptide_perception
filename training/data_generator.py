@@ -18,7 +18,7 @@ def randomizeScene(possible_objects):
     # particles.seed = random.randint(0, 100000)
     # Decide which objects to use for this generation
     num_objects = random.randint(1, len(possible_objects))
-    used_object_names = random.sample(possible_objects, num_objects)
+    used_object_names = random.sample(sorted(possible_objects), num_objects)
 
     # Set each selected object's rotation/position to be within a 2x2 sphere
     for obj_name in used_object_names:
