@@ -5,113 +5,170 @@ import random
 import mathutils
 from pathlib import Path
 
-def randomizeScene(obj_name):
-    #Get particle system named Particle Area in main collection
-    particles = bpy.data.collections['Main'].objects['Particle Area'].particle_systems[0].particles
-    #change seed to random number
-#    particles.seed = random.randint(0, 100000)
-    #Get object obj_name
-    obj = bpy.data.objects[obj_name]
-    #Set object's rotation/position to be within a 2x2 sphere
-    while True:
-        pos = mathutils.Vector((random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1)))
-        if pos.length <= 1:
-            break
-    obj.location = pos * 2
-    obj.rotation_euler = mathutils.Euler((random.uniform(0, math.pi*2), random.uniform(0, math.pi*2), random.uniform(0, math.pi*2)), 'XYZ')
-    #TODO: Check to see if the object is visible enough, redo if not.
+
+def randomizeScene(possible_objects):
+    # Get particle system named Particle Area in main collection
+    particles = (
+        bpy.data.collections["Main"]
+        .objects["Particle Area"]
+        .particle_systems[0]
+        .particles
+    )
+    # change seed to random number
+    # particles.seed = random.randint(0, 100000)
+    # Decide which objects to use for this generation
+    num_objects = random.randint(1, len(possible_objects))
+    used_object_names = random.sample(possible_objects, num_objects)
+
+    # Set each selected object's rotation/position to be within a 2x2 sphere
+    for obj_name in used_object_names:
+        obj = bpy.data.objects[obj_name]
+        while True:
+            pos = mathutils.Vector(
+                (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
+            )
+            if pos.length <= 1:
+                break
+        obj.location = pos * 2
+        obj.rotation_euler = mathutils.Euler(
+            (
+                random.uniform(0, math.pi * 2),
+                random.uniform(0, math.pi * 2),
+                random.uniform(0, math.pi * 2),
+            ),
+            "XYZ",
+        )
 
 
+# END randomizeScene()
 
-def main():
-    import sys       # to get command line args
+
+def parse_args(possible_training_names: str):
     import argparse  # to parse options for us and print a nice help message
+
     # get the args passed to blender after "--", all of which are ignored by
     # blender so scripts may receive their own arguments
-    argv = sys.argv
-
-    if "--" not in argv:
-        argv = []  # as if no args are passed
-    else:
-        argv = argv[argv.index("--") + 1:]  # get all args after "--"
 
     # When --help or no args are given, print this help
     usage_text = (
         "Generate YOLOv5 training data with this script:"
-        "  blender --python --background " + __file__ + " -o [output_file] -t [training_obj]"
+        "  blender --python --background "
+        + __file__
+        + " -o [output_file] -t [training_obj1 [training_obj2 [...]]] -n [number_datapoints]"
     )
-
     parser = argparse.ArgumentParser(description=usage_text)
 
-    training_collection = bpy.data.collections['Training Objects']
+    parser.add_argument(
+        "-t",
+        "--train",
+        dest="training_objs",
+        metavar="FILE",
+        help=(
+            "Names of objects you want to generate data for."
+            "\n Supported names: " + possible_training_names
+        ),
+        nargs="+",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        dest="output_path",
+        metavar="FILE",
+        help="Location to store generated files",
+        required=True,
+    )
+    parser.add_argument(
+        "-n",
+        "--number",
+        dest="number_datapoints",
+        type=int,
+        help="Number of datapoints to generate",
+        default=1,
+        nargs=1,
+    )
+
+    raw_args = parser.parse_args()
+
+    # Convert raw_args.training_objs to a dict numbering the objects in order
+    # This is so we keep track of each object's ID in the training data
+    training_objs = {}
+    for i in range(len(raw_args.training_objs)):
+        training_objs[raw_args.training_objs[i]] = i
+    raw_args.training_objs = training_objs
+    print(raw_args.training_objs)
+    return raw_args
+
+
+# END parse_args()
+
+
+def print_bounding_boxes(label_output, visible_objects, object_dict):
+    # Clear file
+    with open(label_output, "w") as f:
+        f.truncate(0)
+
+    # Print the bounding box for each visible object
+    for obj_name in visible_objects:
+        obj = bpy.data.objects[obj_name]
+        vision_index = object_dict[obj_name]
+
+        # https://blender.stackexchange.com/questions/7198/save-the-2d-bounding-box-of-an-object-in-rendered-image-to-a-text-file/
+        bbox_2d = camera_view_bounds_2d(
+            bpy.context.scene, bpy.context.scene.camera, obj
+        )
+
+        # Output 2D bounding box to text file
+        with open(label_output, "w") as f:
+            f.append(
+                f"{vision_index} {bbox_2d.x} {bbox_2d.y} {bbox_2d.width} {bbox_2d.height}\n"
+            )
+
+
+# END print_bounding_boxes()
+
+
+def main():
+    training_collection = bpy.data.collections["Training Objects"]
     training_names = []
     training_names_helper = "\n"
     for training_object in training_collection.objects[:]:
         training_names.append(training_object.name)
-        training_names_helper += " "+training_object.name+","
-    parser.add_argument(
-        "-t", "--train", dest="training_obj", metavar='FILE',
-        help=(
-        "Name of the object you want to generate data for."
-        "\n Supported names: " + training_names_helper
-        ),
-    )
-    parser.add_argument(
-        "-o", "--output", dest="output_path", metavar='FILE',
-        help="Location to store generated files",
-    )
-    parser.add_argument(
-        "-n", "--number", dest="number_datapoints", type=int,
-        help="Number of datapoints to generate", default=1,
-    )
+        training_names_helper += " " + training_object.name + ","
 
-    args = parser.parse_args(argv)  # In this example we won't use the args
+    args = parse_args(training_names_helper)
 
-    if not argv:
-        parser.print_help()
-        return
+    for obj in args.training_objs:
+        if obj not in training_names:
+            print(f"Object name {obj} not trainable, try {training_names_helper}")
+            return
 
-    if args.training_obj not in training_names:
-        print("Object name "+args.training_obj+" not trainable, try "+training_names_helper)
-        return
-    
     output_path = Path(args.output_path)
-    print(output_path.resolve())
+    print(f"Generating to {output_path.resolve()}")
     output_path.mkdir(parents=True, exist_ok=True)
-    img_output_dir = output_path / 'images/'
+    img_output_dir = output_path / "images/"
     img_output_dir.mkdir(parents=True, exist_ok=True)
-    label_output_dir = output_path / 'labels/'
+    label_output_dir = output_path / "labels/"
     label_output_dir.mkdir(parents=True, exist_ok=True)
-    bounding_box_file = open(output_path / "image_bounding_boxes.txt","w")
-    # Run the example function
+
+    # Generate each image
     for i in range(args.number_datapoints):
-        randomizeScene(args.training_obj)
-        
-        #Get output paths for img and data
-        img_output = img_output_dir / f"im{i}.jpg"        
-        label_output = label_output_dir / f"im{i}.txt" 
-        
+        used_objects = randomizeScene(args.training_objs)
+
+        # Get output paths for img and data
+        img_output = img_output_dir / f"im{i}.jpg"
+        label_output = label_output_dir / f"im{i}.txt"
+
         # Render image
         bpy.context.scene.render.filepath = str(img_output.resolve())
         bpy.ops.render.render(write_still=True)
-        
-        # Get object's 2D image bounding box
-        obj = bpy.data.objects[args.training_obj]
-        print(obj.bound_box)
 
-        #https://blender.stackexchange.com/questions/7198/save-the-2d-bounding-box-of-an-object-in-rendered-image-to-a-text-file/
-        bbox_2d = camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, obj)
-        
-        # Output 2D bounding box to text file
-        with open(label_output, "w") as f:
-            f.write(f"0 {bbox_2d.x} {bbox_2d.y} {bbox_2d.width} {bbox_2d.height}\n")       
-        
+        # Get object's 2D image bounding box
+        print_bounding_boxes(label_output, used_objects, args.training_objs)
 
     print("Generation finished, exiting")
 
 
 class Box:
-
     dim_x = 1
     dim_y = 1
 
@@ -140,8 +197,12 @@ class Box:
         return round((self.max_y - self.min_y) * self.dim_y)
 
     def __str__(self):
-        return "<Box, x=%i, y=%i, width=%i, height=%i>" % \
-               (self.x, self.y, self.width, self.height)
+        return "<Box, x=%i, y=%i, width=%i, height=%i>" % (
+            self.x,
+            self.y,
+            self.width,
+            self.height,
+        )
 
     def to_tuple(self):
         if self.width == 0 or self.height == 0:
@@ -169,13 +230,13 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
     """
 
     mat = cam_ob.matrix_world.normalized().inverted()
-    me = me_ob.to_mesh(scene, True, 'PREVIEW')
+    me = me_ob.to_mesh(scene, True, "PREVIEW")
     me.transform(me_ob.matrix_world)
     me.transform(mat)
 
     camera = cam_ob.data
     frame = [-v for v in camera.view_frame(scene=scene)[:3]]
-    camera_persp = camera.type != 'ORTHO'
+    camera_persp = camera.type != "ORTHO"
 
     lx = []
     ly = []
@@ -189,7 +250,7 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
                 lx.append(0.5)
                 ly.append(0.5)
             # Does it make any sense to drop these?
-            #if z <= 0.0:
+            # if z <= 0.0:
             #    continue
             else:
                 frame = [(v / (v.z / z)) for v in frame]
