@@ -235,7 +235,7 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
     """
 
     mat = cam_ob.matrix_world.normalized().inverted()
-    me = me_ob.to_mesh(scene)
+    me = me_ob.to_mesh(scene, False)
     me.transform(me_ob.matrix_world)
     me.transform(mat)
 
