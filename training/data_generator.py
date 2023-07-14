@@ -45,6 +45,7 @@ def randomizeScene(possible_objects):
 
 def parse_args(possible_training_names: str):
     import argparse  # to parse options for us and print a nice help message
+    import sys
 
     # get the args passed to blender after "--", all of which are ignored by
     # blender so scripts may receive their own arguments
@@ -87,7 +88,7 @@ def parse_args(possible_training_names: str):
         nargs=1,
     )
 
-    raw_args = parser.parse_args()
+    raw_args = parser.parse_args(sys.argv)
 
     # Convert raw_args.training_objs to a dict numbering the objects in order
     # This is so we keep track of each object's ID in the training data
