@@ -14,8 +14,13 @@ def randomizeScene(possible_objects):
         .particle_systems[0]
         .particles
     )
+
     # change seed to random number
     # particles.seed = random.randint(0, 100000)
+
+    # Hide the rendering of all objects
+    for obj_name in possible_objects:
+        bpy.data.objects[obj_name].hide_render = True
     # Decide which objects to use for this generation
     num_objects = random.randint(1, len(possible_objects))
     used_object_names = random.sample(sorted(possible_objects), num_objects)
@@ -23,6 +28,7 @@ def randomizeScene(possible_objects):
     # Set each selected object's rotation/position to be within a 2x2 sphere
     for obj_name in used_object_names:
         obj = bpy.data.objects[obj_name]
+        obj.hide_render = False
         while True:
             pos = mathutils.Vector(
                 (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
