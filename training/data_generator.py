@@ -85,7 +85,6 @@ def parse_args(possible_training_names: str):
         type=int,
         help="Number of datapoints to generate",
         default=1,
-        nargs=1,
     )
 
     raw_args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
