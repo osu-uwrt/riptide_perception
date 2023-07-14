@@ -88,7 +88,7 @@ def parse_args(possible_training_names: str):
         nargs=1,
     )
 
-    raw_args = parser.parse_args(sys.argv)
+    raw_args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
 
     # Convert raw_args.training_objs to a dict numbering the objects in order
     # This is so we keep track of each object's ID in the training data
