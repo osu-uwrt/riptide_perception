@@ -55,7 +55,7 @@ def parse_args(possible_training_names: str):
         "Generate YOLOv5 training data with this script:"
         "  blender --python --background "
         + __file__
-        + " -o [output_file] -t [training_obj1 [training_obj2 [...]]] -n [number_datapoints]"
+        + "-- -o [output_file] -t [training_obj1 [training_obj2 [...]]] -n [number_datapoints]"
     )
     parser = argparse.ArgumentParser(description=usage_text)
 
@@ -63,7 +63,7 @@ def parse_args(possible_training_names: str):
         "-t",
         "--train",
         dest="training_objs",
-        metavar="FILE",
+        metavar="TRAINING_OBJ",
         help=(
             "Names of objects you want to generate data for."
             "\n Supported names: " + possible_training_names
