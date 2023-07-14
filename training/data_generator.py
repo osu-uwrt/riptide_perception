@@ -117,10 +117,11 @@ def print_bounding_boxes(label_output, visible_objects, object_dict):
             bpy.context.scene, bpy.context.scene.camera, obj
         )
 
+        r = bpy.context.scene.render
         # Output 2D bounding box to text file
         with open(label_output, "w") as f:
             f.append(
-                f"{vision_index} {bbox_2d.x} {bbox_2d.y} {bbox_2d.width} {bbox_2d.height}\n"
+                f"{vision_index} {(bbox_2d.x + (bbox_2d.width/2))/r.resolution_x} {(bbox_2d.y+(bbox_2d.height/2))/r.resolution_y} {bbox_2d.width/r.resolution_x} {bbox_2d.height/r.resolution_y}\n"
             )
 
 
@@ -164,14 +165,6 @@ def main():
         bpy.context.scene.render.filepath = str(img_output.resolve())
         bpy.ops.render.render(write_still=True)
 
-        #https://blender.stackexchange.com/questions/7198/save-the-2d-bounding-box-of-an-object-in-rendered-image-to-a-text-file/
-        bbox_2d = camera_view_bounds_2d(bpy.context.scene, bpy.context.scene.camera, obj)
-        
-        r = bpy.context.scene.render
-        # Output 2D bounding box to text file
-        with open(label_output, "w") as f:
-            f.write(f"0 {(bbox_2d.x + (bbox_2d.width/2))/r.resolution_x} {(bbox_2d.y+(bbox_2d.height/2))/r.resolution_y} {bbox_2d.width/r.resolution_x} {bbox_2d.height/r.resolution_y}\n")       
-        
         # Get object's 2D image bounding box
         print_bounding_boxes(label_output, used_objects, args.training_objs)
 
