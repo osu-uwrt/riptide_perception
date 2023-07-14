@@ -35,6 +35,7 @@ def randomizeScene(possible_objects):
             )
             if pos.length <= 1:
                 break
+        # TODO min distance betqeen objects
         obj.location = pos * 2
         obj.rotation_euler = mathutils.Euler(
             (
