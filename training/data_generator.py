@@ -121,8 +121,8 @@ def print_bounding_boxes(label_output, visible_objects, object_dict):
 
         r = bpy.context.scene.render
         # Output 2D bounding box to text file
-        with open(label_output, "w") as f:
-            f.append(
+        with open(label_output, "a") as f:
+            f.write(
                 f"{vision_index} {(bbox_2d.x + (bbox_2d.width/2))/r.resolution_x} {(bbox_2d.y+(bbox_2d.height/2))/r.resolution_y} {bbox_2d.width/r.resolution_x} {bbox_2d.height/r.resolution_y}\n"
             )
 
