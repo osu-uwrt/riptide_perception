@@ -39,6 +39,8 @@ def randomizeScene(possible_objects):
             "XYZ",
         )
 
+    return used_object_names
+
 
 # END randomizeScene()
 
