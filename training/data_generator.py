@@ -128,6 +128,7 @@ def print_bounding_boxes(label_output, visible_objects, object_dict):
 
 
 def main():
+    # Get names of all objects in the training collection for help message
     training_collection = bpy.data.collections["Training Objects"]
     training_names = []
     training_names_helper = "\n"
@@ -137,6 +138,7 @@ def main():
 
     args = parse_args(training_names_helper)
 
+    # Check for incorrect args
     for obj in args.training_objs:
         if obj not in training_names:
             print(f"Object name {obj} not trainable, try {training_names_helper}")
