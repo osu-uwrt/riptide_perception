@@ -318,49 +318,49 @@ namespace tensor_detector
 
 } // namespace tensor_detector
 
-int main(int argc, char **argv)
-{
-    // model info
-    std::string input_file = "durr_3.png";
-    std::string engine_file = "yolo.engine";
+// int main(int argc, char **argv)
+// {
+//     // model info
+//     std::string input_file = "durr_3.png";
+//     std::string engine_file = "yolo.engine";
 
-    // Load the inference engine and context
-    tensor_detector::YoloInfer infer = tensor_detector::YoloInfer(engine_file);
+//     // Load the inference engine and context
+//     tensor_detector::YoloInfer infer = tensor_detector::YoloInfer(engine_file);
 
-    printf("Model loading complete, preparing to infer\n");
+//     printf("Model loading complete, preparing to infer\n");
 
-    cv::Mat frame = cv::imread(input_file);
+//     cv::Mat frame = cv::imread(input_file);
 
-    // pre-load and modify the image to fit in the input tensor
-    for (int i = 0; i < 50; i++)
-    {
-        auto init_time = std::chrono::steady_clock::now();
+//     // pre-load and modify the image to fit in the input tensor
+//     for (int i = 0; i < 50; i++)
+//     {
+//         auto init_time = std::chrono::steady_clock::now();
 
-        // Take the cv image and CUDA load it to GPU
-        cv::cuda::GpuMat gpu_frame;
-        gpu_frame.upload(frame);
+//         // Take the cv image and CUDA load it to GPU
+//         cv::cuda::GpuMat gpu_frame;
+//         gpu_frame.upload(frame);
 
-        infer.loadNextImage(gpu_frame);
+//         infer.loadNextImage(gpu_frame);
 
-        // run the inference cycle on the new input
-        infer.inferLoadedImg();
+//         // run the inference cycle on the new input
+//         infer.inferLoadedImg();
 
-        // get the results
-        std::vector<tensor_detector::YoloDetect> detections;
-        infer.postProcessResults(detections);
+//         // get the results
+//         std::vector<tensor_detector::YoloDetect> detections;
+//         infer.postProcessResults(detections);
 
-        auto diff = std::chrono::steady_clock::now() - init_time;
-        printf("Input image inferred in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
-        printf("Input image has %li detections\n", detections.size());
+//         auto diff = std::chrono::steady_clock::now() - init_time;
+//         printf("Input image inferred in %li us\n", std::chrono::duration_cast<std::chrono::microseconds>(diff).count());
+//         printf("Input image has %li detections\n", detections.size());
 
-        for (int i = 0; i < detections.size(); i++)
-        {
-            printf("\t det %i -> class %i \n", i, detections.at(i).class_id);
-        }
-    }
+//         for (int i = 0; i < detections.size(); i++)
+//         {
+//             printf("\t det %i -> class %i \n", i, detections.at(i).class_id);
+//         }
+//     }
 
-    return 0;
-}
+//     return 0;
+// }
 
 /*
 
