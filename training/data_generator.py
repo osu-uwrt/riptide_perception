@@ -25,6 +25,8 @@ def randomizeScene(possible_objects):
     num_objects = random.randint(1, len(possible_objects))
     used_object_names = random.sample(sorted(possible_objects), num_objects)
 
+    placed_obj_locations = []
+
     # Set each selected object's rotation/position to be within a 2x2 sphere
     for obj_name in used_object_names:
         obj = bpy.data.objects[obj_name]
@@ -34,9 +36,13 @@ def randomizeScene(possible_objects):
                 (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
             )
             if pos.length <= 1:
-                break
+                pos = pos * 2
+                if is_far_enough_away(pos, placed_obj_locations, 0.2):
+                    placed_obj_locations.append(pos)
+                    break
+
         # TODO min distance betqeen objects
-        obj.location = pos * 2
+        obj.location = pos
         obj.rotation_euler = mathutils.Euler(
             (
                 random.uniform(0, math.pi * 2),
@@ -50,6 +56,17 @@ def randomizeScene(possible_objects):
 
 
 # END randomizeScene()
+
+
+def is_far_enough_away(pos, other_obj_pos, min_dist):
+    for other_pos in other_obj_pos:
+        if (other_pos - pos).length < min_dist:
+            return False
+
+    return True
+
+
+# END is_far_enough_away()
 
 
 def parse_args(possible_training_names: str):
