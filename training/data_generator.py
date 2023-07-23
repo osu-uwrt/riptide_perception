@@ -350,7 +350,7 @@ def stdout_redirected(to=os.devnull):
 
 def progressbar(index, count, start_time, size=60): # Python3.6+
     percent_completed = int(index / (count / size))
-    time_elapsed = time.time() - start_time
+    time_elapsed = round(time.time() - start_time, 3)
     print(f"{index}/{count}: [{'=' * percent_completed + '>' + '.' * (size - percent_completed)}] - Elapsed: {time_elapsed}s ",
             '\r', end='', flush=True)
 
