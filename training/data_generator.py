@@ -1,9 +1,8 @@
 import bpy
-import math
-import os
-import random
+import math, os, sys, random, time
 import mathutils
 from pathlib import Path
+from contextlib import contextmanager
 
 
 def randomizeScene(possible_objects):
@@ -180,7 +179,9 @@ def main():
     label_output_dir = output_path / "labels/"
     label_output_dir.mkdir(parents=True, exist_ok=True)
 
+
     # Generate each image
+    start_time = time.time()
     for i in range(args.number_datapoints):
         used_objects = randomizeScene(args.training_objs)
 
@@ -189,8 +190,12 @@ def main():
         label_output = label_output_dir / f"im{i}.txt"
 
         # Render image
-        bpy.context.scene.render.filepath = str(img_output.resolve())
-        bpy.ops.render.render(write_still=True)
+        
+        with stdout_redirected():
+            bpy.context.scene.render.filepath = str(img_output.resolve())
+            bpy.ops.render.render(write_still=True)
+
+        progressbar(i, args.number_datapoints, start_time)
 
         # Get object's 2D image bounding box
         print_bounding_boxes(label_output, used_objects, args.training_objs)
@@ -311,6 +316,43 @@ def camera_view_bounds_2d(scene, cam_ob, me_ob):
 
 def clamp(x, minimum, maximum):
     return max(minimum, min(x, maximum))
+
+
+@contextmanager
+def stdout_redirected(to=os.devnull):
+    '''
+    import os
+
+    with stdout_redirected(to=filename):
+        print("from Python")
+        os.system("echo non-Python applications are also supported")
+    '''
+    fd = sys.stdout.fileno()
+
+    ##### assert that Python and C stdio write using the same file descriptor
+    ####assert libc.fileno(ctypes.c_void_p.in_dll(libc, "stdout")) == fd == 1
+
+    def _redirect_stdout(to):
+        sys.stdout.close() # + implicit flush()
+        os.dup2(to.fileno(), fd) # fd writes to 'to' file
+        sys.stdout = os.fdopen(fd, 'w') # Python writes to fd
+
+    with os.fdopen(os.dup(fd), 'w') as old_stdout:
+        with open(to, 'w') as file:
+            _redirect_stdout(to=file)
+        try:
+            yield # allow code to be run with the redirected stdout
+        finally:
+            _redirect_stdout(to=old_stdout) # restore stdout.
+                                            # buffering and flags such as
+                                            # CLOEXEC may be different
+
+
+def progressbar(index, count, start_time, size=60): # Python3.6+
+    percent_completed = int(index / (count / size))
+    time_elapsed = time.time() - start_time
+    print(f"{index}/{count}: [{'=' * percent_completed + '>' + '.' * (size - percent_completed)}] - Elapsed: {time_elapsed}s ",
+            '\r', end='', flush=True)
 
 
 if __name__ == "__main__":
