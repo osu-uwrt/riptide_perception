@@ -12,17 +12,18 @@ def randomizeScene(possible_objects):
         bpy.data.collections["Main"]
         .objects["Particle Area"]
         .particle_systems[0]
-        .particles
     )
 
     # change seed to random number
-    # particles.seed = random.randint(0, 100000)
+    particles.seed = random.randint(0, 100000)
+    particles.settings.count = int(clamp(random.gauss(10.0, 6.0), 5, 50)) 
 
     # Hide the rendering of all objects
     for obj_name in possible_objects:
         bpy.data.objects[obj_name].hide_render = True
     # Decide which objects to use for this generation
-    num_objects = random.randint(1, len(possible_objects))
+    # creates a quasi-gaussian biased to two objects in scene bu clamped to the 1 object min and n objects max
+    num_objects = int(clamp(random.gauss(1, 1.5), 1, len(possible_objects))) 
     used_object_names = random.sample(sorted(possible_objects), num_objects)
 
     placed_obj_locations = []
