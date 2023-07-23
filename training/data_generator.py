@@ -200,6 +200,8 @@ def main():
         # Get object's 2D image bounding box
         print_bounding_boxes(label_output, used_objects, args.training_objs)
 
+    print("\n")
+
     print("Generation finished, exiting")
 
 
