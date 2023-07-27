@@ -61,7 +61,7 @@ private:
         for (yolov5::Detection detection : detections)
         {
 
-            RCLCPP_INFO(get_logger(), "Detected %i with conf %d", detection.classId(), detection.score());
+            RCLCPP_INFO(get_logger(), "Detected %i with conf %f", detection.classId(), detection.score());
             // int totalPoints = 0;
             // float totalDepth = 0;
             // for (int i = -1; i < 2; i++)
