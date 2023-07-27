@@ -1,0 +1,3 @@
+[submodule "tensor_detector/yolov5-tensorrt"]
+	path = tensor_detector/yolov5-tensorrt
+	url = https://github.com/noahmr/yolov5-tensorrt.git
