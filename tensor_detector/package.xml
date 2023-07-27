@@ -11,8 +11,8 @@
 
   <depend>rclcpp</depend>
   <depend>vision_msgs</depend>
-  <depend>zed_interfaces</depend>
-
+  <depend>OpenCV</depend>
+  <depend>cv_bridge</depend>
   <depend>CUDA</depend>
 
   <test_depend>ament_lint_auto</test_depend>
