@@ -49,7 +49,7 @@ private:
 
         cv::cuda::GpuMat gpu_frame;
         std::vector<yolov5::Detection> detections;
-        
+
         gpu_frame.upload(frame);
         auto res = infer->detect(frame, &detections);
 
@@ -60,6 +60,8 @@ private:
         // process each of the detections
         for (yolov5::Detection detection : detections)
         {
+
+            RCLCPP_INFO(get_logger(), "Detected %i with conf %d", detection.classId(), detection.score());
             // int totalPoints = 0;
             // float totalDepth = 0;
             // for (int i = -1; i < 2; i++)

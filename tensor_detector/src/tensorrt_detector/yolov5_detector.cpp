@@ -596,7 +596,7 @@ Result Detector::_loadEngine(const std::vector<char>& data) noexcept
 
     /*  Determine output binding & verify that it matches what is expected   */
     internal::EngineBinding output;
-    if(!internal::EngineBinding::setup(engine, "output", &output))
+    if(!internal::EngineBinding::setup(engine, "output0", &output))
     {
         _logger->log(LOGGING_ERROR, "[Detector] loadEngine() failure: could "
                     "not set up output binding");

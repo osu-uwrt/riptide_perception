@@ -65,7 +65,9 @@ ament_target_dependencies(tensorrtWrapper OpenCV rclcpp vision_msgs sensor_msgs 
 
 
 install(TARGETS tensorrtWrapper yolov5_tensorrt
-  DESTINATION lib/${PROJECT_NAME})
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
