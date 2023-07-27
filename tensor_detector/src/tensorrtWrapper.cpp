@@ -51,7 +51,7 @@ private:
         std::vector<yolov5::Detection> detections;
 
         gpu_frame.upload(frame);
-        auto res = infer->detect(frame, &detections);
+        auto res = infer->detect(gpu_frame, &detections);
 
         // make the detection array and copy the header from the camera as this is all still camera relative
         vision_msgs::msg::Detection3DArray detections3d;
