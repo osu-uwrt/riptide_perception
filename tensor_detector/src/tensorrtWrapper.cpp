@@ -90,12 +90,8 @@ private:
             //     float cy = 544.594;
             //     float depth = totalDepth / totalPoints;
 
-            //     // float xPixLoc = detection.bounds.x + detections.bounds.width / 2;
-            //     // float yPixLoc = detection.bounds.y + detections.bounds.height / 2;
-
-            //     float xPixLoc = 0.0;
-            //     float yPixLoc = 0.0;
-
+            //     float xPixLoc = detection.bounds.x + detections.bounds.width / 2;
+            //     float yPixLoc = detection.bounds.y + detections.bounds.height / 2;
 
             //     float xPos = (xPixLoc - cx) * depth / fx;
             //     float yPos = (yPixLoc - cy) * depth / fy;
@@ -128,6 +124,7 @@ private:
             RCLCPP_WARN(get_logger(), "Empty image on topic %s", depth_image_sub->get_topic_name());
             return;
         }
+
     }
 
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr detection_pub;
