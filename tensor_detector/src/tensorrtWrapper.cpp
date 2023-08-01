@@ -1,13 +1,15 @@
 #include <chrono>
+// #include <iostream>
+#include <fstream>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/qos.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include "sensor_msgs/msg/image.hpp"
-#include "geometry_msgs/geometry_msgs/msg/pose.hpp"
-#include "vision_msgs/vision_msgs/msg/object_hypothesis_with_pose.hpp"
-#include "vision_msgs/vision_msgs/msg/detection3_d.hpp"
-#include "vision_msgs/vision_msgs/msg/detection3_d_array.hpp"
+#include "geometry_msgs/msg/pose.hpp"
+#include "vision_msgs/msg/object_hypothesis_with_pose.hpp"
+#include "vision_msgs/msg/detection3_d.hpp"
+#include "vision_msgs/msg/detection3_d_array.hpp"
 
 #include "tensorrt_detector/yolov5_detector.hpp"
 
@@ -19,7 +21,7 @@ public:
     TensorrtWrapper()
         : Node("tensorrt_wrapper")
     {
-        std::string engine_file = "yolo.engine";
+        std::string engine_file = "/home/coalman321/yolo.engine";
 
         // init and load the detector
         infer = std::make_shared<yolov5::Detector>();
@@ -77,15 +79,42 @@ private:
                     {
                         int v = (bbox.y + (j * 3));// + bbox.height / 2;
                         float depth = depths.at<float>(u, v);
+                        // RCLCPP_INFO(get_logger(), "DEPTH AT POINT (%d, %d): %f", u, v, depth);
 
-                        if (!isnanf(depth) && depth > 0 && depth < 100)
+                        if (!isnanf(depth) && depth > 0 && depth < 10)
                         {
-                            RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
+                            // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
                             totalPoints++;
                             totalDepth += depth;
                         }
                     }
                 }
+                // if (!done)
+                // {
+                //     std::ofstream myFile;
+                //     myFile.open("/home/coalman321/image.csv");
+                //     for (int u = 0; u < depths.size().width; u++)
+                //     {
+                //         for (int v = 0; v < depths.size().height; v++)
+                //         {
+                //             float depth = depths.at<float>(u, v);
+                //             myFile << std::to_string(depth) + ",";
+                //             // RCLCPP_INFO(get_logger(), "DEPTH AT POINT(%d, %d): %f", u, v, depth);
+                //         }
+                //         myFile << "\n";
+                //     }
+                //     myFile.close();
+                //     done = true;
+                // }
+
+                // for (int i = 0; i < 10; i++)
+                // {
+                //     int u = 420;
+                //     int v = 100 + (10 * i);
+                //     float depth = depths.at<float>(u, v);
+                //     RCLCPP_INFO(get_logger(), "DEPTH AT POINT(%d, %d): %f", u, v, depth);
+                // }
+                // RCLCPP_INFO(get_logger(), "---------------------------------------");
 
                 if (totalPoints > 0)
                 {
@@ -95,11 +124,8 @@ private:
                     float cy = 544.594;
                     float depth = totalDepth / totalPoints;
 
-                    float xPixLoc = bbox.x + bbox.width / 2;
-                    float yPixLoc = bbox.y + bbox.height / 2;
-
-                    float xPos = (xPixLoc - cx) * depth / fx;
-                    float yPos = (yPixLoc - cy) * depth / fy;
+                    float xPos = (bbox.x - cx) * depth / fx;
+                    float yPos = (bbox.y - cy) * depth / fy;
 
                     vision_msgs::msg::Detection3D detection3d;
 
@@ -122,10 +148,11 @@ private:
         detection_pub->publish(detections3d);
     }
 
-    void depth_image_sub_callback(const sensor_msgs::msg::Image::ConstSharedPtr &msg)
+    void
+    depth_image_sub_callback(const sensor_msgs::msg::Image::ConstSharedPtr &msg)
     {
-        depths = cv_bridge::toCvShare(msg, "32FC1")->image;
-        // RCLCPP_INFO(get_logger(), "Depth im size (%d, %d)", depths.size().width, depths.size().height);
+        cv_bridge::toCvShare(msg, "32FC1")->image.copyTo(depths);
+        // RCLCPP_INFO(get_logger(), "MSG TYPE: %s", msg->encoding.c_str());
 
         if (depths.empty())
         {
@@ -134,6 +161,7 @@ private:
         }
     }
 
+    // bool done = false;
     cv::Mat depths;
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr detection_pub;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr left_image_sub;
