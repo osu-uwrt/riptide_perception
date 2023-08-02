@@ -3,15 +3,15 @@ import launch
 from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument, GroupAction
 from launch_ros.actions import Node, PushRosNamespace
-from launch.substitutions import LaunchConfiguration as LC
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration as LC
+
+config_dir = os.path.join(
+    get_package_share_directory('riptide_mapping2'),
+    'config'
+)
 
 def generate_launch_description():
     # declare the launch args to read for this file
-    config = os.path.join(
-        get_package_share_directory('riptide_mapping2'),
-        'config',
-        'dummy_detections.yaml'
-    )
 
     return launch.LaunchDescription([        
         DeclareLaunchArgument(
@@ -24,6 +24,17 @@ def generate_launch_description():
             "robot",
             default_value="tempest",
             description="name of the robot"
+        ),
+
+        DeclareLaunchArgument(
+            "config",
+            default_value="dummy_detections",
+            description="name of maps to use"
+        ),
+
+        DeclareLaunchArgument(
+            "config_yaml",
+            default_value = [LC('config'), '.yaml']
         ),
         
         GroupAction(actions=[
@@ -40,7 +51,10 @@ def generate_launch_description():
                 output='screen',
                 
                 parameters = [
-                    config
+                    PathJoinSubstitution([
+                        config_dir,
+                        LC('config_yaml')
+                    ])
                 ],
                 
                 arguments=[

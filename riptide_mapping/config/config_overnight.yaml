@@ -9,12 +9,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          # sv 1 X: 5.08 Y: 9.03
-          # sv 2 X:-2.30 y:-2.635
-          x: 3.8
-          y: -7.0
-          z: -1.5
-          yaw: 100.0
+          x: 3.5
+          y: 0.0
+          z: -0.35
+          yaw: 180.0
       earth_glyph:
         parent: gate_frame
         covar:
@@ -23,8 +21,8 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 0.25
-          y: 0.0
+          x: 0.0
+          y: 0.25
           z: 0.0
           yaw: 0.0
       buoy:

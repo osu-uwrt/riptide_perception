@@ -4,7 +4,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument, GroupAction
 from launch_ros.actions import Node, PushRosNamespace, ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
-from launch.substitutions import LaunchConfiguration as LC
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration as LC
 
 cfg_36h11 = {
     "image_transport": "raw",
@@ -14,6 +14,11 @@ cfg_36h11 = {
     "z_up": True
 }
 
+config_dir = os.path.join(
+    get_package_share_directory('riptide_mapping2'),
+    'config'
+)
+
 def generate_launch_description():
     # declare the launch args to read for this file
     DeclareLaunchArgument(
@@ -21,24 +26,6 @@ def generate_launch_description():
         default_value="tempest",
         description="Namespace of the vehicle",
     ),
-
-    config = os.path.join(
-        get_package_share_directory('riptide_mapping2'),
-        'config',
-        'config.yaml'
-    )
-
-    # dependentFrames = os.path.join(
-    #     get_package_share_directory('riptide_mapping2'),
-    #     'config',
-    #     'dependent_frames.yaml'
-    # )
-
-    # orientedFrames = os.path.join(
-    #     get_package_share_directory('riptide_mapping2'),
-    #     'config',
-    #     'oriented_frames.yaml'
-    # )
 
     return launch.LaunchDescription([
         DeclareLaunchArgument(
@@ -51,6 +38,17 @@ def generate_launch_description():
             "robot",
             default_value="tempest",
             description="name of the robot"
+        ),
+
+        DeclareLaunchArgument(
+            "config",
+            default_value="config",
+            description="name of maps to use"
+        ),
+
+        DeclareLaunchArgument(
+            "config_yaml",
+            default_value=[LC('config'), ".yaml"]
         ),
 
         GroupAction([
@@ -68,33 +66,12 @@ def generate_launch_description():
 
                 # use the parameters on the node
                 parameters=[
-                    config
+                    PathJoinSubstitution([
+                        config_dir,
+                        LC("config_yaml")
+                    ])
                 ]
             ),
-
-            # Node(
-            #     package='riptide_mapping2',
-            #     executable='dependentFramePublisher',
-            #     name='dependent_frame_publisher',
-            #     respawn=True,
-            #     output='screen',
-
-            #     parameters=[
-            #         dependentFrames
-            #     ]
-            # ),
-
-            # Node(
-            #     package='riptide_mapping2',
-            #     executable='orientedFramePublisher',
-            #     name='oriented_frame_publisher',
-            #     respawn=True,
-            #     output='screen',
-
-            #     parameters=[
-            #         orientedFrames
-            #     ]
-            # ),
 
             Node(
                 package="chameleon_tf",
