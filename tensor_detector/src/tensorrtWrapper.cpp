@@ -12,7 +12,7 @@
 #include "vision_msgs/msg/detection3_d.hpp"
 #include "vision_msgs/msg/detection3_d_array.hpp"
 
-#include "eigen3/Eigen/SVD"
+// #include "eigen3/Eigen/SVD"
 
 #include "tensorrt_detector/yolov5_detector.hpp"
 
@@ -36,13 +36,13 @@ public:
         detection_pub = this->create_publisher<vision_msgs::msg::Detection3DArray>("detections", rclcpp::SystemDefaultsQoS());
 
         // create the two image subs we need to consume
-        left_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zedm/zed_node/left/image_rect_color",
+        left_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zed2i/zed_node/left/image_rect_color",
                                                                             rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::left_image_sub_callback, this, std::placeholders::_1));
 
-        depth_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zedm/zed_node/depth/depth_registered",
+        depth_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zed2i/zed_node/depth/depth_registered",
                                                                              rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::depth_image_sub_callback, this, std::placeholders::_1));
 
-        camera_info_sub = this->create_subscription<sensor_msgs::msg::CameraInfo>("/zedm/zed_node/left/camera_info",
+        camera_info_sub = this->create_subscription<sensor_msgs::msg::CameraInfo>("/zed2i/zed_node/left/camera_info",
                                                                                   rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::camera_info_sub_callback, this, std::placeholders::_1));
     }
 
@@ -77,8 +77,8 @@ private:
                 cv::Rect bbox = detection.boundingBox();
                 int totalPoints = 0;
                 float totalDepth = 0;
-                std::vector<cv::Point2f> imgPoints;
-                std::vector<float> depths;
+                // std::vector<cv::Point2f> imgPoints;
+                // std::vector<float> depths;
                 RCLCPP_INFO(get_logger(), "Detected %i with conf %f", detection.classId(), detection.score());
                 for (int i = -1; i < 2; i++)
                 {
@@ -96,8 +96,8 @@ private:
                                 if (!isnanf(depth) && depth > 0 && depth < 10)
                                 {
                                     // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
-                                    depths.push_back(depth);
-                                    imgPoints.push_back(cv::Point2f(u, v));
+                                    // depths.push_back(depth);
+                                    // imgPoints.push_back(cv::Point2f(u, v));
                                     totalPoints++;
                                     totalDepth += depth;
                                 }
@@ -112,7 +112,7 @@ private:
                     // cv::remap()
                     std::vector<cv::Point2f> origPoint;
                     origPoint.emplace_back(cv::Point2f(bbox.x, bbox.y));
-                    std::vector<cv::Point2f> rays;
+                    std::vector<cv::Point2f> ray;
 
                     cv::undistortPoints(origPoint, ray, camera_matrix, dist_coeffs);
 
@@ -160,7 +160,7 @@ private:
     {
         if (!gotCalibrationInfo)
         {
-            camera_matrix = cv::Mat(cv::Size(3, 3), CV_64FC1, (void *)msg->k.data());
+            cv::Mat(cv::Size(3, 3), CV_64FC1, (void *)msg->k.data()).convertTo(camera_matrix, CV_32FC1);
             gotCalibrationInfo = true;
         }
     }
