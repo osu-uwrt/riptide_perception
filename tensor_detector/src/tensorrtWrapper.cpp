@@ -6,10 +6,13 @@
 #include "rclcpp/qos.hpp"
 #include "cv_bridge/cv_bridge.h"
 #include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/camera_info.hpp"
 #include "geometry_msgs/msg/pose.hpp"
 #include "vision_msgs/msg/object_hypothesis_with_pose.hpp"
 #include "vision_msgs/msg/detection3_d.hpp"
 #include "vision_msgs/msg/detection3_d_array.hpp"
+
+#include "eigen3/Eigen/SVD"
 
 #include "tensorrt_detector/yolov5_detector.hpp"
 
@@ -33,17 +36,21 @@ public:
         detection_pub = this->create_publisher<vision_msgs::msg::Detection3DArray>("detections", rclcpp::SystemDefaultsQoS());
 
         // create the two image subs we need to consume
-        left_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zed2i/zed_node/left/image_rect_color",
+        left_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zedm/zed_node/left/image_rect_color",
                                                                             rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::left_image_sub_callback, this, std::placeholders::_1));
 
-        depth_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zed2i/zed_node/depth/depth_registered",
+        depth_image_sub = this->create_subscription<sensor_msgs::msg::Image>("/zedm/zed_node/depth/depth_registered",
                                                                              rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::depth_image_sub_callback, this, std::placeholders::_1));
+
+        camera_info_sub = this->create_subscription<sensor_msgs::msg::CameraInfo>("/zedm/zed_node/left/camera_info",
+                                                                                  rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::camera_info_sub_callback, this, std::placeholders::_1));
     }
 
 private:
     void left_image_sub_callback(const sensor_msgs::msg::Image::ConstSharedPtr &msg)
     {
-        cv::Mat frame = cv_bridge::toCvShare(msg, "bgr8")->image;
+        cv::Mat frame;
+        cv_bridge::toCvShare(msg, "bgr8")->image.copyTo(frame);
 
         if (frame.empty())
         {
@@ -62,83 +69,71 @@ private:
         // make the detection array and copy the header from the camera as this is all still camera relative
         vision_msgs::msg::Detection3DArray detections3d;
         detections3d.header = msg->header;
-        if (depths.size().width > 0)
+        if (gotCalibrationInfo && depths.size().width > 0)
         {
             // process each of the detections
             for (yolov5::Detection detection : detections)
             {
-
                 cv::Rect bbox = detection.boundingBox();
-                RCLCPP_INFO(get_logger(), "Detected %i with conf %f", detection.classId(), detection.score());
                 int totalPoints = 0;
                 float totalDepth = 0;
+                std::vector<cv::Point2f> imgPoints;
+                std::vector<float> depths;
+                RCLCPP_INFO(get_logger(), "Detected %i with conf %f", detection.classId(), detection.score());
                 for (int i = -1; i < 2; i++)
                 {
-                    int u = (bbox.x + (i * 3));// + bbox.width / 2;
-                    for (int j = -1; j < 2; j++)
+                    int u = (bbox.x + (i * 3)); // + bbox.width / 2;
+                    if (u < depths.size().width)
                     {
-                        int v = (bbox.y + (j * 3));// + bbox.height / 2;
-                        float depth = depths.at<float>(u, v);
-                        // RCLCPP_INFO(get_logger(), "DEPTH AT POINT (%d, %d): %f", u, v, depth);
-
-                        if (!isnanf(depth) && depth > 0 && depth < 10)
+                        for (int j = -1; j < 2; j++)
                         {
-                            // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
-                            totalPoints++;
-                            totalDepth += depth;
+                            int v = (bbox.y + (j * 3)); // + bbox.height / 2;
+                            if (v < depths.size().height)
+                            {
+                                float depth = depths.at<float>(u, v);
+                                // RCLCPP_INFO(get_logger(), "DEPTH AT POINT (%d, %d): %f", u, v, depth);
+
+                                if (!isnanf(depth) && depth > 0 && depth < 10)
+                                {
+                                    // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
+                                    depths.push_back(depth);
+                                    imgPoints.push_back(cv::Point2f(u, v));
+                                    totalPoints++;
+                                    totalDepth += depth;
+                                }
+                            }
                         }
                     }
                 }
-                // if (!done)
-                // {
-                //     std::ofstream myFile;
-                //     myFile.open("/home/coalman321/image.csv");
-                //     for (int u = 0; u < depths.size().width; u++)
-                //     {
-                //         for (int v = 0; v < depths.size().height; v++)
-                //         {
-                //             float depth = depths.at<float>(u, v);
-                //             myFile << std::to_string(depth) + ",";
-                //             // RCLCPP_INFO(get_logger(), "DEPTH AT POINT(%d, %d): %f", u, v, depth);
-                //         }
-                //         myFile << "\n";
-                //     }
-                //     myFile.close();
-                //     done = true;
-                // }
-
-                // for (int i = 0; i < 10; i++)
-                // {
-                //     int u = 420;
-                //     int v = 100 + (10 * i);
-                //     float depth = depths.at<float>(u, v);
-                //     RCLCPP_INFO(get_logger(), "DEPTH AT POINT(%d, %d): %f", u, v, depth);
-                // }
-                // RCLCPP_INFO(get_logger(), "---------------------------------------");
 
                 if (totalPoints > 0)
                 {
-                    float fx = 1078.96;
-                    float fy = 1079.0;
-                    float cx = 967.35;
-                    float cy = 544.594;
                     float depth = totalDepth / totalPoints;
+                    // cv::remap()
+                    std::vector<cv::Point2f> origPoint;
+                    origPoint.emplace_back(cv::Point2f(bbox.x, bbox.y));
+                    std::vector<cv::Point2f> rays;
 
-                    float xPos = (bbox.x - cx) * depth / fx;
-                    float yPos = (bbox.y - cy) * depth / fy;
+                    cv::undistortPoints(origPoint, ray, camera_matrix, dist_coeffs);
+
+                    float norm = std::sqrt(std::pow(ray[0].x, 2) + std::pow(ray[0].y, 2) + 1.0);
+
+                    cv::Point3f fixedRay = cv::Point3f(ray[0].x / norm * depth, ray[0].y / norm * depth, 1 / norm * depth);
+
+                    RCLCPP_INFO(get_logger(), "DEPTH: %f", depth);
 
                     vision_msgs::msg::Detection3D detection3d;
 
                     detection3d.header.stamp = msg->header.stamp;
-                    detection3d.header.frame_id = "zed2i_left_optical_frame";
+                    detection3d.header.frame_id = "zedm_left_optical_frame";
 
                     geometry_msgs::msg::Pose objPose;
                     vision_msgs::msg::ObjectHypothesisWithPose objHypo;
 
                     objHypo.hypothesis.class_id = detection.classId();
-                    objHypo.pose.pose.position.x = xPos;
-                    objHypo.pose.pose.position.y = yPos;
-                    objHypo.pose.pose.position.z = depth;
+                    objHypo.pose.pose.position.x = fixedRay.x;
+                    objHypo.pose.pose.position.y = fixedRay.y;
+                    objHypo.pose.pose.position.z = fixedRay.z;
 
                     detection3d.results.push_back(objHypo);
                     detections3d.detections.push_back(detection3d);
@@ -161,11 +156,23 @@ private:
         }
     }
 
-    // bool done = false;
+    void camera_info_sub_callback(const sensor_msgs::msg::CameraInfo::ConstSharedPtr &msg)
+    {
+        if (!gotCalibrationInfo)
+        {
+            camera_matrix = cv::Mat(cv::Size(3, 3), CV_64FC1, (void *)msg->k.data());
+            gotCalibrationInfo = true;
+        }
+    }
+
+    bool gotCalibrationInfo = false;
+    cv::Mat camera_matrix = cv::Mat(cv::Size(3, 3), CV_64FC1);
+    cv::Mat dist_coeffs = cv::Mat().zeros(cv::Size(1, 5), CV_32FC1);
     cv::Mat depths;
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr detection_pub;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr left_image_sub;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_image_sub;
+    rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub;
     std::shared_ptr<yolov5::Detector> infer;
 };
 
