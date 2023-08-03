@@ -2,26 +2,32 @@
   ros__parameters:
     timer_rate: 0.1
     detection_data:
+      test_detection:
+        pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        pub_invalid_orientation: false
+        max_visible_dist: 2.0
       gate:
-        pose: [3.9, 0.0, -0.35, 0.0, 0.0, 1.5707]
+        pose: [3.9, 0.0, -0.35, 0.0, 0.0, -3.1415]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
       earth_glyph:
-        pose: [3.9, 0.4, -0.35, 0.0, 0.0, 1.5707]
+        pose: [3.9, 0.4, -0.35, 0.0, 0.0, -3.1415]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       buoy:
-        pose: [5.0, -2.0, -1.5, 0.0, 0.0, -3.1415]
+        pose: [2.0, 3.0, -0.5, 0.0, 0.0, -1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       buoy_glyph_1:
-        pose: [5.0, -2.125, -1.375, 0.0, 0.0, 3.1415]
+        pose: [2.5, 3.0, -0.5, 0.0, 0.0, -1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
@@ -33,19 +39,19 @@
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       torpedo:
-        pose: [3.5, 3.5, -1.25, 0.0, 0.0, 3.1415]
+        pose: [2.75, 2.75, -0.5, 0.0, 0.0, -1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       torpedo_upper_hole:
-        pose: [3.5, 3.5, -1.0, 0.0, 0.0, 3.1415]
+        pose: [3.0, 2.75, -0.5, 0.0, 0.0, -1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 1.25
       torpedo_lower_hole:
-        pose: [3.5, 3.5, -1.5, 0.0, 0.0, 3.1415]
+        pose: [2.5, 2.75, -0.5, 0.0, 0.0, -1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false

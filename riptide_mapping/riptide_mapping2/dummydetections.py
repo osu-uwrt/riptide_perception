@@ -21,6 +21,7 @@ from vision_msgs.msg import (Detection3D, Detection3DArray,
 TOPIC_NAME = "detected_objects"
 
 objects = [
+    # "test_detection",
     "gate",
     "buoy",
     "earth_glyph",
@@ -109,15 +110,16 @@ class DummyDetectionNode(Node):
             hAngleDeg = y - horizHeadingToObj
             hAngleDeg = (hAngleDeg + 180) % 360 - 180
             
-            vertHeadingToObj = atan2(dZ, dX)
-            vertHeadingToObj *= 180.0 / pi
-            p *= 180.0 / pi
-            vAngleDeg = p - vertHeadingToObj
-            vAngleDeg = (vAngleDeg + 180) % 360 - 180
+            # vertHeadingToObj = atan2(dZ, dX)
+            # vertHeadingToObj *= 180.0 / pi
+            # p *= 180.0 / pi
+            # vAngleDeg = p - vertHeadingToObj
+            # vAngleDeg = (vAngleDeg + 180) % 360 - 180
 
-            self.get_logger().debug(f"dist: {dist}, hangledeg: {hAngleDeg}, vangledeg: {vAngleDeg}")
+            self.get_logger().debug(f"dist: {dist}, hangledeg: {hAngleDeg}")
                         
-            return dist < maxDist and abs(hAngleDeg) < self.cameraHFov and abs(vAngleDeg) < self.cameraVFov
+            # return dist < maxDist and abs(hAngleDeg) < self.cameraHFov and abs(vAngleDeg) < self.cameraVFov
+            return dist < maxDist and abs(hAngleDeg) < self.cameraHFov
         except TransformException as ex:
             self.get_logger().warn(f"Could not look up transform from {cameraFrameName} to world! {ex}", throttle_duration_sec = 0.5)
             return False
