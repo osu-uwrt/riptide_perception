@@ -13,10 +13,13 @@
   <depend>vision_msgs</depend>
   <depend>OpenCV</depend>
   <depend>cv_bridge</depend>
+  <depend>geometry_msgs</depend>
   <depend>CUDA</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+
+  <exec_depend>ros2launch</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

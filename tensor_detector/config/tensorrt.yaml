@@ -1,0 +1,13 @@
+/**/tensor_detector:
+  ros__parameters:
+    obj_ids:
+      [
+        "gate",
+        "buoy",
+        "buoy",
+        "torpedo",
+        "torpedo",
+        "earth",
+        "abydos",
+      ]
+    engine_path: "/home/coalman321/yolo_01.engine"

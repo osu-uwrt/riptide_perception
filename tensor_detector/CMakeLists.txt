@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(vision_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 
 # get opencv
@@ -60,7 +61,7 @@ target_include_directories(tensorrtWrapper PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_compile_features(tensorrtWrapper PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_link_libraries(tensorrtWrapper yolov5_tensorrt)
-ament_target_dependencies(tensorrtWrapper OpenCV rclcpp vision_msgs sensor_msgs cv_bridge)
+ament_target_dependencies(tensorrtWrapper OpenCV rclcpp geometry_msgs vision_msgs sensor_msgs cv_bridge)
 
 
 
@@ -68,6 +69,17 @@ install(TARGETS tensorrtWrapper yolov5_tensorrt
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME})
+
+#install launch
+install(
+    DIRECTORY launch
+    DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
