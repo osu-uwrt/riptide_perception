@@ -9,12 +9,7 @@
         "torpedo",
         "earth",
         "abydos",
-        "torpedo_hole",
-        "blah",
-        "yes",
-        "testing",
-        "noerrors",
-        "verygood"
+        "torpedo_hole"
       ]
     threshold: 0.7
     iou: 0.9
