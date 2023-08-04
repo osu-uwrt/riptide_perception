@@ -11,5 +11,5 @@
         "abydos",
         "torpedo_hole"
       ]
-    threshold: 0.3
+    threshold: 0.7
     iou: 0.9
