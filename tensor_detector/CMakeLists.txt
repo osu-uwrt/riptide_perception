@@ -76,8 +76,15 @@ install(
     DESTINATION share/${PROJECT_NAME}
 )
 
+#install config
 install(
   DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
+)
+
+#install weights
+install(
+  DIRECTORY weights
   DESTINATION share/${PROJECT_NAME}
 )
 

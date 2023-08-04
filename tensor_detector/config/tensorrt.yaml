@@ -9,5 +9,7 @@
         "torpedo",
         "earth",
         "abydos",
+        "torpedo_hole"
       ]
-    engine_path: "/home/coalman321/yolo_01.engine"
+    threshold: 0.3
+    iou: 0.9
