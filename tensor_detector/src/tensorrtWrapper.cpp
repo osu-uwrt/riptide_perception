@@ -12,8 +12,8 @@
 #include "vision_msgs/msg/detection3_d.hpp"
 #include "vision_msgs/msg/detection3_d_array.hpp"
 
-#include "eigen3/Eigen/SVD"
-#include "eigen3/Eigen/Geometry"
+// #include "eigen3/Eigen/SVD"
+// #include "eigen3/Eigen/Geometry"
 
 #include "tensorrt_detector/yolov5_detector.hpp"
 
@@ -49,9 +49,14 @@ public:
         declare_parameter("obj_ids", rclcpp::ParameterValue(objIds));
         objIds = get_parameter("obj_ids").as_string_array();
 
-        for (size_t i = 0; i < objIds.size(); i++ ){
+        for (size_t i = 0; i < objIds.size(); i++)
+        {
             RCLCPP_WARN(get_logger(), "Class %d -> %s", i, objIds.at(i).c_str());
         }
+
+        declare_parameter("max_depth", rclcpp::ParameterValue(maxDepth));
+        maxDepth = get_parameter("max_depth").as_double();
+        RCLCPP_WARN(get_logger(), "Max depth set to %f", maxDepth);
 
         // create the pub for detections
         detection_pub = this->create_publisher<vision_msgs::msg::Detection3DArray>("detected_objects", rclcpp::SystemDefaultsQoS());
@@ -64,6 +69,9 @@ public:
 
         depth_image_sub = this->create_subscription<sensor_msgs::msg::Image>("zed2i/zed_node/depth/depth_registered",
                                                                              rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::depth_image_sub_callback, this, std::placeholders::_1));
+
+        normal_map_sub = this->create_subscription<sensor_msgs::msg::Image>("zed2i/zed_node/normals",
+                                                                            rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::normals_sub_callback, this, std::placeholders::_1));
 
         camera_info_sub = this->create_subscription<sensor_msgs::msg::CameraInfo>("zed2i/zed_node/left/camera_info",
                                                                                   rclcpp::SystemDefaultsQoS(), std::bind(&TensorrtWrapper::camera_info_sub_callback, this, std::placeholders::_1));
@@ -95,21 +103,24 @@ private:
         // make the detection array and copy the header from the camera as this is all still camera relative
         vision_msgs::msg::Detection3DArray detections3d;
         detections3d.header = msg->header;
-        if (gotCalibrationInfo && depths.size().width > 0)
+        if (gotCalibrationInfo && depths.size().width > 0 && normals.size().width > 0)
         {
             // RCLCPP_INFO(get_logger(), "HERE");
             // process each of the detections
             for (yolov5::Detection detection : detections)
             {
-                if (detection.classId() > objIds.size()) {
+                if (detection.classId() > objIds.size())
+                {
                     RCLCPP_FATAL(get_logger(), "DETECTED CLASS OUTSIDE OF DEFINED CLASS DICTIONARY");
                     throw std::runtime_error("DETECTED CLASS OUTSIDE OF DEFINED CLASS DICTIONARY");
                 }
                 int totalPoints = 0;
+                int totalVecs = 0;
                 float totalDepths = 0;
                 std::vector<float> sampledDepths;
                 std::vector<cv::Point2f> imgPoints;
                 cv::Rect bbox = detection.boundingBox();
+                cv::Point3f summedVector;
 
                 cv::rectangle(copyFrame, bbox, cv::Scalar(0, 0, 255));
                 std::string classId = std::to_string(detection.classId());
@@ -131,10 +142,18 @@ private:
                                 if (!isnanf(depth) && depth > 0 && depth < 10)
                                 {
                                     // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
-                                    sampledDepths.push_back(depth);
-                                    imgPoints.push_back(cv::Point2f(v, u));
+                                    // sampledDepths.push_back(depth);
+                                    // imgPoints.push_back(cv::Point2f(v, u));
                                     totalPoints++;
                                     totalDepths += depth;
+
+                                    if (!std::isnan(normals.at<cv::Vec4f>(v, u)[0]))
+                                    {
+                                        summedVector.x += normals.at<cv::Vec4f>(v, u)[0];
+                                        summedVector.y += normals.at<cv::Vec4f>(v, u)[1];
+                                        summedVector.z += normals.at<cv::Vec4f>(v, u)[2];
+                                        totalVecs++;
+                                    }
                                 }
                             }
                         }
@@ -171,69 +190,89 @@ private:
                     objHypo.pose.pose.position.y = fixedRay.y;
                     objHypo.pose.pose.position.z = fixedRay.z;
 
-                    if (totalPoints > 3)
+                    // if (totalPoints > 3)
+                    // {
+                    //     std::vector<cv::Point2f> rays;
+
+                    //     cv::undistortPoints(imgPoints, rays, camera_matrix, dist_coeffs);
+
+                    //     std::vector<cv::Point3f> cvPoints3d;
+
+                    //     Eigen::MatrixXf points3d(3, totalPoints);
+
+                    //     cv::Point3f centroid;
+
+                    //     for (int i = 0; i < rays.size(); i++)
+                    //     {
+                    //         float norm = std::sqrt(std::pow(rays[i].x, 2) + std::pow(rays[i].y, 2) + 1.0);
+                    //         centroid.x += rays[i].x / norm * sampledDepths[i];
+                    //         centroid.y += rays[i].y / norm * sampledDepths[i];
+                    //         centroid.z += 1.0 / norm * sampledDepths[i];
+                    //         // RCLCPP_INFO(get_logger(), "Depth at point: %f", sampledDepths[i]);
+                    //         // RCLCPP_INFO(get_logger(), "ADDED POINT: %f, %f, %f", points3d(0, i), points3d(1, i), points3d(2, i));
+                    //     }
+                    //     centroid.x /= totalPoints;
+                    //     centroid.y /= totalPoints;
+                    //     centroid.z /= totalPoints;
+
+                    //     for (int i = 0; i < totalPoints; i++)
+                    //     {
+                    //         float norm = std::sqrt(std::pow(rays[i].x, 2) + std::pow(rays[i].y, 2) + 1.0);
+                    //         points3d(0, i) = (rays[i].x / norm * sampledDepths[i]) - centroid.x;
+                    //         points3d(1, i) = (rays[i].y / norm * sampledDepths[i]) - centroid.y;
+                    //         points3d(2, i) = (1.0 / norm * sampledDepths[i]) - centroid.z;
+                    //     }
+
+                    //     Eigen::JacobiSVD svd(points3d, Eigen::ComputeFullU);
+                    //     Eigen::Matrix3f uMat = svd.matrixU();
+
+                    //     Eigen::Vector3f camNormal = Eigen::Vector3f(0, 0, 1);
+
+                    //     Eigen::Vector3f objNormal = Eigen::Vector3f(uMat(0, 2), uMat(1, 2), uMat(2, 2));
+
+                    //     Eigen::Vector3f product = camNormal.cross(objNormal);
+
+                    //     Eigen::Vector4f nonnormQuaternion(0.0, product.x(), product.y(), product.z());
+
+                    //     nonnormQuaternion.w() = std::sqrt(camNormal.norm() * objNormal.norm() + camNormal.dot(objNormal));
+
+                    //     // RCLCPP_INFO(get_logger(), "W: %f", std::sqrt(camNormal.norm() * objNormal.norm() + camNormal.dot(objNormal)));
+                    //     // orientationVector.angle() = 0.0;
+                    //     // orientationVector.axis().x() = uMat(0, 2);
+                    //     // orientationVector.axis().y() = uMat(1, 2);
+                    //     // orientationVector.axis().z() = uMat(2, 2);
+                    //     // RCLCPP_WARN(get_logger(), "Axis Angles: %f, %f, %f", objNormal.x(), objNormal.y(), objNormal.z());
+
+                    //     Eigen::Quaternionf q;
+
+                    //     objHypo.pose.pose.orientation.w = nonnormQuaternion.w() / nonnormQuaternion.norm();
+                    //     objHypo.pose.pose.orientation.x = nonnormQuaternion.x() / nonnormQuaternion.norm();
+                    //     objHypo.pose.pose.orientation.y = nonnormQuaternion.y() / nonnormQuaternion.norm();
+                    //     objHypo.pose.pose.orientation.z = nonnormQuaternion.z() / nonnormQuaternion.norm();
+                    //     // RCLCPP_INFO(get_logger(), "Q: %f, %f, %f, %f", objHypo.pose.pose.orientation.w,
+                    //     //             objHypo.pose.pose.orientation.x,
+                    //     //             objHypo.pose.pose.orientation.y,
+                    //     //             objHypo.pose.pose.orientation.z);
+
+                    // }
+                    // else
+                    // {
+                    //     objHypo.pose.pose.orientation.w = 2.0;
+                    //     objHypo.pose.pose.orientation.x = 2.0;
+                    //     objHypo.pose.pose.orientation.y = 2.0;
+                    //     objHypo.pose.pose.orientation.z = 2.0;
+                    // }
+
+                    if (totalVecs > 0)
                     {
-                        std::vector<cv::Point2f> rays;
-
-                        cv::undistortPoints(imgPoints, rays, camera_matrix, dist_coeffs);
-
-                        std::vector<cv::Point3f> cvPoints3d;
-
-                        Eigen::MatrixXf points3d(3, totalPoints);
-
-                        cv::Point3f centroid;
-
-                        for (int i = 0; i < rays.size(); i++)
-                        {
-                            float norm = std::sqrt(std::pow(rays[i].x, 2) + std::pow(rays[i].y, 2) + 1.0);
-                            centroid.x += rays[i].x / norm * sampledDepths[i];
-                            centroid.y += rays[i].y / norm * sampledDepths[i];
-                            centroid.z += 1.0 / norm * sampledDepths[i];
-                            // RCLCPP_INFO(get_logger(), "Depth at point: %f", sampledDepths[i]);
-                            // RCLCPP_INFO(get_logger(), "ADDED POINT: %f, %f, %f", points3d(0, i), points3d(1, i), points3d(2, i));
-                        }
-                        centroid.x /= totalPoints;
-                        centroid.y /= totalPoints;
-                        centroid.z /= totalPoints;
-
-                        for (int i = 0; i < totalPoints; i++)
-                        {
-                            float norm = std::sqrt(std::pow(rays[i].x, 2) + std::pow(rays[i].y, 2) + 1.0);
-                            points3d(0, i) = (rays[i].x / norm * sampledDepths[i]) - centroid.x;
-                            points3d(1, i) = (rays[i].y / norm * sampledDepths[i]) - centroid.y;
-                            points3d(2, i) = (1.0 / norm * sampledDepths[i]) - centroid.z;
-                        }
-
-                        Eigen::JacobiSVD svd(points3d, Eigen::ComputeFullU);
-                        Eigen::Matrix3f uMat = svd.matrixU();
-
-                        Eigen::Vector3f camNormal = Eigen::Vector3f(0, 0, 1);
-
-                        Eigen::Vector3f objNormal = Eigen::Vector3f(uMat(0, 2), uMat(1, 2), uMat(2, 2));
-
-                        Eigen::Vector3f product = camNormal.cross(objNormal);
-
-                        Eigen::Vector4f nonnormQuaternion(0.0, product.x(), product.y(), product.z());
-
-                        nonnormQuaternion.w() = std::sqrt(camNormal.norm() * objNormal.norm() + camNormal.dot(objNormal));
-
-                        // RCLCPP_INFO(get_logger(), "W: %f", std::sqrt(camNormal.norm() * objNormal.norm() + camNormal.dot(objNormal)));
-                        // orientationVector.angle() = 0.0;
-                        // orientationVector.axis().x() = uMat(0, 2);
-                        // orientationVector.axis().y() = uMat(1, 2);
-                        // orientationVector.axis().z() = uMat(2, 2);
-                        // RCLCPP_WARN(get_logger(), "Axis Angles: %f, %f, %f", objNormal.x(), objNormal.y(), objNormal.z());
-
-                        Eigen::Quaternionf q;
-
-                        objHypo.pose.pose.orientation.w = nonnormQuaternion.w() / nonnormQuaternion.norm();
-                        objHypo.pose.pose.orientation.x = nonnormQuaternion.x() / nonnormQuaternion.norm();
-                        objHypo.pose.pose.orientation.y = nonnormQuaternion.y() / nonnormQuaternion.norm();
-                        objHypo.pose.pose.orientation.z = nonnormQuaternion.z() / nonnormQuaternion.norm();
-                        // RCLCPP_INFO(get_logger(), "Q: %f, %f, %f, %f", objHypo.pose.pose.orientation.w,
-                        //             objHypo.pose.pose.orientation.x,
-                        //             objHypo.pose.pose.orientation.y,
-                        //             objHypo.pose.pose.orientation.z);
+                        cv::Point3f camNorm = cv::Point3f(0, 0, 1);
+                        cv::Point3f xyz = camNorm.cross(summedVector);
+                        float unnormQuaterinion[4] = {std::sqrt(cv::norm(summedVector) + camNorm.dot(summedVector)), xyz.x, xyz.y, xyz.z};
+                        float unnormQuatLen = std::sqrt(std::pow(unnormQuaterinion[0], 2) + std::pow(unnormQuaterinion[1], 2) + std::pow(unnormQuaterinion[2], 2) + std::pow(unnormQuaterinion[3], 2));
+                        objHypo.pose.pose.orientation.w = unnormQuaterinion[0] / unnormQuatLen;
+                        objHypo.pose.pose.orientation.x = unnormQuaterinion[1] / unnormQuatLen;
+                        objHypo.pose.pose.orientation.y = unnormQuaterinion[2] / unnormQuatLen;
+                        objHypo.pose.pose.orientation.z = unnormQuaterinion[3] / unnormQuatLen;
                     }
                     else
                     {
@@ -267,6 +306,22 @@ private:
         }
     }
 
+    void
+    normals_sub_callback(const sensor_msgs::msg::Image::ConstSharedPtr &msg)
+    {
+        cv_bridge::toCvShare(msg, msg->encoding)->image.copyTo(normals);
+
+        // RCLCPP_WARN(get_logger(), "RETRIEVED NORMALS");
+        // RCLCPP_WARN(get_logger(), "Encoding: %s", msg->encoding.c_str());
+        // RCLCPP_WARN(get_logger(), "%f is the x of the first element", normals.at<float>)
+
+        if (normals.empty())
+        {
+            RCLCPP_WARN(get_logger(), "Empty image on topic %s", normal_map_sub->get_topic_name());
+            return;
+        }
+    }
+
     void camera_info_sub_callback(const sensor_msgs::msg::CameraInfo::ConstSharedPtr &msg)
     {
         if (!gotCalibrationInfo)
@@ -276,15 +331,18 @@ private:
         }
     }
 
+    double maxDepth = 10.0;
     bool gotCalibrationInfo = false;
     cv::Mat camera_matrix;
     cv::Mat dist_coeffs = cv::Mat().zeros(cv::Size(1, 5), CV_32FC1);
     cv::Mat depths;
+    cv::Mat normals;
     std::vector<std::string> objIds;
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr detection_pub;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr bbox_pub;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr left_image_sub;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_image_sub;
+    rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr normal_map_sub;
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub;
     std::shared_ptr<yolov5::Detector> infer;
 };
