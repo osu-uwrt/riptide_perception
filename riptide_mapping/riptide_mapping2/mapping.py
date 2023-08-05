@@ -233,7 +233,7 @@ class MappingNode(Node):
 
                 # theshold the confidence of the detection is above the min
                 min = self.config["confidence_cutoff"]
-                if(result.hypothesis.score <  min):
+                if(result.hypothesis.score < min):
                     self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}", throttle_duration_sec = 1)
                     continue
                 

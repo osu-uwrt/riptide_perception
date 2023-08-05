@@ -16,7 +16,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'best200generated.engine')
+        tensorrt_wrapper_dir, 'weights', 'best60ish_arvp_confused.engine')
 
     ld.add_action(DeclareLaunchArgument(
         name="robot",
