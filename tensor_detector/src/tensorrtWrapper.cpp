@@ -127,7 +127,7 @@ private:
                 cv::putText(copyFrame, classId, cv::Point(bbox.x + (bbox.width / 2), bbox.y + (bbox.height / 2)), cv::FONT_HERSHEY_PLAIN, 5.0, cv::Scalar(0, 0, 255), 1);
                 // RCLCPP_INFO(get_logger(), "Detected %i with conf %f", detection.classId(), detection.score());
 
-                if (std::strcmp(objIds[detection.classId()], "gate") == 0)
+                if (std::strcmp(objIds[detection.classId()].c_str(), "gate") == 0)
                 {
                     cv::Mat subMat;
                     depths(bbox).copyTo(subMat);
