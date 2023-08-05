@@ -126,33 +126,44 @@ private:
                 std::string classId = std::to_string(detection.classId());
                 cv::putText(copyFrame, classId, cv::Point(bbox.x + (bbox.width / 2), bbox.y + (bbox.height / 2)), cv::FONT_HERSHEY_PLAIN, 5.0, cv::Scalar(0, 0, 255), 1);
                 // RCLCPP_INFO(get_logger(), "Detected %i with conf %f", detection.classId(), detection.score());
-                for (int i = -1; i < 2; i++)
+
+                if (std::strcmp(objIds[detection.classId()], "gate") == 0)
                 {
-                    int u = (bbox.x + (i * 3)) + bbox.width / 2;
-                    if (u < depths.size().width)
+                    cv::Mat subMat;
+                    depths(bbox).copyTo(subMat);
+                    cv::patchNaNs(subMat);
+                    totalPoints = subMat.total() - cv::countNonZero(subMat);
+                }
+                else
+                {
+                    for (int i = -1; i < 2; i++)
                     {
-                        for (int j = -1; j < 2; j++)
+                        int u = (bbox.x + (i * 3)) + bbox.width / 2;
+                        if (u < depths.size().width)
                         {
-                            int v = (bbox.y + (j * 3)) + bbox.height / 2;
-                            if (v < depths.size().height)
+                            for (int j = -1; j < 2; j++)
                             {
-                                float depth = depths.at<float>(v, u);
-                                // RCLCPP_INFO(get_logger(), "DEPTH AT POINT (%d, %d): %f", u, v, depth);
-
-                                if (!isnanf(depth) && depth > 0 && depth < 10)
+                                int v = (bbox.y + (j * 3)) + bbox.height / 2;
+                                if (v < depths.size().height)
                                 {
-                                    // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
-                                    // sampledDepths.push_back(depth);
-                                    // imgPoints.push_back(cv::Point2f(v, u));
-                                    totalPoints++;
-                                    totalDepths += depth;
+                                    float depth = depths.at<float>(v, u);
+                                    // RCLCPP_INFO(get_logger(), "DEPTH AT POINT (%d, %d): %f", u, v, depth);
 
-                                    if (!std::isnan(normals.at<cv::Vec4f>(v, u)[0]))
+                                    if (!isnanf(depth) && depth > 0 && depth < 10)
                                     {
-                                        summedVector.x += normals.at<cv::Vec4f>(v, u)[0];
-                                        summedVector.y += normals.at<cv::Vec4f>(v, u)[1];
-                                        summedVector.z += normals.at<cv::Vec4f>(v, u)[2];
-                                        totalVecs++;
+                                        // RCLCPP_INFO(get_logger(), "ADDING DEPTH: %f", depth);
+                                        // sampledDepths.push_back(depth);
+                                        // imgPoints.push_back(cv::Point2f(v, u));
+                                        totalPoints++;
+                                        totalDepths += depth;
+
+                                        if (!std::isnan(normals.at<cv::Vec4f>(v, u)[0]))
+                                        {
+                                            summedVector.x += normals.at<cv::Vec4f>(v, u)[0];
+                                            summedVector.y += normals.at<cv::Vec4f>(v, u)[1];
+                                            summedVector.z += normals.at<cv::Vec4f>(v, u)[2];
+                                            totalVecs++;
+                                        }
                                     }
                                 }
                             }
