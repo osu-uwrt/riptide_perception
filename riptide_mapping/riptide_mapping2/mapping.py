@@ -202,6 +202,9 @@ class MappingNode(Node):
             # `result` is of type ObjectHypothesisWithPose (http://docs.ros.org/en/lunar/api/vision_msgs/html/msg/ObjectHypothesisWithPose.html)
             for result in detection.results: 
                 name = result.hypothesis.class_id 
+
+                if not name in objects.keys():
+                    continue
                 
                 if objects[name]["pose"] is None:
                     self.get_logger().warning(f"Rejected {name}: unknown class id")
@@ -233,7 +236,7 @@ class MappingNode(Node):
 
                 # theshold the confidence of the detection is above the min
                 min = self.config["confidence_cutoff"]
-                if(result.hypothesis.score <  min):
+                if(result.hypothesis.score < min):
                     self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}", throttle_duration_sec = 1)
                     continue
                 
@@ -258,6 +261,7 @@ class MappingNode(Node):
                 reading_parent_frame.pose.pose = convertedPose.pose          
 
                 # Merge the given position into our position for that object
+                self.get_logger().info(f"w: {result.pose.pose.orientation.w}")
                 valid, errStr = objects[name]["pose"].addPosEstim(reading_parent_frame, result.pose.pose.orientation.w <= 1)
                 if(not valid):
                     self.get_logger().warning(f"Rejected {name}: {errStr}", throttle_duration_sec = 1)

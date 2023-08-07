@@ -13,7 +13,11 @@ class KalmanEstimate:
         self.lastPose = initPoseWithCov
         self.covStep = covStep
         self.covMin = covMin
-        self.detectionCovFactor = detectionCovFactor
+        self.detectionCovFactor = detectionCovFactor\
+        
+        #rolling avg for orientation
+        self.orientationAvg = dict()
+        self.OavgSize = 10
 
     # Takes in a new estimate in the map frame and attempts to add it to the current estimate
     def addPosEstim(self, poseWithCov: PoseWithCovarianceStamped, withOrientation: bool) -> Tuple[bool, str]:
@@ -38,16 +42,44 @@ class KalmanEstimate:
             #widen the covariance on our estimate so that it converges correctly
             poseWithCov.pose.covariance = self.lastPose.pose.covariance * self.detectionCovFactor
             
+            #do wieghted averaging
+            if withOrientation:
+                try:    
+                    if(len(self.orientationAvg[poseWithCov.header.frame_id]) >= self.OavgSize):
+                        self.orientationAvg[poseWithCov.header.frame_id].pop(0)
+
+                except:
+                    #array not been initailized yet
+                    self.orientationAvg[poseWithCov.header.frame_id] = [poseWithCov.header.frame_id]
+
+                self.orientationAvg[poseWithCov.header.frame_id].append(poseWithCov.pose.pose.orientation)
+
+                #average quaternion
+                avgQuat = [0,0,0,0]
+                avgPoints = len(self.orientationAvg[poseWithCov.header.frame_id])
+                for quaternion in self.orientationAvg[poseWithCov.header.frame_id]:
+                    avgQuat[0] += quaternion[0] / avgPoints
+                    avgQuat[1] += quaternion[1] / avgPoints
+                    avgQuat[2] += quaternion[2] / avgPoints
+                    avgQuat[3] += quaternion[3] / avgPoints
+
+                avgQuatNorm = np.linalg.norm(avgQuat)
+
+                poseWithCov.pose.pose.orientation.x = avgQuatNorm[0]
+                poseWithCov.pose.pose.orientation.y = avgQuatNorm[1]
+                poseWithCov.pose.pose.orientation.z = avgQuatNorm[2]
+                poseWithCov.pose.pose.orientation.w = avgQuatNorm[3]
+
             # merge the estimates in a weighted manner
             self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose, withOrientation)
-            
+                
             #decrease covariance
             newCov *= 1.0 - self.covStep
             
             #if orientation is not being merged, its covariance should not change
             if not withOrientation:
                 newCov[35] = self.lastPose.pose.covariance[35]
-
+                
             # lower bound newCov, assumes covariance is positive definite vector
             for i in covs:
                 newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin
@@ -60,7 +92,15 @@ class KalmanEstimate:
             return (True, "")
         else:
             #increase covariance
-            newCov *= 1.0 / (1.0 - self.covStep)
+            multiplier = 1.0 / (1.0 - self.covStep)
+
+            newCov[covs[0]] *= multiplier
+            newCov[covs[1]] *= multiplier
+            newCov[covs[2]] *= multiplier
+            if withOrientation:
+                newCov[covs[5]] *= multiplier
+                newCov[covs[6]] *= multiplier
+                newCov[covs[7]] *= multiplier
             self.lastPose.pose.covariance = newCov
             
             # if outside, reject the detection
@@ -105,6 +145,7 @@ class KalmanEstimate:
     # compute a fused pose based on the covariance of the position vector as well
     # as the orientation in RPY format
     def updatePose(self, pose1: PoseWithCovariance, pose2: PoseWithCovariance, updateOrientation: bool) -> PoseWithCovariance:
+        print("update pose", flush=True)
         #can update later to also update covariances (currently put into _) when updateValue can properly give them
         newPose = PoseWithCovariance()
         newPose.pose.position.x, _ = updateValue(
@@ -144,6 +185,7 @@ class KalmanEstimate:
             #     pose1RPY[1], pose2RPY[1],
             #     pose1.covariance[28], pose2.covariance[28]
             #     )
+            print("update orientation", flush=True)
             rpy[2], newPose.covariance[35] = updateValue(
                 pose1RPY[2], makeContinuous(pose2RPY[2], pose1RPY[2]),
                 pose1.covariance[35], pose2.covariance[35]
@@ -153,6 +195,7 @@ class KalmanEstimate:
             (newPose.pose.orientation.w, newPose.pose.orientation.x, 
             newPose.pose.orientation.y, newPose.pose.orientation.z) = euler2quat(rpy[0], rpy[1], rpy[2]) #order defaults to sxyz
         else:
+            print("DONT update orientation", flush=True)
             newPose.pose.orientation = pose1.pose.orientation
             newPose.covariance[35] = pose1.covariance[35]
         

@@ -1,0 +1,15 @@
+/**/tensor_detector:
+  ros__parameters:
+    obj_ids:
+      [
+        "gate",
+        "buoy",
+        "buoy",
+        "torpedo",
+        "torpedo",
+        "earth",
+        "abydos",
+        "torpedo_hole"
+      ]
+    threshold: 0.7
+    iou: 0.9
