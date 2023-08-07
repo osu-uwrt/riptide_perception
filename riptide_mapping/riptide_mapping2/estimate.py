@@ -60,7 +60,15 @@ class KalmanEstimate:
             return (True, "")
         else:
             #increase covariance
-            newCov *= 1.0 / (1.0 - self.covStep)
+            multiplier = 1.0 / (1.0 - self.covStep)
+
+            newCov[covs[0]] *= multiplier
+            newCov[covs[1]] *= multiplier
+            newCov[covs[2]] *= multiplier
+            if withOrientation:
+                newCov[covs[5]] *= multiplier
+                newCov[covs[6]] *= multiplier
+                newCov[covs[7]] *= multiplier
             self.lastPose.pose.covariance = newCov
             
             # if outside, reject the detection
@@ -105,6 +113,7 @@ class KalmanEstimate:
     # compute a fused pose based on the covariance of the position vector as well
     # as the orientation in RPY format
     def updatePose(self, pose1: PoseWithCovariance, pose2: PoseWithCovariance, updateOrientation: bool) -> PoseWithCovariance:
+        print("update pose", flush=True)
         #can update later to also update covariances (currently put into _) when updateValue can properly give them
         newPose = PoseWithCovariance()
         newPose.pose.position.x, _ = updateValue(
@@ -144,6 +153,7 @@ class KalmanEstimate:
             #     pose1RPY[1], pose2RPY[1],
             #     pose1.covariance[28], pose2.covariance[28]
             #     )
+            print("update orientation", flush=True)
             rpy[2], newPose.covariance[35] = updateValue(
                 pose1RPY[2], makeContinuous(pose2RPY[2], pose1RPY[2]),
                 pose1.covariance[35], pose2.covariance[35]
@@ -153,6 +163,7 @@ class KalmanEstimate:
             (newPose.pose.orientation.w, newPose.pose.orientation.x, 
             newPose.pose.orientation.y, newPose.pose.orientation.z) = euler2quat(rpy[0], rpy[1], rpy[2]) #order defaults to sxyz
         else:
+            print("DONT update orientation", flush=True)
             newPose.pose.orientation = pose1.pose.orientation
             newPose.covariance[35] = pose1.covariance[35]
         

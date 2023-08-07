@@ -105,8 +105,11 @@ private:
                     RCLCPP_FATAL(get_logger(), "DETECTED CLASS OUTSIDE OF DEFINED CLASS DICTIONARY");
                     throw std::runtime_error("DETECTED CLASS OUTSIDE OF DEFINED CLASS DICTIONARY");
                 }
+
                 int totalPoints = 0;
-                float totalDepths = 0;
+                float
+                    score = detection.score(), 
+                    totalDepths = 0;
                 std::vector<float> sampledDepths;
                 std::vector<cv::Point2f> imgPoints;
                 cv::Rect bbox = detection.boundingBox();
@@ -147,7 +150,7 @@ private:
 
                     std::vector<cv::Point2f> centerPoint;
                     std::vector<cv::Point2f> ray;
-                    centerPoint.push_back(cv::Point2f(bbox.x, bbox.y));
+                    centerPoint.push_back(cv::Point2f(bbox.x + (bbox.width / 2), bbox.y + (bbox.height / 2)));
                     cv::undistortPoints(centerPoint, ray, camera_matrix, dist_coeffs);
 
                     // RCLCPP_INFO(get_logger(), "Depth: %f", sampledDepth);
@@ -162,11 +165,12 @@ private:
                     vision_msgs::msg::Detection3D detection3d;
 
                     detection3d.header.stamp = msg->header.stamp;
-                    detection3d.header.frame_id = "zed2i_left_optical_frame";
+                    detection3d.header.frame_id = "zed2i_left_camera_optical_frame";
 
                     vision_msgs::msg::ObjectHypothesisWithPose objHypo;
 
                     objHypo.hypothesis.class_id = objIds.at(detection.classId());
+                    objHypo.hypothesis.score = score;
                     objHypo.pose.pose.position.x = fixedRay.x;
                     objHypo.pose.pose.position.y = fixedRay.y;
                     objHypo.pose.pose.position.z = fixedRay.z;
@@ -226,10 +230,17 @@ private:
 
                         Eigen::Quaternionf q;
 
-                        objHypo.pose.pose.orientation.w = nonnormQuaternion.w() / nonnormQuaternion.norm();
-                        objHypo.pose.pose.orientation.x = nonnormQuaternion.x() / nonnormQuaternion.norm();
-                        objHypo.pose.pose.orientation.y = nonnormQuaternion.y() / nonnormQuaternion.norm();
-                        objHypo.pose.pose.orientation.z = nonnormQuaternion.z() / nonnormQuaternion.norm();
+                        // objHypo.pose.pose.orientation.w = nonnormQuaternion.w() / nonnormQuaternion.norm();
+                        // objHypo.pose.pose.orientation.x = nonnormQuaternion.x() / nonnormQuaternion.norm();
+                        // objHypo.pose.pose.orientation.y = nonnormQuaternion.y() / nonnormQuaternion.norm();
+                        // objHypo.pose.pose.orientation.z = nonnormQuaternion.z() / nonnormQuaternion.norm();
+
+                        //temporary disable orientation for comp
+                        objHypo.pose.pose.orientation.x = 2;
+                        objHypo.pose.pose.orientation.y = 2;
+                        objHypo.pose.pose.orientation.z = 2;
+                        objHypo.pose.pose.orientation.w = 2;
+
                         // RCLCPP_INFO(get_logger(), "Q: %f, %f, %f, %f", objHypo.pose.pose.orientation.w,
                         //             objHypo.pose.pose.orientation.x,
                         //             objHypo.pose.pose.orientation.y,
