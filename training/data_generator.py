@@ -6,7 +6,7 @@ import mathutils
 from pathlib import Path
 
 
-def randomizeScene(possible_objects):
+def randomize_scene(possible_objects):
     # Get particle system named Particle Area in main collection
     particles = (
         bpy.data.collections["Main"]
@@ -181,7 +181,7 @@ def main():
 
     # Generate each image
     for i in range(args.number_datapoints):
-        used_objects = randomizeScene(args.training_objs)
+        used_objects = randomize_scene(args.training_objs)
 
         # Get output paths for img and data
         img_output = img_output_dir / f"im{i}.jpg"
