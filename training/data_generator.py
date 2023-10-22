@@ -8,21 +8,19 @@ from contextlib import contextmanager
 def randomize_scene(possible_objects):
     # Get particle system named Particle Area in main collection
     particles = (
-        bpy.data.collections["Main"]
-        .objects["Particle Area"]
-        .particle_systems[0]
+        bpy.data.collections["Main"].objects["Particle Area"].particle_systems[0]
     )
 
     # change seed to random number
     particles.seed = random.randint(0, 100000)
-    particles.settings.count = int(clamp(random.gauss(10.0, 6.0), 5, 50)) 
+    particles.settings.count = int(clamp(random.gauss(10.0, 6.0), 5, 50))
 
     # Hide the rendering of all objects
     for obj_name in possible_objects:
         bpy.data.objects[obj_name].hide_render = True
     # Decide which objects to use for this generation
     # creates a quasi-gaussian biased to two objects in scene bu clamped to the 1 object min and n objects max
-    num_objects = int(clamp(random.gauss(1, 1.5), 1, len(possible_objects))) 
+    num_objects = int(clamp(random.gauss(1, 1.5), 1, len(possible_objects)))
     used_object_names = random.sample(sorted(possible_objects), num_objects)
 
     placed_obj_locations = []
@@ -112,6 +110,15 @@ def parse_args(possible_training_names: str):
         help="Number of datapoints to generate",
         default=1,
     )
+    parser.add_argument(
+        "-f",
+        "--format",
+        dest="yolo_version",
+        type=int,
+        help="Format of output text file",
+        choices=["bbox", "segmented"],
+        default="bbox",
+    )
 
     raw_args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
 
@@ -128,7 +135,27 @@ def parse_args(possible_training_names: str):
 # END parse_args()
 
 
-def print_bounding_boxes(label_output, visible_objects, object_dict):
+# Writes the YOLOv5/YOLOv8 bbox format: i center_x center_y width height
+def write_datapoint_bbox(output_file, vision_index, bbox, r):
+    output_file.write(
+        f"{vision_index} {(bbox.x + (bbox.width/2))/r.resolution_x} {(bbox.y+(bbox.height/2))/r.resolution_y} {bbox.width/r.resolution_x} {bbox.height/r.resolution_y}\n"
+    )
+
+
+# END write_datapoint_v5
+
+
+# Writes the YOLOv8 segmented data format: i x1 y1 x2 y2 x3 y3 x4 y4
+def write_datapoint_segment(output_file, vision_index, bbox, r):
+    output_file.write(
+        f"{vision_index} {bbox.x/r.resolution_x} {bbox.y/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y)/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y} {(bbox.x)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y}\n"
+    )
+
+
+# END write_datapoint_v8
+
+
+def print_bounding_boxes(args, label_output, visible_objects, object_dict):
     # Clear file
     with open(label_output, "w") as f:
         f.truncate(0)
@@ -146,9 +173,10 @@ def print_bounding_boxes(label_output, visible_objects, object_dict):
         r = bpy.context.scene.render
         # Output 2D bounding box to text file
         with open(label_output, "a") as f:
-            f.write(
-                f"{vision_index} {(bbox_2d.x + (bbox_2d.width/2))/r.resolution_x} {(bbox_2d.y+(bbox_2d.height/2))/r.resolution_y} {bbox_2d.width/r.resolution_x} {bbox_2d.height/r.resolution_y}\n"
-            )
+            if args.yolo_version == "bbox":
+                write_datapoint_bbox(f, vision_index, bbox_2d, r)
+            elif args.yolo_version == "segment":
+                write_datapoint_segment(f, vision_index, bbox_2d, r)
 
 
 # END print_bounding_boxes()
@@ -179,7 +207,6 @@ def main():
     label_output_dir = output_path / "labels/"
     label_output_dir.mkdir(parents=True, exist_ok=True)
 
-
     # Generate each image
     start_time = time.time()
     for i in range(args.number_datapoints):
@@ -190,7 +217,7 @@ def main():
         label_output = label_output_dir / f"im{i}.txt"
 
         # Render image
-        
+
         with stdout_redirected():
             bpy.context.scene.render.filepath = str(img_output.resolve())
             bpy.ops.render.render(write_still=True)
@@ -198,7 +225,7 @@ def main():
         progressbar(i, args.number_datapoints, start_time)
 
         # Get object's 2D image bounding box
-        print_bounding_boxes(label_output, used_objects, args.training_objs)
+        print_bounding_boxes(args, label_output, used_objects, args.training_objs)
 
     print("\n")
 
@@ -322,39 +349,43 @@ def clamp(x, minimum, maximum):
 
 @contextmanager
 def stdout_redirected(to=os.devnull):
-    '''
+    """
     import os
 
     with stdout_redirected(to=filename):
         print("from Python")
         os.system("echo non-Python applications are also supported")
-    '''
+    """
     fd = sys.stdout.fileno()
 
     ##### assert that Python and C stdio write using the same file descriptor
     ####assert libc.fileno(ctypes.c_void_p.in_dll(libc, "stdout")) == fd == 1
 
     def _redirect_stdout(to):
-        sys.stdout.close() # + implicit flush()
-        os.dup2(to.fileno(), fd) # fd writes to 'to' file
-        sys.stdout = os.fdopen(fd, 'w') # Python writes to fd
+        sys.stdout.close()  # + implicit flush()
+        os.dup2(to.fileno(), fd)  # fd writes to 'to' file
+        sys.stdout = os.fdopen(fd, "w")  # Python writes to fd
 
-    with os.fdopen(os.dup(fd), 'w') as old_stdout:
-        with open(to, 'w') as file:
+    with os.fdopen(os.dup(fd), "w") as old_stdout:
+        with open(to, "w") as file:
             _redirect_stdout(to=file)
         try:
-            yield # allow code to be run with the redirected stdout
+            yield  # allow code to be run with the redirected stdout
         finally:
-            _redirect_stdout(to=old_stdout) # restore stdout.
-                                            # buffering and flags such as
-                                            # CLOEXEC may be different
+            _redirect_stdout(to=old_stdout)  # restore stdout.
+            # buffering and flags such as
+            # CLOEXEC may be different
 
 
-def progressbar(index, count, start_time, size=60): # Python3.6+
+def progressbar(index, count, start_time, size=60):  # Python3.6+
     percent_completed = int(index / (count / size))
     time_elapsed = round(time.time() - start_time, 3)
-    print(f"{index}/{count}: [{'=' * percent_completed + '>' + '.' * (size - percent_completed)}] - Elapsed: {time_elapsed}s ",
-            '\r', end='', flush=True)
+    print(
+        f"{index}/{count}: [{'=' * percent_completed + '>' + '.' * (size - percent_completed)}] - Elapsed: {time_elapsed}s ",
+        "\r",
+        end="",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
