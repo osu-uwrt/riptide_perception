@@ -142,17 +142,17 @@ def write_datapoint_bbox(output_file, vision_index, bbox, r):
     )
 
 
-# END write_datapoint_v5
+# END write_datapoint_bbox
 
 
 # Writes the YOLOv8 segmented data format: i x1 y1 x2 y2 x3 y3 x4 y4
-def write_datapoint_segment(output_file, vision_index, bbox, r):
+def write_datapoint_segment(output_file, vision_index, r):
     output_file.write(
-        f"{vision_index} {bbox.x/r.resolution_x} {bbox.y/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y)/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y} {(bbox.x)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y}\n"
+        # f"{vision_index} {bbox.x/r.resolution_x} {bbox.y/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y)/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y} {(bbox.x)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y}\n"
     )
 
 
-# END write_datapoint_v8
+# END write_datapoint_segment
 
 
 def print_bounding_boxes(args, label_output, visible_objects, object_dict):
@@ -175,8 +175,8 @@ def print_bounding_boxes(args, label_output, visible_objects, object_dict):
         with open(label_output, "a") as f:
             if args.yolo_version == "bbox":
                 write_datapoint_bbox(f, vision_index, bbox_2d, r)
-            elif args.yolo_version == "segment":
-                write_datapoint_segment(f, vision_index, bbox_2d, r)
+            else:
+                write_datapoint_segment(f, vision_index, r)
 
 
 # END print_bounding_boxes()
@@ -224,8 +224,10 @@ def main():
 
         progressbar(i, args.number_datapoints, start_time)
 
+        # TODO: Add a way to generate segmented data. Add empty objects to define the corners of objects and use their screen xy coordinates as segment points
         # Get object's 2D image bounding box
-        print_bounding_boxes(args, label_output, used_objects, args.training_objs)
+
+        print_bounding_boxes(label_output, used_objects, args.training_objs)
 
     print("\n")
 
