@@ -56,6 +56,17 @@ def randomize_scene(possible_objects):
 # END randomizeScene()
 
 
+def get_children(myObject):
+    children = []
+    for ob in bpy.data.objects:
+        if ob.parent == myObject:
+            children.append(ob)
+    return children
+
+
+# END get_children
+
+
 def is_far_enough_away(pos, other_obj_pos, min_dist):
     for other_pos in other_obj_pos:
         if (other_pos - pos).length < min_dist:
@@ -146,10 +157,34 @@ def write_datapoint_bbox(output_file, vision_index, bbox, r):
 
 
 # Writes the YOLOv8 segmented data format: i x1 y1 x2 y2 x3 y3 x4 y4
-def write_datapoint_segment(output_file, vision_index, r):
-    output_file.write(
-        # f"{vision_index} {bbox.x/r.resolution_x} {bbox.y/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y)/r.resolution_y} {(bbox.x+bbox.width)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y} {(bbox.x)/r.resolution_x} {(bbox.y+bbox.height)/r.resolution_y}\n"
-    )
+def write_datapoint_segment(output_file, vision_index, r, obj):
+    camera = bpy.context.scene.camera
+    # Get all of the keypoint children of the target object
+    children = get_children(obj)
+
+    # Translate the objects to an x,y coordinate on the screen
+    children_coords = []
+    for child in children:
+        camera_space = camera.world_to_camera * child.location
+        screen_space = [
+            camera_space[0] / r.resolution_x,
+            camera_space[1] / r.resolution_y,
+        ]
+        children_coords.append(screen_space)
+
+    if len(children_coords) < 3:
+        print(
+            "Less than 3 keypoints detected on "
+            + obj.name
+            + "!! Must have 3 for YOLOv8 Segment detection!!"
+        )
+        return
+
+    # Output
+    output_file.write(f"{vision_index} ")
+
+    for coord in children_coords:
+        output_file.write(f"{coord[0]} {coord[1]} ")
 
 
 # END write_datapoint_segment
@@ -176,7 +211,7 @@ def print_bounding_boxes(args, label_output, visible_objects, object_dict):
             if args.yolo_version == "bbox":
                 write_datapoint_bbox(f, vision_index, bbox_2d, r)
             else:
-                write_datapoint_segment(f, vision_index, r)
+                write_datapoint_segment(f, vision_index, r, obj)
 
 
 # END print_bounding_boxes()
@@ -224,10 +259,8 @@ def main():
 
         progressbar(i, args.number_datapoints, start_time)
 
-        # TODO: Add a way to generate segmented data. Add empty objects to define the corners of objects and use their screen xy coordinates as segment points
         # Get object's 2D image bounding box
-
-        print_bounding_boxes(label_output, used_objects, args.training_objs)
+        print_bounding_boxes(args, label_output, used_objects, args.training_objs)
 
     print("\n")
 
