@@ -5,24 +5,56 @@ import cv2
 camera_matrix = [[697.235, 0, 648.635], [0, 697.235, 363.702], [0, 0, 1]]
 dist_coeffs = [-0.1734, 0.0278, 0, 0, 0]
 
-image = cv2.imread("..\ZED\\flat_surface.pfm", cv2.IMREAD_UNCHANGED)
+depthIm = cv2.imread("/home/markc/Rotated.pfm", cv2.IMREAD_UNCHANGED)
+# depthIm = cv2.rotate(depthIm, cv2.ROTATE_180)
+depthIm = cv2.flip(depthIm, 0)
+colorIm = cv2.imread("/home/markc/Rotated.png")
+grayIm = cv2.imread("/home/markc/Rotated.png", cv2.IMREAD_GRAYSCALE)
+
 
 #library imports
 import numpy as np
 import math
 import matplotlib.pyplot    as     plt
 
-xyz = np.empty((5000, 3))
+xyz = np.empty((20, 3))
 
+corners = cv2.goodFeaturesToTrack(grayIm[430:710,880:1410], 20, 0.2, 10)
 i = 0
+for corner in corners:
+    x, y = corner.ravel()
+    x = int(x) + 880
+    y = int(y) + 430
+    if depthIm[y, x] != 0: 
+        xyz[i] = [(x - 967.35) * depthIm[y, x] / 1078.96, (y - 544.594) * depthIm[y, x] / 1079, depthIm[y, x]]
+        i += 1
+        cv2.circle(colorIm, (x, y), 3, (0, 0, 255), -1)
+        print(depthIm[y, x])
+xyz.resize((i, 3))
+print(i)
+print(len(xyz))
 
-for x in range(600, 700):
-    for y in range(300, 350):
-        if (image[y, x] != 0):
-            xyz[i] = [(x - 648.635) * image[y, x] / 697.235, (y - 363.702) * image[y, x] / 697.235, image[y,x]]
-            i += 1
+zMean = np.average(xyz[:,2])
+zMedian = np.median(xyz[:,2])
+zMax = np.max(xyz[:,2])
+# for i in range(20):
+#     if xyz[i, 2] <
 
-print(xyz.shape)
+print(zMean, zMedian)
+
+cv2.namedWindow("test", cv2.WINDOW_FREERATIO)
+cv2.imshow("test", colorIm)
+cv2.waitKey(0)
+
+
+# i = 0
+
+# for x in range(600, 700):
+#     for y in range(300, 350):
+#         if (depthIm[y, x] != 0):
+#             xyz[i] = [(x - 648.635) * depthIm[y, x] / 697.235, (y - 363.702) * depthIm[y, x] / 697.235, depthIm[y,x]]
+#             i += 1
+
 ''' best plane fit'''
 #1.calculate centroid of points and make points relative to it
 centroid         = xyz.mean(axis = 0)
@@ -64,5 +96,3 @@ ax.set_xlim([min(xyzT[0])- 0.1, max(xyzT[0]) + 0.1])
 ax.set_ylim([min(xyzT[1])- 0.1, max(xyzT[1]) + 0.1])
 ax.set_zlim([min(xyzT[2])- 0.1, max(xyzT[2]) + 0.1])   
 plt.show() 
-
-print(image.shape)
