@@ -10,6 +10,7 @@ from vision_msgs.msg import Detection3DArray, Detection3D
 from geometry_msgs.msg import Quaternion, Point32, Pose
 from scipy.spatial.transform import Rotation as R
 from collections import deque
+import math
 
 class YOLONode(Node):
 	def __init__(self):
@@ -131,8 +132,10 @@ class YOLONode(Node):
 			if points_3d is not None:
 				try:
 					normal, d, centroid = self.fit_plane_to_points(points_3d)
-					normal, d, centroid = self.smooth_plane_exponential_smoothing(normal, d, centroid)
-					noraml, d, centroid = self.add_to_moving_average(normal, d, centroid)
+					if normal[2] > 0:
+						normal = -normal # If the normal is the other direction of the plane
+					# normal, d, centroid = self.smooth_plane_exponential_smoothing(normal, d, centroid)
+					# normal, d, centroid = self.add_to_moving_average(normal, d, centroid)
 					self.previous_normal = normal
 					self.previous_d = d
 					self.previous_centroid = centroid
@@ -233,7 +236,7 @@ class YOLONode(Node):
 
 		return points_3d[filtered_indices]
 
-	def smooth_plane_exponential_smoothing(self, current_normal, current_d, current_centroid,  alpha=0.05):
+	def smooth_plane_exponential_smoothing(self, current_normal, current_d, current_centroid,  alpha=0.1):
 		"""
 		Smooth the plane parameters (normal, d, centroid) using exponential smoothing.
 
@@ -379,13 +382,17 @@ class YOLONode(Node):
 		marker.pose.position.y = centroid[1]
 		marker.pose.position.z = centroid[2]
 		print("normal",normal)
+		if (normal[0] < 0):
+			rotation = R.from_euler('xz', [math.acos(normal[2]), -math.acos(normal[0])])	
+		else:
+			rotation = R.from_euler('xz', [math.acos(normal[2]), math.acos(normal[0])])
 		quaternion = self.vector_to_quaternion(normal)
 		print("quaternion",quaternion)
-		marker.pose.orientation = quaternion
-		#marker.pose.orientation.x = 0.0
-		#marker.pose.orientation.y = 0.0
-		#marker.pose.orientation.z = 0.0
-		#marker.pose.orientation.w = 0.0
+		# marker.pose.orientation = rotation.as_quat()
+		marker.pose.orientation.x = rotation.as_quat()[0]
+		marker.pose.orientation.y = rotation.as_quat()[1]
+		marker.pose.orientation.z = rotation.as_quat()[2]
+		marker.pose.orientation.w = rotation.as_quat()[3]
 		marker.scale.x = 2.1  # Plane width
 		marker.scale.y = 2.1  # Plane height
 		marker.scale.z = 0.01  # Very thin to represent a plane
