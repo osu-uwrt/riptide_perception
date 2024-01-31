@@ -13,11 +13,7 @@ class KalmanEstimate:
         self.lastPose = initPoseWithCov
         self.covStep = covStep
         self.covMin = covMin
-        self.detectionCovFactor = detectionCovFactor\
-        
-        #rolling avg for orientation
-        self.orientationAvg = dict()
-        self.OavgSize = 10
+        self.detectionCovFactor = detectionCovFactor
 
     # Takes in a new estimate in the map frame and attempts to add it to the current estimate
     def addPosEstim(self, poseWithCov: PoseWithCovarianceStamped, withOrientation: bool) -> Tuple[bool, str]:
@@ -42,44 +38,16 @@ class KalmanEstimate:
             #widen the covariance on our estimate so that it converges correctly
             poseWithCov.pose.covariance = self.lastPose.pose.covariance * self.detectionCovFactor
             
-            #do wieghted averaging
-            if withOrientation:
-                try:    
-                    if(len(self.orientationAvg[poseWithCov.header.frame_id]) >= self.OavgSize):
-                        self.orientationAvg[poseWithCov.header.frame_id].pop(0)
-
-                except:
-                    #array not been initailized yet
-                    self.orientationAvg[poseWithCov.header.frame_id] = [poseWithCov.header.frame_id]
-
-                self.orientationAvg[poseWithCov.header.frame_id].append(poseWithCov.pose.pose.orientation)
-
-                #average quaternion
-                avgQuat = [0,0,0,0]
-                avgPoints = len(self.orientationAvg[poseWithCov.header.frame_id])
-                for quaternion in self.orientationAvg[poseWithCov.header.frame_id]:
-                    avgQuat[0] += quaternion[0] / avgPoints
-                    avgQuat[1] += quaternion[1] / avgPoints
-                    avgQuat[2] += quaternion[2] / avgPoints
-                    avgQuat[3] += quaternion[3] / avgPoints
-
-                avgQuatNorm = np.linalg.norm(avgQuat)
-
-                poseWithCov.pose.pose.orientation.x = avgQuatNorm[0]
-                poseWithCov.pose.pose.orientation.y = avgQuatNorm[1]
-                poseWithCov.pose.pose.orientation.z = avgQuatNorm[2]
-                poseWithCov.pose.pose.orientation.w = avgQuatNorm[3]
-
             # merge the estimates in a weighted manner
             self.lastPose.pose = self.updatePose(self.lastPose.pose, poseWithCov.pose, withOrientation)
-                
+            
             #decrease covariance
             newCov *= 1.0 - self.covStep
             
             #if orientation is not being merged, its covariance should not change
             if not withOrientation:
                 newCov[35] = self.lastPose.pose.covariance[35]
-                
+
             # lower bound newCov, assumes covariance is positive definite vector
             for i in covs:
                 newCov[i] = newCov[i] if newCov[i] > self.covMin else self.covMin
