@@ -31,12 +31,12 @@
           x: 1.0
           y: 1.0
           z: 1.0
-          yaw: 0.0001
+          yaw: 100.0
         pose:
-          x:  7.84
-          y:  10.37
-          z: -2.30
-          yaw: 260.0
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
       buoy_glyph_1:
         parent: buoy_frame
         covar:
@@ -111,7 +111,7 @@
           yaw: 0.0
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
-    k_value: 0.01   # Covariance step size (< 1.0) applied per detection
+    k_value: 0.1   # Covariance step size (< 1.0) applied per detection
     detection_cov_factor: 7.0
 
     # relative position filter parameters

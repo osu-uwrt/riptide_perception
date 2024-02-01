@@ -1,12 +1,9 @@
 from typing import Tuple
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseWithCovariance
 from transforms3d.euler import quat2euler, euler2quat
-from math import pi
+from math import pi, atan2
 import numpy as np
-
-DEG_TO_RAD = (pi/180)
-RAD_TO_DEG = (180/pi) # Used for debug output
-ORIGIN_DEVIATION_LIMIT = 50
+import transforms3d as tf3d
 
 class KalmanEstimate:
     def __init__(self, initPoseWithCov: PoseWithCovarianceStamped, covStep: float, covMin: float, detectionCovFactor: float):
@@ -66,18 +63,14 @@ class KalmanEstimate:
             newCov[covs[1]] *= multiplier
             newCov[covs[2]] *= multiplier
             if withOrientation:
+                newCov[covs[3]] *= multiplier
+                newCov[covs[4]] *= multiplier
                 newCov[covs[5]] *= multiplier
-                newCov[covs[6]] *= multiplier
-                newCov[covs[7]] *= multiplier
             self.lastPose.pose.covariance = newCov
             
             # if outside, reject the detection
             if(posDiffEucNorm >= posCovEucNorm):
                 return(False, f"Detection position {posDiffEucNorm} observed outside covariance elipsoid {posCovEucNorm}")
-            # elif(eucDist[3] >= lastCovDist[3]):
-            #     return(False, "Detection roll observed outside covariance elipsoid")
-            # elif(eucDist[4] >= lastCovDist[4]):
-            #     return(False, "Detection pitch observed outside covariance elipsoid")
             elif(eucDist[5] >= lastCovDist[5]):
                 return(False, f"Detection yaw {eucDist[5]} observed outside covariance elipsoid {lastCovDist[5]}")
             else:
@@ -113,7 +106,6 @@ class KalmanEstimate:
     # compute a fused pose based on the covariance of the position vector as well
     # as the orientation in RPY format
     def updatePose(self, pose1: PoseWithCovariance, pose2: PoseWithCovariance, updateOrientation: bool) -> PoseWithCovariance:
-        print("update pose", flush=True)
         #can update later to also update covariances (currently put into _) when updateValue can properly give them
         newPose = PoseWithCovariance()
         newPose.pose.position.x, _ = updateValue(
@@ -144,18 +136,23 @@ class KalmanEstimate:
         #vision will send an invalid quaternion (components greater than 1) if the orientation could not be determined.
         #so, only merge the orientation if it has a w component less than 1
         if updateOrientation:
-            # update RPY covars and estimates
-            # rpy[0], newPose.covariance[21] = updateValue(
-            #     pose1RPY[0], pose2RPY[0],
-            #     pose1.covariance[21], pose2.covariance[21]
-            #     )
-            # rpy[1], newPose.covariance[28] = updateValue(
-            #     pose1RPY[1], pose2RPY[1],
-            #     pose1.covariance[28], pose2.covariance[28]
-            #     )
-            print("update orientation", flush=True)
+            #we just need the yaw. To preserve it, project a rotated vector onto the xy plane and get the yaw of that
+            i = [0, 0, 1] #Unit vector. Vision detects normal vector as Z axis so thats what we will rotate here  
+            
+            #get rotation matrix from quaternion. IMPORTANT: quat ordered wxyz
+            det_rotm = tf3d.quaternions.quat2mat(
+                [pose2.pose.orientation.w, pose2.pose.orientation.x, pose2.pose.orientation.y, pose2.pose.orientation.z])[:3, :3]
+            
+            projected_i = np.dot(det_rotm, i)
+            yaw = atan2(projected_i[1], projected_i[0])
+            
+            print(f"proj: {projected_i[0]}, {projected_i[1]}, {projected_i[2]}")
+            print(f"yaw: {yaw * 180 / pi}", flush=True)
+            
+            #just updating yaw because we do not need roll and pitch. If roll and pitch become desired, you can implement
+            #them similar to how we do the yaw here. However you will need to the projection done above
             rpy[2], newPose.covariance[35] = updateValue(
-                pose1RPY[2], makeContinuous(pose2RPY[2], pose1RPY[2]),
+                yaw, makeContinuous(yaw, pose1RPY[2]),
                 pose1.covariance[35], pose2.covariance[35]
                 )
 
@@ -163,7 +160,6 @@ class KalmanEstimate:
             (newPose.pose.orientation.w, newPose.pose.orientation.x, 
             newPose.pose.orientation.y, newPose.pose.orientation.z) = euler2quat(rpy[0], rpy[1], rpy[2]) #order defaults to sxyz
         else:
-            print("DONT update orientation", flush=True)
             newPose.pose.orientation = pose1.pose.orientation
             newPose.covariance[35] = pose1.covariance[35]
         

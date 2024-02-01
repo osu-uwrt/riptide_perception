@@ -5,7 +5,7 @@ from rclpy.time import Time
 from rclpy.qos import qos_profile_system_default # can replace this with others
 
 from rcl_interfaces.msg import SetParametersResult
-from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose
+from vision_msgs.msg import Detection3DArray
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TransformStamped, Vector3
 
 from estimate import KalmanEstimate, euclideanDist
@@ -14,7 +14,7 @@ from transforms3d.euler import quat2euler, euler2quat
 from tf2_ros import TransformException
 import tf2_ros
 import numpy as np
-from math import pi, atan2
+from math import pi
 
 DEG_TO_RAD = (pi/180)
 
@@ -42,7 +42,7 @@ class MappingNode(Node):
 
     def __init__(self):
         super().__init__('riptide_mapping2') 
-        
+                
         # class variables 
         self.tf_buffer = tf2_ros.buffer.Buffer()
         self.tl = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -156,8 +156,6 @@ class MappingNode(Node):
                     object_pose.pose.covariance[14] = self.config['init_data.{}.covar.z'.format(objectName)]
                     object_pose.pose.covariance[35] = self.config['init_data.{}.covar.yaw'.format(objectName)]
 
-                    # self.get_logger().info(f"initial pose: {object_pose}")
-
                     # Create a new Estimate object on reconfig.
                     objects[objectName]["pose"] = KalmanEstimate(object_pose, self.config['k_value'], self.config['cov_limit'], self.config['detection_cov_factor'])
 
@@ -180,7 +178,6 @@ class MappingNode(Node):
 
         # update config and mark for re-estimation
         for param in params:
-            # self.get_logger().info(f"{param.name}, {param.value}")
             self.config[param.name] = param.value
             for objectName in objects: 
                 if(objectName in param.name):
@@ -204,10 +201,11 @@ class MappingNode(Node):
                 name = result.hypothesis.class_id 
 
                 if not name in objects.keys():
+                    self.get_logger().warn(f"Rejecting {name} because it is not registered")
                     continue
                 
                 if objects[name]["pose"] is None:
-                    self.get_logger().warning(f"Rejected {name}: unknown class id")
+                    self.get_logger().warning(f"Rejected {name}: no estimate (not initialized)")
                     continue
 
                 # DOPE's frame is the same as the camera frame, specifically the left lens of the camera.
@@ -215,8 +213,7 @@ class MappingNode(Node):
                 # Tutorial on how this works @ http://wiki.ros.org/tf/TfUsingPython#TransformerROS_and_TransformListener
                 # Transform the pose part 
                 pose = PoseStamped()
-                pose.header.frame_id = detection.header.frame_id
-                pose.header.stamp = msg.header.stamp
+                pose.header = detection.header
                 pose.pose = result.pose.pose   
 
                 # check the distance limits we have on the detection frame
@@ -254,14 +251,13 @@ class MappingNode(Node):
                 # transform camera pose into map frame
                 convertedPose = do_transform_pose_stamped(pose, trans)
 
-                # Get the reading in the world frame message all together
+                # Get the reading in the map frame message all together
                 reading_parent_frame = PoseWithCovarianceStamped()
                 reading_parent_frame.header.stamp = msg.header.stamp
                 reading_parent_frame.header.frame_id = parentFrame
-                reading_parent_frame.pose.pose = convertedPose.pose          
-
+                reading_parent_frame.pose.pose = convertedPose.pose 
+                
                 # Merge the given position into our position for that object
-                self.get_logger().info(f"w: {result.pose.pose.orientation.w}")
                 valid, errStr = objects[name]["pose"].addPosEstim(reading_parent_frame, result.pose.pose.orientation.w <= 1)
                 if(not valid):
                     self.get_logger().warning(f"Rejected {name}: {errStr}", throttle_duration_sec = 1)
