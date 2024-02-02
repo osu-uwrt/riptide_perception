@@ -6,11 +6,10 @@ import cv2
 from ultralytics import YOLO
 import numpy as np
 from visualization_msgs.msg import Marker
-from vision_msgs.msg import Detection3DArray, Detection3D
-from geometry_msgs.msg import Quaternion, Point32, Pose
+from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose, ObjectHypothesis
+from geometry_msgs.msg import PoseWithCovariance, Point32, Pose, Point, Vector3
 from scipy.spatial.transform import Rotation as R
 from collections import deque
-import math
 
 class YOLONode(Node):
 	def __init__(self):
@@ -29,9 +28,12 @@ class YOLONode(Node):
 		self.depth_info_subscription = self.create_subscription(CameraInfo, '/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
 		self.image_subscription = self.create_subscription(Image, '/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
 		self.depth_subscription = self.create_subscription(Image, '/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
+		self.normal_publisher = self.create_publisher(Marker, '/normal_arrow', 10)
 		self.marker_publisher = self.create_publisher(Marker, '/visualization_marker', 10)
+		self.euler_publisher = self.create_publisher(Vector3, '/euler_angles', 10)
 		self.publisher = self.create_publisher(Image, '/yolo', 10)
 		self.point_cloud_publisher = self.create_publisher(PointCloud, '/point_cloud', 10)
+		#self.pose_with_covariance_publisher = self.create_publisher(PoseWithCovarianceStamped, '/pose_with_covariance_stamped', 10)
 		self.mask_publisher = self.create_publisher(Image, '/yolo_mask', 10)
 		self.bridge = CvBridge()
 		self.model = YOLO(yolo_model_path)
@@ -53,6 +55,7 @@ class YOLONode(Node):
 		self.sample_count = 0
 		self.window_size = 5
 		self.plane_parameters_window = deque(maxlen=self.window_size)
+		self.plotted = False
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
@@ -129,20 +132,23 @@ class YOLONode(Node):
 			# Get 3D points from feature points
 			points_3d = self.get_3d_points(feature_points, cv_image)
 
+			
 			if points_3d is not None:
+				#print(points_3d)
 				try:
 					normal, d, centroid = self.fit_plane_to_points(points_3d)
 					if normal[2] > 0:
 						normal = -normal # If the normal is the other direction of the plane
-					# normal, d, centroid = self.smooth_plane_exponential_smoothing(normal, d, centroid)
-					# normal, d, centroid = self.add_to_moving_average(normal, d, centroid)
+					#normal, centroid = self.smooth_plane_exponential_smoothing(normal, centroid)
+					normal, centroid = self.add_to_moving_average(normal, centroid)
 					self.previous_normal = normal
-					self.previous_d = d
+					#self.previous_d = d
 					self.previous_centroid = centroid
 					if normal is not None:
-						self.previous_normal = normal  # Store the current normal for the next iteration
-						self.publish_plane_marker(normal, d, centroid)
-						self.publish_centroid_marker(centroid)
+						#self.previous_normal = normal  # Store the current normal for the next iteration
+						self.publish_plane_marker(normal, centroid)
+						self.publish_centroid_marker2(centroid)
+						self.publish_normal(centroid, normal)
 				except Exception as e:
 					print(f"SVD Error: {e}")
 
@@ -219,7 +225,7 @@ class YOLONode(Node):
 		filtered_indices = np.where(mean_distances < threshold)[0]
 		return points_3d[filtered_indices]
 
-	def radius_outlier_removal(self, points_3d, radius=0.5, min_neighbors=5):
+	def radius_outlier_removal(self, points_3d, radius=1, min_neighbors=30):
 		"""
 		Remove radius outliers from the point cloud.
 
@@ -236,7 +242,7 @@ class YOLONode(Node):
 
 		return points_3d[filtered_indices]
 
-	def smooth_plane_exponential_smoothing(self, current_normal, current_d, current_centroid,  alpha=0.1):
+	def smooth_plane_exponential_smoothing(self, current_normal, current_centroid,  alpha=0.9):
 		"""
 		Smooth the plane parameters (normal, d, centroid) using exponential smoothing.
 
@@ -251,24 +257,22 @@ class YOLONode(Node):
 		"""
 		previous_normal = self.previous_normal
 		if previous_normal is None:
-			return current_normal, current_d, current_centroid
+			return current_normal, current_centroid
 		else:
 			previous_normal = np.array(previous_normal)
 			previous_centroid = np.array(self.previous_centroid)
 			previous_d = self.previous_d
-			print(previous_normal,"prevNorm:")
-			print(previous_d,"prevD:")
-			print(previous_centroid,"prevCentroid:")
+			#print(previous_normal,"prevNorm:")
+			#print(previous_d,"prevD:")
+			#print(previous_centroid,"prevCentroid:")
 			smoothed_normal = alpha * np.array(current_normal) + (1 - alpha) * previous_normal
 			smoothed_normal = smoothed_normal / np.linalg.norm(smoothed_normal)  # Normalize the normal vector
 
-			smoothed_d = alpha * current_d + (1 - alpha) * previous_d  # Smooth the d parameter
-
 			smoothed_centroid = alpha * np.array(current_centroid) + (1 - alpha) * previous_centroid  # Smooth the centroid
 
-			return smoothed_normal.tolist(), smoothed_d, smoothed_centroid.tolist()
+			return smoothed_normal.tolist(), smoothed_centroid.tolist()
 
-	def add_to_moving_average(self, normal, d, centroid):
+	def add_to_moving_average(self, normal, centroid):
 		"""
 		Add the most recent plane parameters to the moving average and compute the smoothed plane and centroid.
 
@@ -277,22 +281,20 @@ class YOLONode(Node):
 		:param centroid: The current centroid of the plane points.
 		:return: Tuple of (smoothed_normal, smoothed_d, smoothed_centroid).
 		"""
-		self.plane_parameters_window.append((normal, d, centroid))
+		self.plane_parameters_window.append((normal, centroid))
 
 		# Sum all normals, d values, and centroids
 		sum_normals = np.sum([params[0] for params in self.plane_parameters_window], axis=0)
-		sum_d = sum(params[1] for params in self.plane_parameters_window)
-		sum_centroids = np.sum([params[2] for params in self.plane_parameters_window], axis=0)
+		sum_centroids = np.sum([params[1] for params in self.plane_parameters_window], axis=0)
 
 		# Compute the average
 		avg_normal = sum_normals / len(self.plane_parameters_window)
-		avg_d = sum_d / len(self.plane_parameters_window)
 		avg_centroid = sum_centroids / len(self.plane_parameters_window)
 
 		# Normalize the average normal vector
 		avg_normal /= np.linalg.norm(avg_normal)
 
-		return avg_normal, avg_d, avg_centroid
+		return avg_normal, avg_centroid
 
 	def publish_centroid_marker(self, centroid):
 		marker = Detection3D()
@@ -330,108 +332,213 @@ class YOLONode(Node):
 #		marker.color.b = 0.0
 		self.centroid_publisher.publish(markers)
 
-	def fit_plane_least_squares(self, points_3d):
-		try:
-			# Points matrix with an additional ones column for the offset term
-			A = np.c_[points_3d[:, 0], points_3d[:, 1], points_3d[:, 2], np.ones(points_3d.shape[0])]
 
-			# Coefficients for the plane equation Ax + By + Cz = 1
-			# This assumes that the points are normalized such that D=1
-			C = np.ones((points_3d.shape[0], 1))
+	def publish_centroid_marker2(self, centroid):
+		marker = Marker()
+		marker.header.frame_id = self.frame_id  # Ensure this matches your point cloud frame
+		marker.header.stamp = self.get_clock().now().to_msg()
+		marker.ns = "centroid_marker"
+		marker.id = 3  # Use a unique ID for this marker
+		marker.type = Marker.CUBE
+		marker.action = Marker.ADD
 
-			# Solve the least squares problem to find the plane coefficients
-			plane_coeffs, _, _, _ = np.linalg.lstsq(A, C, rcond=None)
+		# Set the position of the marker to be the centroid of the plane
+		# Since we want no orientation, we don't need to calculate any quaternion
+		marker.pose.position.x = centroid[0]
+		marker.pose.position.y = centroid[1]
+		marker.pose.position.z = centroid[2]
+		marker.pose.orientation.x = 0.0
+		marker.pose.orientation.y = 0.0
+		marker.pose.orientation.z = 0.0
+		marker.pose.orientation.w = 1.0  # Neutral orientation
 
-			# The normal vector to the plane is given by the coefficients A, B, C
-			normal = plane_coeffs[:3].flatten()
+		# Set a small scale for the cube so it's visible but not too large
+		marker.scale.x = 0.1  # Width
+		marker.scale.y = 0.1  # Height
+		marker.scale.z = 0.1  # Depth
 
-			# Normalize the normal vector
-			normal = normal / np.linalg.norm(normal)
+		# Set the color and transparency (alpha)
+		marker.color.r = 0.0
+		marker.color.g = 1.0
+		marker.color.b = 0.0  # Green color for the centroid marker
+		marker.color.a = 1.0  # Opaque
 
-			# The offset D is the last coefficient in the solution
-			d = -plane_coeffs[3][0]
-
-			# The centroid is not directly given by this method, but you can compute it if needed
-			centroid = np.mean(points_3d, axis=0)
-
-			return normal, d, centroid
-		except np.linalg.LinAlgError:
-			print("Least Squares did not converge")
-			return None, None, None
+		# Publish the marker
+		self.marker_publisher.publish(marker)
 
 	def fit_plane_to_points(self, points_3d):
 		try:
 			centroid = np.mean(points_3d, axis=0)
 			u, s, vh = np.linalg.svd(points_3d - centroid)
-			normal = vh[2, :]
+			normal = vh[-1]
 			normal = normal / np.linalg.norm(normal)
 			d = -np.dot(normal, centroid)
 			return normal, d, centroid
 		except:
 			print("SVD did not converge")
 
-	def publish_plane_marker(self, normal, d, centroid):
+
+	def publish_normal(self, normal, centroid):
 		marker = Marker()
-		marker.header.frame_id = self.frame_id
+		marker.header.frame_id = self.frame_id  # Ensure this matches your point cloud frame
+		marker.header.stamp = self.get_clock().now().to_msg()
+		marker.ns = "normal_marker"
+		marker.id = 2 
+		marker.type = Marker.ARROW
+		marker.action = Marker.ADD
+
+		# The starting point of the arrow is the centroid of the plane
+		start_point = Point()
+		start_point.x = centroid[0]
+		start_point.y = centroid[1]
+		start_point.z = centroid[2]
+
+		# Adjust the length of the normal vector as needed
+		normal_length = 0.25  # This factor determines the length of the arrow
+		
+		# Here we ensure the normal is pointing outwards: it should be the opposite direction to the default_normal if plane is bottom facing
+		#direction = -1 if np.dot(normal, [0, 0, 1]) < 0 else 1
+
+		# Calculate the end point of the arrow using the direction of the normal
+		end_point = Point()
+		end_point.x = centroid[0] + normal[0] * normal_length
+		end_point.y = centroid[1] + normal[1] * normal_length
+		end_point.z = centroid[2] + normal[2] * normal_length
+		# Define the points for the arrow marker
+		marker.points = [start_point, end_point]
+
+		# Set the scale for the arrow (shaft diameter, head diameter, and head length)
+		marker.scale.x = 0.05  # Shaft diameter
+		marker.scale.y = 0.1   # Head diameter
+		marker.scale.z = 0.15  # Head length
+
+		# Set the color and opacity of the arrow
+		marker.color.r = 0.0
+		marker.color.g = 0.0
+		marker.color.b = 1.0  # Blue color for the normal
+		marker.color.a = 1.0  # Opaque
+
+		# Publish the marker
+		self.normal_publisher.publish(marker)
+
+	def publish_plane_marker(self, normal, centroid):
+		marker = Marker()
+		marker.header.frame_id = self.frame_id  # Ensure this matches your point cloud frame
 		marker.header.stamp = self.get_clock().now().to_msg()
 		marker.ns = "plane_marker"
 		marker.id = 1
 		marker.type = Marker.CUBE
 		marker.action = Marker.ADD
+
+		detections = Detection3DArray()
+		detection = Detection3D()
+		hypothesisWithPose = ObjectHypothesisWithPose()
+		hypothesis = ObjectHypothesis()
+		euler = Vector3()
+
+		
+		hypothesis.class_id = 'buoy'
+		hypothesis.score = 1.0
+
+		hypothesisWithPose.hypothesis = hypothesis
+
+		detection.header.frame_id = self.frame_id
+		detection.header.stamp = self.get_clock().now().to_msg()
+
+		#detections.header.frame_id = self.frame_id
+		#detections.header.stamp = self.get_clock().now().to_msg()
+
+
+		# Set the position of the marker to be the centroid of the plane
 		marker.pose.position.x = centroid[0]
 		marker.pose.position.y = centroid[1]
 		marker.pose.position.z = centroid[2]
-		print("normal",normal)
-		if (normal[0] < 0):
-			rotation = R.from_euler('xz', [math.acos(normal[2]), -math.acos(normal[0])])	
+
+		# Calculate the quaternion for the marker's orientation
+		# The default orientation of the plane in RViz is along the Z axis (0,0,1)
+		# We need to rotate this to align with our plane's normal vector
+		default_normal = np.array([0, 0, 1])
+		if np.allclose(normal, default_normal):
+			quat = [0, 0, 0, 1]  # No rotation needed
 		else:
-			rotation = R.from_euler('xz', [math.acos(normal[2]), math.acos(normal[0])])
-		quaternion = self.vector_to_quaternion(normal)
-		print("quaternion",quaternion)
-		# marker.pose.orientation = rotation.as_quat()
-		marker.pose.orientation.x = rotation.as_quat()[0]
-		marker.pose.orientation.y = rotation.as_quat()[1]
-		marker.pose.orientation.z = rotation.as_quat()[2]
-		marker.pose.orientation.w = rotation.as_quat()[3]
-		marker.scale.x = 2.1  # Plane width
-		marker.scale.y = 2.1  # Plane height
-		marker.scale.z = 0.01  # Very thin to represent a plane
-		marker.color.a = 0.5  # Semi-transparent
-		marker.color.r = 0.0
-		marker.color.g = 1.0
-		marker.color.b = 0.0
-		self.marker_publisher.publish(marker)
+			# Compute rotation axis (cross product) and angle (dot product)
+			axis = np.cross(default_normal, normal)
+			axis_length = np.linalg.norm(axis)
+			if axis_length == 0:
+				# Normal is in the opposite direction
+				axis = np.array([1, 0, 0])
+				angle = np.pi
+			else:
+				axis /= axis_length  # Normalize the rotation axis
+				angle = np.arccos(np.dot(default_normal, normal))
 
-	def vector_to_quaternion(self, normal):
-		# Assume that the Z-axis is the reference vector
-		z_axis = np.array([0, 0, 1])
-
-		# Compute the cross product between Z-axis and the normal vector
-		cross_prod = np.cross(z_axis, normal)
-
-		# Compute the dot product for the angle
-		dot_prod = np.dot(z_axis, normal)
-
-		# Compute the angle between the normal and the Z-axis
-		angle = np.arccos(dot_prod)
-
-		if not np.allclose(angle,0):
-			axis = cross_prod / np.linalg.norm(cross_prod)
-
-#		if dot_prod < 0:
-#			axis = -axis
-#			angle = 2 * np.pi - angle
-
-		# If the normal is not aligned with Z-axis, compute the rotation
-		if not np.allclose(angle, 0):
-			# Create the rotation using the axis-angle representation
+			# Convert axis-angle to quaternion
 			rotation = R.from_rotvec(axis * angle)
-		else:
-			# If the normal is already the Z-axis, no rotation is needed
-			rotation = R.from_quat([0, 0, 0, 1])
+			euler_angles = rotation.as_euler('xyz',degrees=True)
+			euler.x = euler_angles[0]
+			euler.y = euler_angles[1]
+			euler.z = euler_angles[2]
+			quat = rotation.as_quat() #returns xyzw
+		
+		
 
-		quaternion = rotation.as_quat()
-		return Quaternion(x=quaternion[0], y=quaternion[1], z=quaternion[2], w=quaternion[3])
+		# Create a PoseWithCovarianceStamped messag
+
+		# Optionally, set the covariance if you have this information
+		# For example, if you don't have any estimates, you could set all values to 0
+		# Or you could set diagonal elements to some variance values if known
+		#pose_msg.pose.covariance = [0] * 36  # A 6x6 covariance matrix flattened into an array
+
+		hypothesisWithPose.pose.pose.position.x = centroid[0]
+		hypothesisWithPose.pose.pose.position.y = centroid[1]
+		hypothesisWithPose.pose.pose.position.z = centroid[2]
+
+		hypothesisWithPose.pose.pose.orientation.x = quat[0]
+		hypothesisWithPose.pose.pose.orientation.y = quat[1]
+		hypothesisWithPose.pose.pose.orientation.z = quat[2]
+		hypothesisWithPose.pose.pose.orientation.w = quat[3]
+
+		#hypothesisWithPose.pose.pose.orientation.x = 2.0
+		#hypothesisWithPose.pose.pose.orientation.y = 2.0
+		#hypothesisWithPose.pose.pose.orientation.z = 2.0
+		#hypothesisWithPose.pose.pose.orientation.w = 2.0
+
+		# Publish the PoseWithCovarianceStamped message
+		#self.pose_with_covariance_publisher.publish(pose_msg)
+
+		# Set the marker's orientation
+		marker.pose.orientation.x = quat[0]
+		marker.pose.orientation.y = quat[1]
+		marker.pose.orientation.z = quat[2]
+		marker.pose.orientation.w = quat[3]
+
+		# Set a large enough scale so the plane is visible
+		marker.scale.x = 2.0  # Width
+		marker.scale.y = 2.0  # Height
+		marker.scale.z = 0.01  # Thickness
+
+		# Set the color and transparency (alpha)
+		marker.color.r = 1.0
+		marker.color.g = 0.0
+		marker.color.b = 0.0
+		marker.color.a = 0.5  # Semi-transparent
+
+		
+
+	
+		detections = Detection3DArray()
+		detection.header.frame_id = self.frame_id
+		detection.header.stamp = self.get_clock().now().to_msg()
+
+		detection.results.append(hypothesisWithPose)
+		detections.detections.append(detection)
+
+
+		# Publish the marker
+		self.marker_publisher.publish(marker)
+		self.centroid_publisher.publish(detections)
+		self.euler_publisher.publish(euler)
+
 def main(args=None):
 	rclpy.init(args=args)
 	yolo_node = YOLONode()
@@ -441,3 +548,4 @@ def main(args=None):
 
 if __name__ == '__main__':
 	main()
+
