@@ -7,6 +7,7 @@
 from math import sqrt, atan2, pi
 
 import numpy as np
+import transforms3d as tf3d
 import rclpy
 import rclpy.time
 from rcl_interfaces.msg import SetParametersResult
@@ -19,6 +20,7 @@ from vision_msgs.msg import (Detection3D, Detection3DArray,
                              ObjectHypothesisWithPose)
 
 TOPIC_NAME = "detected_objects"
+CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707)
 
 objects = [
     # "test_detection",
@@ -55,7 +57,10 @@ class DummyDetectionNode(Node):
         self.pubs        = [ ]
         for object in objects:
             self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{object}", 10))
-                
+        
+        name = self.get_namespace() + "/"
+        self.robot = name[1 : name.find('/', 1)] #start substr at 1 to omit leading /
+        
         self.get_logger().info("Started dummy detection node.")
         
         
@@ -85,10 +90,7 @@ class DummyDetectionNode(Node):
     #takes objectPos as [x, y, z] and maxDist to determine whether or not the robot can see an object.
     def isVisibleByRobot(self, objectPos: 'list[float]', maxDist: float):
         #look up the camera position in TF. start by resolving the robot name
-        name = self.get_namespace() + "/"
-        robot = name[1 : name.find('/', 1)] #start substr at 1 to omit leading /
-        
-        cameraFrameName = f"{robot}/{self.cameraFrame}"
+        cameraFrameName = f"{self.robot}/{self.cameraFrame}"
         try:
             robotTransform = self.tfBuffer.lookup_transform("map", cameraFrameName, rclpy.time.Time())
             dX = objectPos[0] - robotTransform.transform.translation.x
@@ -182,6 +184,14 @@ class DummyDetectionNode(Node):
                     pubPose.pose = pose
                     self.pubs[i].publish(pubPose)
                     
+                    #rotate quaternion to the "z out" position
+                    rotatedQuat = tf3d.quaternions.qmult(newQuat, CAMERA_ROTATION) #wxyz
+                    
+                    pose.pose.orientation.w = rotatedQuat[0]
+                    pose.pose.orientation.x = rotatedQuat[1]
+                    pose.pose.orientation.y = rotatedQuat[2]
+                    pose.pose.orientation.z = rotatedQuat[3]
+                    
                     #populate detection. looks like mapping only uses results so I'll just populate that and also header because its easy
                     detection = Detection3D()
                     detection.header = header
@@ -190,7 +200,7 @@ class DummyDetectionNode(Node):
                     hypothesis.hypothesis.class_id = object
                     hypothesis.hypothesis.score = score
                     hypothesis.pose = pose
-                    
+                                        
                     detection.results.append(hypothesis)
                     detectArray.detections.append(detection)
         

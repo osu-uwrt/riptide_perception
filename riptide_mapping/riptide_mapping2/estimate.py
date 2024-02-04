@@ -146,9 +146,6 @@ class KalmanEstimate:
             projected_i = np.dot(det_rotm, i)
             yaw = atan2(projected_i[1], projected_i[0])
             
-            print(f"proj: {projected_i[0]}, {projected_i[1]}, {projected_i[2]}")
-            print(f"yaw: {yaw * 180 / pi}", flush=True)
-            
             #just updating yaw because we do not need roll and pitch. If roll and pitch become desired, you can implement
             #them similar to how we do the yaw here. However you will need to the projection done above
             rpy[2], newPose.covariance[35] = updateValue(

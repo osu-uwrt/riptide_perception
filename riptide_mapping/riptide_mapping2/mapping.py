@@ -28,7 +28,9 @@ object_ids = {
     5 : "torpedo",
     6 : "torpedo_upper_hole",
     7 : "torpedo_lower_hole",
-    8 : "table"
+    8 : "table",
+    9 : "prequal_gate",
+    10: "prequal_pole"
 }
 
 objects = {}

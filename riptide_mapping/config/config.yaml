@@ -4,22 +4,22 @@
       gate:
         parent: map
         covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 50.0
         pose:
-          x: 3.89
-          y: 6.49
+          x: 5.0
+          y: 0.0
           z: -1.5
-          yaw: 260.0
+          yaw: 180.0
       earth_glyph:
         parent: gate_frame
         covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
+          x: 0.5
+          y: 0.5
+          z: 0.5
+          yaw: 70.0
         pose:
           x: -0.4
           y: 0.0
@@ -33,17 +33,17 @@
           z: 1.0
           yaw: 100.0
         pose:
-          x: 0.0
-          y: 0.0
-          z: 0.0
-          yaw: 0.0
+          x: 7.0
+          y: -4.0
+          z: -1.5
+          yaw: 90.0
       buoy_glyph_1:
         parent: buoy_frame
         covar:
           x: 0.5
           y: 0.5
           z: 0.5
-          yaw: 0.001
+          yaw: 100.0
         pose:
           x: 0.0
           y: -0.1875
@@ -55,7 +55,7 @@
           x: 0.001
           y: 0.001
           z: 0.001
-          yaw: 0.001
+          yaw: 100.0
         pose:
           x: 0.0
           y: 0.1875
@@ -105,10 +105,34 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 26.75
-          y: 27.48
+          x: 8.0
+          y: -8.0
           z: -1.5
           yaw: 0.0
+      prequal_gate:
+        parent: map
+        covar:  
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 4.0
+          y: 0.0
+          z: -1.5
+          yaw: 180.0
+      prequal_pole:
+        parent: map
+        covar:  
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 14.0
+          y: 0.0
+          z: -1.5
+          yaw: 180.0
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
     k_value: 0.1   # Covariance step size (< 1.0) applied per detection
