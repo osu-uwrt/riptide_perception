@@ -1,22 +1,28 @@
+import typing
+
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_system_default
+
+from geometry_msgs.msg import PoseWithCovarianceStamped
 
 import tf2_ros
 
 class MappingNode(Node):
 
-    objects = { 
-        "gate", 
-        "earth_glyph", 
-        "buoy",
-        "buoy_glyph_1",
-        "buoy_glyph_2",
-        "torpedo",
-        "torpedo_upper_hole",
-        "torpedo_lower_hole",
-        "table",
-        "prequal_gate",
-        "prequal_pole"
+    # List of object frames that are being tracked
+    objects : dict[str, dict[str, typing.Any]] = {
+        "gate": None, 
+        "earth_glyph": None, 
+        "buoy": None,
+        "buoy_glyph_1": None,
+        "buoy_glyph_2": None,
+        "torpedo": None,
+        "torpedo_upper_hole": None,
+        "torpedo_lower_hole": None,
+        "table": None,
+        "prequal_gate": None,
+        "prequal_pole": None
     }
 
     def __init__(self):
@@ -24,11 +30,11 @@ class MappingNode(Node):
         super().__init__('riptide_mapping2')
 
         # Create the buffer to send 
-        self.tf_buffer = tf2_ros.buffer.Buffer()
-        self.tf_brod = self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
+        self.tf_buffer: tf2_ros.buffer.Buffer = tf2_ros.buffer.Buffer()
+        self.tf_brod: tf2_ros.transform_broadcaster.TransformBroadcaster = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
         # Create parameters on the ROS node with config data as default
-        for object in self.objects:
+        for object in self.objects.keys():
             self.declare_parameters(
                 namespace='',
                 parameters=[
@@ -42,7 +48,13 @@ class MappingNode(Node):
                     ("init_data.{}.covar.z".format(object), self.config["init_data.{}.covar.z".format(object)]),
                     ("init_data.{}.covar.yaw".format(object), self.config["init_data.{}.covar.yaw".format(object)]),
                 ])
-
+            
+            # Create Estimate Objects in translational and rotational systems and publishers for ROS
+            self.objects[object] = {
+                "translational": None,
+                "rotational": None,
+                "publisher": self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
+            }
 
 
 def main(args=None):
