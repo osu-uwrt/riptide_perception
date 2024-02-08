@@ -5,9 +5,13 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default
 
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from vision_msgs.msg import Detection3DArray
 
 import tf2_ros
 
+# Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
+# are confident in deadly reckoning the relative location of objects. The only objects that we keep track of in the translational
+# system are the objects in active_objects. Rotational estimates are kept for all objects as well as they aren't relavant to robot drift.
 class MappingNode(Node):
 
     # List of object frames that are being tracked
@@ -23,6 +27,16 @@ class MappingNode(Node):
         "table": None,
         "prequal_gate": None,
         "prequal_pole": None
+    }
+
+    # A subset of objects that we activly track translational location for instead of using for a global offset
+    active_objects: dict[str, TranslationalEstimate] = {
+        "offset_object": None,
+        "earth_glyph": None,
+        "buoy_glyph_1": None,
+        "buoy_glyph_2": None,
+        "torpedo_upper_hole": None,
+        "torpedo_lower_hole": None
     }
 
     def __init__(self):
@@ -51,10 +65,12 @@ class MappingNode(Node):
             
             # Create Estimate Objects in translational and rotational systems and publishers for ROS
             self.objects[object] = {
-                "translational": None,
                 "rotational": None,
                 "publisher": self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
             }
+
+    def VisionCallback(self, arr: Detection3DArray):
+
 
 
 def main(args=None):
