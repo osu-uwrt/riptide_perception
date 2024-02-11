@@ -25,7 +25,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'best_200_uwrtarvp.engine')
+        tensorrt_wrapper_dir, 'weights', '200.engine')
     
     ld.add_action(PushRosNamespace(LC("robot")))
 
@@ -36,15 +36,17 @@ def generate_launch_description():
     ))
 
     ld.add_action(Node(
-        package="tensor_detector",
-        executable="tensorrtWrapper",
-        name="tensor_detector",
-        parameters=[
-            {"engine_path": weights_path},
-            params_path,
+            package='tensor_detector',  
+            executable='yolo_orientation.py',  
+            name='yolo_orientation_node', 
+            output='screen',
+            parameters=[
+            {"yolo_model_path": weights_path}
         ]
-    )),
+    ))
 
+
+    
     #
     # ZED LAUNCH
     #
