@@ -8,11 +8,12 @@ from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
 import numpy as np
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose, ObjectHypothesis
 from geometry_msgs.msg import Point32, Vector3
 from scipy.spatial.transform import Rotation as R
 from collections import deque
+import time
 
 class YOLONode(Node):
 	def __init__(self):
@@ -21,7 +22,7 @@ class YOLONode(Node):
 			namespace='',
 			parameters=[
 				('yolo_model_path', '200.engine'),
-				('specific_class_id', [0,1]),
+				('specific_class_id', [0,1,2,3,4,5,6]),
 		])
 
 		yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
@@ -30,7 +31,8 @@ class YOLONode(Node):
 		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
 		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
 		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
-		#self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
+		self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
+		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
 		#self.euler_publisher = self.create_publisher(Vector3, 'euler_angles', 10)
 		self.publisher = self.create_publisher(Image, 'yolo', 10)
 		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
@@ -45,7 +47,7 @@ class YOLONode(Node):
 		self.previous_normal = None
 		self.cv_image = None
 		self.gray_image = None
-		self.class_detect_shrink = 10
+		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.mask = None
 		self.frame_id = 'zed_left_camera_optical_frame'
 		self.centroid_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
@@ -67,11 +69,16 @@ class YOLONode(Node):
 			6: "earth_glyph",
 			# Add more class IDs and their corresponding names as needed
 		}
+		self.min_points = 5
 		self.accumulated_points = []
 		self.detection_id_counter = 0
 		self.orienation_avg = []
-		self.previous_orientation = {}
-		self.smoothed_orientation = {}
+		self.centroid_history = {}
+		self.orientation_history = {}
+		self.history_size = 10
+		self.temp_markers = []
+		self.last_publish_time = time.time()
+		self.publish_interval = 0.1  # 100 milliseconds
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
@@ -98,7 +105,7 @@ class YOLONode(Node):
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
 			return
-		results = self.model(cv_image, verbose=False)
+		results = self.model(cv_image, verbose=False, iou=0.8, conf=0.5)
 
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
@@ -127,6 +134,10 @@ class YOLONode(Node):
 					self.mask_publisher.publish(mask_msg)
 					
 
+		if self.temp_markers:
+				self.publish_markers(self.temp_markers)
+				self.temp_markers = []  # Clear the list for the next frame
+
 		annotated_frame = results[0].plot()
 		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 		self.publish_accumulated_point_cloud()
@@ -144,13 +155,23 @@ class YOLONode(Node):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		class_id = int(box.cls[0])
 
+		# Calculate the shrink size based on the class_detect_shrink percentage
+		shrink_x = (x_max - x_min) * self.class_detect_shrink  
+		shrink_y = (y_max - y_min) * self.class_detect_shrink  
+
+		# Adjust the bounding box coordinates to exclude the edges
+		x_min = int(x_min + shrink_x)
+		x_max = int(x_max - shrink_x)
+		y_min = int(y_min + shrink_y)
+		y_max = int(y_max - shrink_y)
+
 		# Extract the region of interest based on the bounding box
 		mask_roi = self.mask[y_min:y_max, x_min:x_max]
 		cropped_gray_image = self.gray_image[y_min:y_max, x_min:x_max]
 		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 
 		# Detect features within the object's bounding box
-		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=2500, qualityLevel=0.02, minDistance=1)
+		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
 		
 		if good_features is not None:
 			good_features[:, 0, 0] += x_min  # Adjust X coordinates
@@ -162,14 +183,17 @@ class YOLONode(Node):
 			# Get 3D points from feature points
 			points_3d = self.get_3d_points(feature_points, cv_image)
 			
-			if points_3d is not None and len(points_3d) >= 5:
+			if points_3d is not None and len(points_3d) >= self.min_points:
 				normal, _, centroid = self.fit_plane_to_points(points_3d)
 				if normal[2] > 0:
 					normal = -normal
 
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
 
+				#smoothed_quat = quat
 				smoothed_quat = self.smooth_orientation(class_id, quat)
+				smoothed_centroid = self.smooth_centroid(class_id, centroid)
+				#smoothed_centroid = centroid
 				# smoothed_quat[3] = 2.0
 			
 				# Get a unique ID for this detection
@@ -179,7 +203,7 @@ class YOLONode(Node):
 				bbox_height = y_max - y_min
 
 				# When calling publish_plane_marker, pass these dimensions along with other required information
-				self.publish_plane_marker(normal, centroid, detection_id, class_id, bbox_width, bbox_height)
+				self.publish_plane_marker(smoothed_quat, smoothed_centroid, detection_id, class_id, bbox_width, bbox_height)
 
 				# Create Detection3D message
 				detection = Detection3D()
@@ -187,7 +211,7 @@ class YOLONode(Node):
 				detection.header.stamp = self.get_clock().now().to_msg()
 
 				# Set the pose
-				detection.results.append(self.create_object_hypothesis_with_pose(class_id, centroid, smoothed_quat))
+				detection.results.append(self.create_object_hypothesis_with_pose(class_id, smoothed_centroid, smoothed_quat))
 				#print(self.class_id_map.get(class_id, "Unknown"))
 				return detection
 		return None
@@ -282,9 +306,10 @@ class YOLONode(Node):
 		points_3d = np.array(points_3d)
 
 		# Filter outlier points
-		points_3d = self.radius_outlier_removal(points_3d)
-		points_3d = self.statistical_outlier_removal(points_3d)
-
+		
+		points_3d = self.radius_outlier_removal(points_3d, min_neighbors=min(10,int(len(points_3d)*0.8)))
+		points_3d = self.statistical_outlier_removal(points_3d, k=min(10,int(len(points_3d) * 0.8)))
+		
 		if points_3d is not None:
 			self.accumulated_points.extend(points_3d)  # Add the new points to the accumulated list
 
@@ -301,7 +326,7 @@ class YOLONode(Node):
 			#self.point_cloud_publisher.publish(cloud)
 
 			#print(f"pointCount: {len(points_3d)}")
-			if len(points_3d) < 5:
+			if len(points_3d) < self.min_points:
 				print("Not enough points for SVD.")
 				return None
 
@@ -346,52 +371,6 @@ class YOLONode(Node):
 
 		return points_3d[filtered_indices]
 
-	def smooth_plane_exponential_smoothing(self, current_normal, current_centroid,  alpha=0.9):
-		"""
-		Smooth the plane parameters (normal, d, centroid) using exponential smoothing.
-
-		:param current_normal: The current plane normal vector estimate.
-		:param current_d: The current d parameter of the plane equation.
-		:param current_centroid: The current centroid of the plane.
-		:param previous_normal: The previous plane normal vector estimate.
-		:param previous_d: The previous d parameter of the plane equation.
-		:param previous_centroid: The previous centroid of the plane.
-		:param alpha: The smoothing factor, between 0 and 1.
-		:return: Smoothed plane normal vector, d parameter, and centroid.
-		"""
-		if self.previous_normal is None:
-			return current_normal, current_centroid
-		else:
-			smoothed_normal = alpha * np.array(current_normal) + (1 - alpha) * np.array(self.previous_normal)
-			smoothed_normal = smoothed_normal / np.linalg.norm(smoothed_normal)
-			smoothed_centroid = alpha * np.array(current_centroid) + (1 - alpha) * np.array(self.previous_centroid)
-
-			return smoothed_normal.tolist(), smoothed_centroid.tolist()
-
-	def add_to_moving_average(self, normal, centroid):
-		"""
-		Add the most recent plane parameters to the moving average and compute the smoothed plane and centroid.
-
-		:param normal: The current normal vector of the plane.
-		:param d: The current d parameter of the plane equation.
-		:param centroid: The current centroid of the plane points.
-		:return: Tuple of (smoothed_normal, smoothed_d, smoothed_centroid).
-		"""
-		self.plane_parameters_window.append((normal, centroid))
-
-		# Sum all normals, d values, and centroids
-		sum_normals = np.sum([params[0] for params in self.plane_parameters_window], axis=0)
-		sum_centroids = np.sum([params[1] for params in self.plane_parameters_window], axis=0)
-
-		# Compute the average
-		avg_normal = sum_normals / len(self.plane_parameters_window)
-		avg_centroid = sum_centroids / len(self.plane_parameters_window)
-
-		# Normalize the average normal vector
-		avg_normal /= np.linalg.norm(avg_normal)
-
-		return avg_normal, avg_centroid
-
 	def fit_plane_to_points(self, points_3d):
 		try:
 			centroid = np.mean(points_3d, axis=0)
@@ -433,7 +412,7 @@ class YOLONode(Node):
 
 		return rotation
 	
-	def publish_plane_marker(self, normal, centroid, detection_id, class_id, bbox_width, bbox_height):
+	def publish_plane_marker(self, quat, centroid, detection_id, class_id, bbox_width, bbox_height):
 		marker = Marker()
 		marker.header.frame_id = self.frame_id
 		marker.header.stamp = self.get_clock().now().to_msg()
@@ -447,7 +426,9 @@ class YOLONode(Node):
 		marker.pose.position.y = centroid[1]
 		marker.pose.position.z = centroid[2]
 
-		quat, euler_angles = self.calculate_quaternion_and_euler_angles(normal)
+		#quat, euler_angles = self.calculate_quaternion_and_euler_angles(normal)
+
+		#quat = self.smooth_orientation(class_id, quat)
 
 		# Set the marker's orientation
 		marker.pose.orientation.x = quat[0]
@@ -457,9 +438,13 @@ class YOLONode(Node):
 
 		# Set a scale for the marker (you might want to adjust this based on the object size)
 		# Set the scale of the marker based on the bounding box size
-		marker.scale.x = float(bbox_width)/100.0
-		marker.scale.y = float(bbox_height)/100.0
-		marker.scale.z = 0.1  
+		marker.scale.x = float(bbox_width)/150.0
+		marker.scale.y = float(bbox_height)/150.0
+		if class_id == 0 :
+			marker.scale.z = 0.01 
+		else:
+			marker.scale.z = 0.05
+		
 
 
 		# Set the color and transparency (alpha) of the marker
@@ -469,29 +454,62 @@ class YOLONode(Node):
 		marker.color.g = color[1]
 		marker.color.b = color[2]
 		marker.color.a = 0.8  # Semi-transparent
-		marker.lifetime = Duration(seconds=1.5).to_msg()  # Marker persists for 0.5 seconds
+		#marker.lifetime = Duration(seconds=1.5).to_msg()  # Marker persists for 0.5 seconds
 
+		self.temp_markers.append(marker)
 		# Publish the marker
 		#self.marker_publisher.publish(marker)
 
-	def smooth_orientation(self, class_id, current_orientation, alpha=0.2):
-		if class_id not in self.previous_orientation:
-			self.previous_orientation[class_id] = current_orientation
-			self.smoothed_orientation[class_id] = current_orientation
-		else:
-			smoothed = alpha * np.array(current_orientation) + (1 - alpha) * np.array(self.previous_orientation[class_id])
-			self.previous_orientation[class_id] = current_orientation
-			self.smoothed_orientation[class_id] = smoothed / np.linalg.norm(smoothed)  # Ensure it's a unit vector
-		return self.smoothed_orientation[class_id]
+	def smooth_orientation(self, class_id, current_orientation):
+		if class_id not in self.orientation_history:
+			self.orientation_history[class_id] = deque(maxlen=self.history_size)
+
+		# Add the current orientation to the history
+		self.orientation_history[class_id].append(current_orientation)
+
+		# Calculate the average orientation
+		average_orientation = np.mean(self.orientation_history[class_id], axis=0)
+
+		# Normalize the averaged orientation to ensure it's a unit vector
+		norm = np.linalg.norm(average_orientation)
+		if norm == 0:  # Avoid division by zero
+			return current_orientation
+		averaged_normalized_orientation = average_orientation / norm
+
+		return averaged_normalized_orientation
+
+
+	def smooth_centroid(self, class_id, current_centroid):
+		if class_id not in self.centroid_history:
+			self.centroid_history[class_id] = deque(maxlen=self.history_size)
+
+		# Add the current centroid to the history
+		self.centroid_history[class_id].append(current_centroid)
+
+		# Calculate the average centroid
+		average_centroid = np.mean(self.centroid_history[class_id], axis=0)
+
+		return average_centroid
+
+
+	def publish_markers(self, markers):
+		current_time = time.time()
+		if current_time - self.last_publish_time > self.publish_interval:
+			marker_array = MarkerArray()
+			marker_array.markers = markers
+			self.marker_array_publisher.publish(marker_array)
+			self.last_publish_time = current_time
+			# Clear the markers after publishing
+			markers.clear()
 
 	def get_color_for_class(self, class_id):
 		# Define a simple color map for classes, or use a more sophisticated method as needed
 		color_map = {
 			0: (1.0, 0.0, 0.0),  # Red for class 0
 			1: (0.0, 1.0, 0.0),  # Green for class 1
-			3: (0.0, 0.0, 1.0),  # Blue for class 2
-			3: (0.0, 1.0, 0.0),  # Green for class 1
-			4: (1.0, 0.0, 0.0),  # Red for class 0
+			2: (0.0, 0.0, 1.0),  # Blue for class 2
+			3: (1.0, 1.0, 1.0),  # Green for class 1
+			4: (1.0, 1.0, 0.0),  # Red for class 0
 			5: (0.0, 1.0, 0.0),  # Green for class 1
 			6: (0.0, 1.0, 0.0),  # Green for class 1
 			# Add more class-color mappings as needed
