@@ -18,24 +18,25 @@ class YOLONode(Node):
 		self.declare_parameters(
 			namespace='',
 			parameters=[
-				('yolo_model_path', 'yolov8n-seg-200Epoch.engine'),
+				('yolo_model_path', '200.engine'),
 				('specific_class_id', [0,1]),
 		])
 
 		yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
 		self.specific_class_id = self.get_parameter('specific_class_id').get_parameter_value()._integer_array_value
-
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
+		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
+		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
+		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
 		self.marker_publisher = self.create_publisher(Marker, '/visualization_marker', 10)
 		self.euler_publisher = self.create_publisher(Vector3, '/euler_angles', 10)
 		self.publisher = self.create_publisher(Image, '/yolo', 10)
 		self.point_cloud_publisher = self.create_publisher(PointCloud, '/point_cloud', 10)
 		self.mask_publisher = self.create_publisher(Image, '/yolo_mask', 10)
 		self.bridge = CvBridge()
-		self.model = YOLO(yolo_model_path)
+		print(yolo_model_path)
+		self.model = YOLO(yolo_model_path, task="segment")
+		# self.model.export(format="engine")
 		self.depth_image = None
 		self.camera_info_gathered = False
 		self.depth_info_gathered = False
@@ -57,13 +58,22 @@ class YOLONode(Node):
 		self.class_id_map = {
 			0: "buoy",
 			1: "buoy_glyph_1",
+			2: "buoy_glyph_2",
+			3: "buoy_glyph_3",
+			4: "buoy_glyph_4",
+			5: "gate",
+			6: "earth_glyph",
 			# Add more class IDs and their corresponding names as needed
 		}
 		self.accumulated_points = []
 		self.detection_id_counter = 0
+		self.orienation_avg = []
+		self.previous_orientation = {}
+		self.smoothed_orientation = {}
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
+			print(f"camera info: {msg}")
 			self.fx = msg.k[0]
 			self.cx = msg.k[2]
 			self.fy = msg.k[4]
@@ -84,6 +94,8 @@ class YOLONode(Node):
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
 		self.cv_image = cv_image
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+		if cv_image is None:
+			return
 		results = self.model(cv_image)
 
 		detections = Detection3DArray()
@@ -95,7 +107,10 @@ class YOLONode(Node):
 
 		for result in results:
 			for box in result.boxes.cpu().numpy():
-				class_id = int(box.cls[0])
+				print(box.conf)
+				if box.conf < 0.5:
+					continue
+				class_id = box.cls[0]
 				if class_id in self.specific_class_id:
 					detection = self.create_detection3d_message(box, cv_image)
 					if detection:
@@ -122,6 +137,7 @@ class YOLONode(Node):
 			self.detection_id_counter += 1
 			return self.detection_id_counter
 	
+
 	def create_detection3d_message(self, box, cv_image):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		class_id = int(box.cls[0])
@@ -151,6 +167,9 @@ class YOLONode(Node):
 
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
 
+				smoothed_quat = self.smooth_orientation(class_id, quat)
+				# smoothed_quat[3] = 2.0
+			
 				# Get a unique ID for this detection
 				detection_id = self.generate_unique_detection_id()
 
@@ -166,7 +185,7 @@ class YOLONode(Node):
 				detection.header.stamp = self.get_clock().now().to_msg()
 
 				# Set the pose
-				detection.results.append(self.create_object_hypothesis_with_pose(class_id, centroid, quat))
+				detection.results.append(self.create_object_hypothesis_with_pose(class_id, centroid, smoothed_quat))
 				#print(self.class_id_map.get(class_id, "Unknown"))
 				return detection
 		return None
@@ -308,7 +327,7 @@ class YOLONode(Node):
 		filtered_indices = np.where(mean_distances < threshold)[0]
 		return points_3d[filtered_indices]
 
-	def radius_outlier_removal(self, points_3d, radius=0.5, min_neighbors=10):
+	def radius_outlier_removal(self, points_3d, radius=1.0, min_neighbors=10):
 		"""
 		Remove radius outliers from the point cloud.
 
@@ -453,11 +472,26 @@ class YOLONode(Node):
 		# Publish the marker
 		self.marker_publisher.publish(marker)
 
+	def smooth_orientation(self, class_id, current_orientation, alpha=0.2):
+		if class_id not in self.previous_orientation:
+			self.previous_orientation[class_id] = current_orientation
+			self.smoothed_orientation[class_id] = current_orientation
+		else:
+			smoothed = alpha * np.array(current_orientation) + (1 - alpha) * np.array(self.previous_orientation[class_id])
+			self.previous_orientation[class_id] = current_orientation
+			self.smoothed_orientation[class_id] = smoothed / np.linalg.norm(smoothed)  # Ensure it's a unit vector
+		return self.smoothed_orientation[class_id]
+
 	def get_color_for_class(self, class_id):
 		# Define a simple color map for classes, or use a more sophisticated method as needed
 		color_map = {
 			0: (1.0, 0.0, 0.0),  # Red for class 0
 			1: (0.0, 1.0, 0.0),  # Green for class 1
+			3: (0.0, 0.0, 1.0),  # Blue for class 2
+			3: (0.0, 1.0, 0.0),  # Green for class 1
+			4: (1.0, 0.0, 0.0),  # Red for class 0
+			5: (0.0, 1.0, 0.0),  # Green for class 1
+			6: (0.0, 1.0, 0.0),  # Green for class 1
 			# Add more class-color mappings as needed
 		}
 		return color_map.get(class_id, (1.0, 1.0, 1.0))  # Default to white
