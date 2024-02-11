@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
@@ -28,11 +30,11 @@ class YOLONode(Node):
 		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
 		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
 		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
-		self.marker_publisher = self.create_publisher(Marker, '/visualization_marker', 10)
-		self.euler_publisher = self.create_publisher(Vector3, '/euler_angles', 10)
-		self.publisher = self.create_publisher(Image, '/yolo', 10)
-		self.point_cloud_publisher = self.create_publisher(PointCloud, '/point_cloud', 10)
-		self.mask_publisher = self.create_publisher(Image, '/yolo_mask', 10)
+		#self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
+		#self.euler_publisher = self.create_publisher(Vector3, 'euler_angles', 10)
+		self.publisher = self.create_publisher(Image, 'yolo', 10)
+		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
+		self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
 		self.bridge = CvBridge()
 		print(yolo_model_path)
 		self.model = YOLO(yolo_model_path, task="segment")
@@ -46,7 +48,7 @@ class YOLONode(Node):
 		self.class_detect_shrink = 10
 		self.mask = None
 		self.frame_id = 'zed_left_camera_optical_frame'
-		self.centroid_publisher = self.create_publisher(Detection3DArray, '/talos/detected_objects', 10)
+		self.centroid_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
 		self.previous_normal = None
 		self.previous_d = None
 		self.previous_centroid = None
@@ -96,7 +98,7 @@ class YOLONode(Node):
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
 			return
-		results = self.model(cv_image)
+		results = self.model(cv_image, verbose=False)
 
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
@@ -470,7 +472,7 @@ class YOLONode(Node):
 		marker.lifetime = Duration(seconds=1.5).to_msg()  # Marker persists for 0.5 seconds
 
 		# Publish the marker
-		self.marker_publisher.publish(marker)
+		#self.marker_publisher.publish(marker)
 
 	def smooth_orientation(self, class_id, current_orientation, alpha=0.2):
 		if class_id not in self.previous_orientation:

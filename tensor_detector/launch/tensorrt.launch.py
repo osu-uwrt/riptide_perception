@@ -25,7 +25,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'best_200_uwrtarvp.engine')
+        tensorrt_wrapper_dir, 'weights', '200.engine')
     
     ld.add_action(PushRosNamespace(LC("robot")))
 
@@ -36,10 +36,13 @@ def generate_launch_description():
     ))
 
     ld.add_action(Node(
-            package='tensor_detector',  # Assuming test_orientation.py is in the tensor_detector package
-            executable='yolo_orientation.py',  # The name you've configured in setup.py under entry_points/console_scripts
-            name='yolo_orientation_node',  # Optional: a name for the node
-            output='screen',  # Optional: if you want the node's output to appear in the console
+            package='tensor_detector',  
+            executable='yolo_orientation.py',  
+            name='yolo_orientation_node', 
+            output='screen',
+            parameters=[
+            {"yolo_model_path": weights_path}
+        ]
     ))
 
 
