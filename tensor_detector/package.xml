@@ -15,6 +15,12 @@
   <depend>cv_bridge</depend>
   <depend>geometry_msgs</depend>
   <depend>CUDA</depend>
+  <depend>rclpy</depend>
+  <depend>scipy</depend>
+  <depend>collections</depend>
+  <depend>numpy</depend>
+  <depend>ultralytics</depend>
+  <depend>cv2</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

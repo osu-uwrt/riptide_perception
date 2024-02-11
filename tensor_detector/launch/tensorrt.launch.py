@@ -36,15 +36,14 @@ def generate_launch_description():
     ))
 
     ld.add_action(Node(
-        package="tensor_detector",
-        executable="tensorrtWrapper",
-        name="tensor_detector",
-        parameters=[
-            {"engine_path": weights_path},
-            params_path,
-        ]
-    )),
+            package='tensor_detector',  # Assuming test_orientation.py is in the tensor_detector package
+            executable='yolo_orientation.py',  # The name you've configured in setup.py under entry_points/console_scripts
+            name='yolo_orientation_node',  # Optional: a name for the node
+            output='screen',  # Optional: if you want the node's output to appear in the console
+    ))
 
+
+    
     #
     # ZED LAUNCH
     #

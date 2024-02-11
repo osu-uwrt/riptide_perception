@@ -9,9 +9,16 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(vision_msgs REQUIRED)
+find_package(visualization_msgs.msg REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(rclpy RQUIRED)
+find_package(scipy RQUIRED)
+find_package(collections RQUIRED)
+find_package(numpy RQUIRED)
+find_package(ultralytics RQUIRED)
+find_package(cv2 RQUIRED)
 
 # get opencv
 find_package(OpenCV 4 REQUIRED)
@@ -63,7 +70,11 @@ target_compile_features(tensorrtWrapper PUBLIC c_std_99 cxx_std_17)  # Require C
 target_link_libraries(tensorrtWrapper yolov5_tensorrt)
 ament_target_dependencies(tensorrtWrapper OpenCV rclcpp geometry_msgs vision_msgs sensor_msgs cv_bridge)
 
-
+# Install the Python node
+install(PROGRAMS
+  src/yolo_orientation.py 
+  DESTINATION lib/${PROJECT_NAME}  
+)
 
 install(TARGETS tensorrtWrapper yolov5_tensorrt
   ARCHIVE DESTINATION lib
