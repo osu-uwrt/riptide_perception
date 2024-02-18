@@ -120,11 +120,12 @@ class YOLONode(Node):
 
 		for result in results:
 			for box in result.boxes.cpu().numpy():
-				if box.conf < 0.5:
+				if box.conf[0] <= self.conf:
 					continue
 				class_id = box.cls[0]
 				if class_id in self.specific_class_id:
-					detection = self.create_detection3d_message(box, cv_image)
+					conf = box.conf[0]
+					detection = self.create_detection3d_message(box, cv_image, conf)
 					if detection:
 						detections.detections.append(detection)
 
@@ -153,7 +154,7 @@ class YOLONode(Node):
 			return self.detection_id_counter
 	
 
-	def create_detection3d_message(self, box, cv_image):
+	def create_detection3d_message(self, box, cv_image, conf):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		class_id = int(box.cls[0])
 
@@ -211,18 +212,18 @@ class YOLONode(Node):
 				detection.header.stamp = self.get_clock().now().to_msg()
 
 				# Set the pose
-				detection.results.append(self.create_object_hypothesis_with_pose(class_id, smoothed_centroid, smoothed_quat))
+				detection.results.append(self.create_object_hypothesis_with_pose(class_id, smoothed_centroid, smoothed_quat, conf))
 
 				return detection
 		return None
 
-	def create_object_hypothesis_with_pose(self, class_id, centroid, quat):
+	def create_object_hypothesis_with_pose(self, class_id, centroid, quat, conf):
 		hypothesis_with_pose = ObjectHypothesisWithPose()
 		hypothesis = ObjectHypothesis()
 
 		class_name = self.class_id_map.get(class_id, "Unknown")
 		hypothesis.class_id = class_name
-		hypothesis.score = 1.0  # You might want to use the detection score here
+		hypothesis.score = conf.item() # Convert from numpy float to float
 
 		hypothesis_with_pose.hypothesis = hypothesis
 		hypothesis_with_pose.pose.pose.position.x = centroid[0]
