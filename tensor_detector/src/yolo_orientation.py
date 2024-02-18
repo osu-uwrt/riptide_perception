@@ -2,7 +2,6 @@
 
 import rclpy
 from rclpy.node import Node
-from rclpy.duration import Duration
 from sensor_msgs.msg import Image, CameraInfo, PointCloud
 from cv_bridge import CvBridge
 import cv2
@@ -25,40 +24,15 @@ class YOLONode(Node):
 				('specific_class_id', [0,1,2,3,4,5,6]),
 		])
 
-		yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
-		self.specific_class_id = self.get_parameter('specific_class_id').get_parameter_value()._integer_array_value
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
-		self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
-		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
-		#self.euler_publisher = self.create_publisher(Vector3, 'euler_angles', 10)
-		self.publisher = self.create_publisher(Image, 'yolo', 10)
-		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
-		self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
-		self.bridge = CvBridge()
-		print(yolo_model_path)
-		self.model = YOLO(yolo_model_path, task="segment")
-		# self.model.export(format="engine")
-		self.depth_image = None
-		self.camera_info_gathered = False
-		self.depth_info_gathered = False
-		self.previous_normal = None
-		self.cv_image = None
-		self.gray_image = None
+		# USER DEFINED PARAMS
+		self.export = False # Whether or not to export .pt file to engine
+		self.conf = 0.9 # Confidence threshold for yolo detections
+		self.iou = 0.9 # Intersection over union for yolo detections
+		self.frame_id = 'zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
-		self.mask = None
-		self.frame_id = 'zed_left_camera_optical_frame'
-		self.centroid_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
-		self.previous_normal = None
-		self.previous_d = None
-		self.previous_centroid = None
-		self.cumulative_normal = None
-		self.sample_count = 0
-		self.window_size = 5
-		self.plane_parameters_window = deque(maxlen=self.window_size)
-		self.default_normal = np.array([0, 0, 1])
+		self.min_points = 5 # Minimum number of points for SVD
+		self.publish_interval = 0.1  # 100 milliseconds
+		self.history_size = 10 # Window size for rolling average smoothing
 		self.class_id_map = {
 			0: "buoy",
 			1: "buoy_glyph_1",
@@ -69,20 +43,51 @@ class YOLONode(Node):
 			6: "earth_glyph",
 			# Add more class IDs and their corresponding names as needed
 		}
-		self.min_points = 5
+		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
+		self.print_camera_info = False # Print the camera info recieved
+
+		# Setting up initial params
+		yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
+		self.specific_class_id = self.get_parameter('specific_class_id').get_parameter_value()._integer_array_value
+
+		# Creating subscriptions
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
+		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
+		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
+		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
+		
+		# Creating publishers
+		self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
+		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
+		self.publisher = self.create_publisher(Image, 'yolo', 10)
+		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
+		self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
+		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
+
+		# YOLO and CV init
+		self.bridge = CvBridge()
+		self.model = YOLO(yolo_model_path, task="segment")
+		if self.export and yolo_model_path.endswith(".pt"):
+			self.model.export(format="engine")
+
+		# Init global vars
+		self.depth_image = None
+		self.camera_info_gathered = False
+		self.depth_info_gathered = False
+		self.gray_image = None
+		self.mask = None
 		self.accumulated_points = []
 		self.detection_id_counter = 0
-		self.orienation_avg = []
 		self.centroid_history = {}
 		self.orientation_history = {}
-		self.history_size = 10
 		self.temp_markers = []
 		self.last_publish_time = time.time()
-		self.publish_interval = 0.1  # 100 milliseconds
+
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
-			print(f"camera info: {msg}")
+			if self.print_camera_info:
+				print(f"camera info: {msg}")
 			self.fx = msg.k[0]
 			self.cx = msg.k[2]
 			self.fy = msg.k[4]
@@ -101,11 +106,10 @@ class YOLONode(Node):
 			return
 
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-		self.cv_image = cv_image
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
 			return
-		results = self.model(cv_image, verbose=False, iou=0.8, conf=0.5)
+		results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
 
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
@@ -116,14 +120,12 @@ class YOLONode(Node):
 
 		for result in results:
 			for box in result.boxes.cpu().numpy():
-				print(box.conf)
 				if box.conf < 0.5:
 					continue
 				class_id = box.cls[0]
 				if class_id in self.specific_class_id:
 					detection = self.create_detection3d_message(box, cv_image)
 					if detection:
-						#print(detection)
 						detections.detections.append(detection)
 
 					self.mask.fill(0)
@@ -142,7 +144,7 @@ class YOLONode(Node):
 		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 		self.publish_accumulated_point_cloud()
 		self.publisher.publish(annotated_msg)
-		self.centroid_publisher.publish(detections)
+		self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
 
 	def generate_unique_detection_id(self):
@@ -190,11 +192,9 @@ class YOLONode(Node):
 
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
 
-				#smoothed_quat = quat
+				# Temporal smoothing of quaternion and centroid using rolling average/history
 				smoothed_quat = self.smooth_orientation(class_id, quat)
 				smoothed_centroid = self.smooth_centroid(class_id, centroid)
-				#smoothed_centroid = centroid
-				# smoothed_quat[3] = 2.0
 			
 				# Get a unique ID for this detection
 				detection_id = self.generate_unique_detection_id()
@@ -212,7 +212,7 @@ class YOLONode(Node):
 
 				# Set the pose
 				detection.results.append(self.create_object_hypothesis_with_pose(class_id, smoothed_centroid, smoothed_quat))
-				#print(self.class_id_map.get(class_id, "Unknown"))
+
 				return detection
 		return None
 
@@ -221,7 +221,6 @@ class YOLONode(Node):
 		hypothesis = ObjectHypothesis()
 
 		class_name = self.class_id_map.get(class_id, "Unknown")
-		#print(class_name)
 		hypothesis.class_id = class_name
 		hypothesis.score = 1.0  # You might want to use the detection score here
 
@@ -278,12 +277,10 @@ class YOLONode(Node):
 
 			# Make sure the point is on the image
 			if yi >= self.depth_image.shape[0] or xi >= self.depth_image.shape[1]:
-				#print("point not in shape")
 				continue
 
 			# Make sure the point is on the mask
 			if self.mask[yi, xi] != 255:
-				#print("point not in mask")
 				continue
 
 			z = self.depth_image[yi, xi]
@@ -306,7 +303,6 @@ class YOLONode(Node):
 		points_3d = np.array(points_3d)
 
 		# Filter outlier points
-		
 		points_3d = self.radius_outlier_removal(points_3d, min_neighbors=min(10,int(len(points_3d)*0.8)))
 		points_3d = self.statistical_outlier_removal(points_3d, k=min(10,int(len(points_3d) * 0.8)))
 		
@@ -318,16 +314,7 @@ class YOLONode(Node):
 			if len(self.accumulated_points) > max_points:
 				self.accumulated_points = self.accumulated_points[-max_points:]
 
-			# Convert 3D points to Point32 messages and add to the PointCloud
-			#for point in points_3d:
-			#	cloud.points.append(Point32(x=float(point[0]), y=float(point[1]), z=float(point[2])))
-
-			# Publish the PointCloud message
-			#self.point_cloud_publisher.publish(cloud)
-
-			#print(f"pointCount: {len(points_3d)}")
 			if len(points_3d) < self.min_points:
-				print("Not enough points for SVD.")
 				return None
 
 		return points_3d
@@ -380,7 +367,7 @@ class YOLONode(Node):
 			d = -np.dot(normal, centroid)
 			return normal, d, centroid
 		except:
-			print("SVD did not converge")
+			pass
 
 	def calculate_quaternion_and_euler_angles(self, normal):
 
@@ -426,10 +413,6 @@ class YOLONode(Node):
 		marker.pose.position.y = centroid[1]
 		marker.pose.position.z = centroid[2]
 
-		#quat, euler_angles = self.calculate_quaternion_and_euler_angles(normal)
-
-		#quat = self.smooth_orientation(class_id, quat)
-
 		# Set the marker's orientation
 		marker.pose.orientation.x = quat[0]
 		marker.pose.orientation.y = quat[1]
@@ -445,8 +428,6 @@ class YOLONode(Node):
 		else:
 			marker.scale.z = 0.05
 		
-
-
 		# Set the color and transparency (alpha) of the marker
 		# You might want to use different colors for different classes
 		color = self.get_color_for_class(class_id)
@@ -454,11 +435,9 @@ class YOLONode(Node):
 		marker.color.g = color[1]
 		marker.color.b = color[2]
 		marker.color.a = 0.8  # Semi-transparent
-		#marker.lifetime = Duration(seconds=1.5).to_msg()  # Marker persists for 0.5 seconds
 
+		# Append the marker to publish all at once
 		self.temp_markers.append(marker)
-		# Publish the marker
-		#self.marker_publisher.publish(marker)
 
 	def smooth_orientation(self, class_id, current_orientation):
 		if class_id not in self.orientation_history:
