@@ -18,15 +18,15 @@ class Location:
     def reset(self):
         
         self.position = {
-            "x": numpy.empty(self.buffer_size),
-            "y": numpy.empty(self.buffer_size),
-            "z": numpy.empty(self.buffer_size)
+            "x": numpy.full(self.buffer_size, None, numpy.float64),
+            "y": numpy.full(self.buffer_size, None, numpy.float64),
+            "z": numpy.full(self.buffer_size, None, numpy.float64)
         }
 
         self.orientation = {
-            "x": numpy.empty(self.buffer_size),
-            "y": numpy.empty(self.buffer_size),
-            "z": numpy.empty(self.buffer_size)
+            "x": numpy.full(self.buffer_size, None, numpy.float64),
+            "y": numpy.full(self.buffer_size, None, numpy.float64),
+            "z": numpy.full(self.buffer_size, None, numpy.float64)
         }
 
         self.position["x"][0] = self.inital_pose.position.x
@@ -95,11 +95,11 @@ class Location:
         pose.pose.position.z = numpy.nanmean(trimmed["z"])
 
         # Set covariance to list for now so we can add incrementally
-        cov: list[float] = list()
+        cov: list[float] = [0.0] * 36
 
-        # For all the positions calculate and store variances
-        for key in trimmed.keys():
-            cov.append(numpy.nanvar(trimmed[key]))
+        cov[0] = numpy.nanvar(trimmed["x"])
+        cov[7] = numpy.nanvar(trimmed["y"])
+        cov[14] = numpy.nanvar(trimmed["z"])
 
         # Do the same steps for rotational things
         if self.buffer_size > 10 and self.orientation["x"][10] != numpy.nan:
@@ -108,19 +108,20 @@ class Location:
         else:
             trimmed = self.orientation
 
-        quat = euler2quat((
+        quat = euler2quat(
             numpy.nanmean(trimmed["x"]),
             numpy.nanmean(trimmed["y"]),
             numpy.nanmean(trimmed["z"])
-        ))
+        )
 
         pose.pose.orientation.w = quat[0]
         pose.pose.orientation.x = quat[1]
         pose.pose.orientation.y = quat[2]
         pose.pose.orientation.z = quat[3]
 
-        for key in trimmed.keys():
-            cov.append(numpy.nanvar(trimmed[key]))
+        cov[21] = numpy.nanvar(trimmed["x"])
+        cov[28] = numpy.nanvar(trimmed["y"])
+        cov[35] = numpy.nanvar(trimmed["z"])
 
         pose.covariance = tuple(cov)
 
