@@ -142,5 +142,8 @@
     angle_cutoff: 15.0
     distance_limit: 10.0
     confidence_cutoff: 0.7
-        
-  
+    
+    # Size of buffer for location tracking
+    buffer_size: 100
+    quantile: [0.01, 0.99]
+    minimum_distance: 1
