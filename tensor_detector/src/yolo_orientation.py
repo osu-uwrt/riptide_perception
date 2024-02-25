@@ -25,7 +25,7 @@ class YOLONode(Node):
 		])
 
 		# USER DEFINED PARAMS
-		self.export = False # Whether or not to export .pt file to engine
+		self.export = True # Whether or not to export .pt file to engine
 		self.conf = 0.9 # Confidence threshold for yolo detections
 		self.iou = 0.9 # Intersection over union for yolo detections
 		self.frame_id = 'zed_left_camera_optical_frame' 
