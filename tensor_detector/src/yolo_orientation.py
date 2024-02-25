@@ -68,11 +68,10 @@ class YOLONode(Node):
 		self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
 		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
 
-		# YOLO and CV init
+		# CV and Yolo init
 		self.bridge = CvBridge()
-		self.model = YOLO(yolo_model_path, task="segment")
-		if self.export and yolo_model_path.endswith(".pt"):
-			self.model.export(format="engine")
+		self.initialize_yolo(yolo_model_path)
+			
 
 		# Init global vars
 		self.depth_image = None
@@ -89,6 +88,17 @@ class YOLONode(Node):
 		self.torpedo_centroid = None
 		self.torpedo_window = 0
 
+	def initialize_yolo(self, yolo_model_path):
+
+	        self.model = YOLO(yolo_model_path, task="segment")
+	        
+	        # Check if the model needs to be exported
+	        if self.export and yolo_model_path.endswith(".pt"):
+	            self.model.export(format="engine")
+	            # Update the model path to use the .engine file
+	            engine_model_path = yolo_model_path.replace('.pt', '.engine')
+	            # Reinitialize the YOLO model with the new .engine file
+	            self.initialize_yolo(engine_model_path)
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
