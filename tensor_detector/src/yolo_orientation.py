@@ -21,7 +21,7 @@ class YOLONode(Node):
 			namespace='',
 			parameters=[
 				('yolo_model_path', '200.engine'),
-				('specific_class_id', [0,1,2,3,4,5,6]),
+				('specific_class_id', [0,1,2,3,4,5,6,7,8]),
 		])
 
 		# USER DEFINED PARAMS
@@ -41,6 +41,8 @@ class YOLONode(Node):
 			4: "buoy_glyph_4",
 			5: "gate",
 			6: "earth_glyph",
+			7: "torpedo",
+			8: "torpedo_hole"
 			# Add more class IDs and their corresponding names as needed
 		}
 		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
