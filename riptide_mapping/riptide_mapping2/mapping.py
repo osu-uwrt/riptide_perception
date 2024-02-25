@@ -33,6 +33,8 @@ class MappingNode(Node):
             "buoy": dict(),
             "buoy_glyph_1": dict(),
             "buoy_glyph_2": dict(),
+            "buoy_glyph_3": dict(),
+            "buoy_glyph_4": dict(),
             "torpedo": dict(),
             "torpedo_upper_hole": dict(),
             "torpedo_lower_hole": dict(),
@@ -62,7 +64,9 @@ class MappingNode(Node):
             namespace="",
             parameters=[
                 ("buffer_size", 100),
-                ("quantile", [0.01, 0.99])
+                ("quantile", [0.01, 0.99]),
+                ("confidence_cutoff", 0.7),
+                ("minimum_distance", 1.0)
             ]
         )
 
@@ -74,6 +78,7 @@ class MappingNode(Node):
 
         # Create the buffer to send 
         self.tf_buffer = tf2_ros.buffer.Buffer()
+        self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
         self.publish_timer = self.create_timer(1.0, self.publish_pose)
@@ -100,7 +105,7 @@ class MappingNode(Node):
         self.objects[object]["publisher"] = self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
 
     # Check which params need updated and update them via the create_location method
-    def param_callback(self, params: list[Parameter]):
+    def param_callback(self, params: 'list[Parameter]'):
         updates = set()
 
         for param in params:
@@ -110,33 +115,43 @@ class MappingNode(Node):
             self.create_location(object)
 
     def vision_callback(self, detections: Detection3DArray):
-        distance: dict[str, float] = dict()
-        min = ""
-        for detection in detections:
+        distance: 'dict[str, float]' = dict()
+        closest_obj_id = ""
+        for detection in detections.detections:
             for result in detection.results:
+                if not result.hypothesis.class_id in self.objects.keys():
+                    self.get_logger().info(f"Received detection on unknown class {result.hypothesis.class_id}!")
+                    continue
+                
                 # Skip this detection if confidence is to low
                 if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
+                    self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
 
-                if min == "":
-                    min = result.hypothesis.class_id
+                if closest_obj_id == "":
+                    closest_obj_id = result.hypothesis.class_id
+                    
+                parent: str = str(self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value)
 
                 # Calculate distance using that formula from pythagoras
                 # We can do this because the pose is a transform between 2 objects therefore it is relative not absolute location
                 distance[result.hypothesis.class_id] = math.sqrt(
-                    math.pow(result.pose.position.x, 2) +
-                    math.pow(result.pose.position.y, 2) +
-                    math.pow(result.pose.position.z, 2)
+                    math.pow(result.pose.pose.position.x, 2) +
+                    math.pow(result.pose.pose.position.y, 2) +
+                    math.pow(result.pose.pose.position.z, 2)
                 )
 
-                if distance[min] > distance[result.hypothesis.class_id] and distance[result.hypothesis.class_id] > float(self.get_parameter("minimum_distance").value):
-                    min = result.hypothesis.class_id
+                if parent == "map" and distance[closest_obj_id] > distance[result.hypothesis.class_id] and distance[result.hypothesis.class_id] > float(self.get_parameter("minimum_distance").value):
+                    closest_obj_id = result.hypothesis.class_id
 
-        for detection in detections:
+        for detection in detections.detections:
             for result in detection.results:
+                if not result.hypothesis.class_id in self.objects.keys():
+                    continue #already did print, just continue here
+                
                 # Skip this detection if confidence is to low
                 if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
-                    continue
+                    continue # already did print, just continue here
 
                 # We have a transform from camera to child we need to transform so
                 # that we have a transform from parrent to child
@@ -149,10 +164,9 @@ class MappingNode(Node):
 
                 # If the current object isnt the closest object and its parent is map we
                 # aren't going to track its location in favor of offsetting the entire map
-                update_position = parent != "map" or child == min
+                update_object = parent != "map" or child == closest_obj_id
 
-                if update_position:
-
+                if update_object:
                     try:
                         transform = self.tf_buffer.lookup_transform(
                             parent,
@@ -160,26 +174,25 @@ class MappingNode(Node):
                             Time()
                         )
                     except TransformException as ex:
-                        self.get_logger().error("Can't transform from " + camera + " to " + parent)
+                        self.get_logger().error(f"Can't transform from {camera} to {parent}: {ex}")
                         continue
 
                     trans_pose = do_transform_pose_stamped(pose, transform)
-                        
-                    self.objects[child]["location"].add_pose(trans_pose.pose)
+                    self.objects[child]["location"].add_pose(trans_pose.pose, True, True)
 
     def publish_pose(self):
         for object in self.objects.keys():
             pose = PoseWithCovarianceStamped()
 
             pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = object + "_frame"
+            pose.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
             pose.pose = self.objects[object]["location"].get_pose()
 
             self.objects[object]["publisher"].publish(pose)
 
             transform = TransformStamped()
 
-            transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
+            transform.header = pose.header
             transform.child_frame_id = object + "_frame"
             transform.header.stamp = pose.header.stamp
             transform.transform.translation = Vector3(x=pose.pose.pose.position.x, y=pose.pose.pose.position.y, z=pose.pose.pose.position.z)
