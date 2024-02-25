@@ -25,7 +25,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'Buoy_300_2575_Rotation_Mirror.pt')
+        tensorrt_wrapper_dir, 'weights', 'Buoy_Gate_Torpedo_200_Rotation360_2575_Mirror_Nano.pt')
     
     ld.add_action(PushRosNamespace(LC("robot")))
 
