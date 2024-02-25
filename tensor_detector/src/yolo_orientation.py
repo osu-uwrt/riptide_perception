@@ -218,7 +218,11 @@ class YOLONode(Node):
 				if class_id == 7:
 					self.torpedo_centroid = centroid
 					self.torpedo_window = 3
-				elif class_id == 8 and self.torpedo_centroid is not None:
+				elif class_id == 8:
+					
+					if self.torpedo_centroid is None: 
+						return None
+						
 					centroid[2] = self.torpedo_centroid[2]
 
 					if centroid[1] < self.torpedo_centroid[1]:
@@ -226,9 +230,10 @@ class YOLONode(Node):
 					else:
 						class_id = 10
 						
-					self.torpedo_depth_window -=1
-					if self.torpedo_depth_window == 0:
-						self.torpedo_depth = None
+					self.torpedo_window -= 1
+					if self.torpedo_window == 0:
+						self.torpedo_centroid = None
+				
 					
 					
 			
