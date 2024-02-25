@@ -42,7 +42,9 @@ class YOLONode(Node):
 			5: "gate",
 			6: "earth_glyph",
 			7: "torpedo",
-			8: "torpedo_hole"
+			8: "torpedo_hole",
+			9: "torpedo_upper_hole",
+			10: "torpedo_lower_hole"
 			# Add more class IDs and their corresponding names as needed
 		}
 		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
@@ -84,6 +86,8 @@ class YOLONode(Node):
 		self.orientation_history = {}
 		self.temp_markers = []
 		self.last_publish_time = time.time()
+		self.torpedo_centroid = None
+		self.torpedo_window = 0
 
 
 	def camera_info_callback(self, msg):
@@ -160,6 +164,8 @@ class YOLONode(Node):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		class_id = int(box.cls[0])
 
+		
+
 		# Calculate the shrink size based on the class_detect_shrink percentage
 		shrink_x = (x_max - x_min) * self.class_detect_shrink  
 		shrink_y = (y_max - y_min) * self.class_detect_shrink  
@@ -198,6 +204,23 @@ class YOLONode(Node):
 				# Temporal smoothing of quaternion and centroid using rolling average/history
 				smoothed_quat = self.smooth_orientation(class_id, quat)
 				smoothed_centroid = self.smooth_centroid(class_id, centroid)
+
+				if class_id == 7:
+					self.torpedo_centroid = centroid
+					self.torpedo_window = 3
+				elif class_id == 8 and self.torpedo_centroid is not None:
+					centroid[2] = self.torpedo_centroid[2]
+
+					if centroid[1] < self.torpedo_centroid[1]:
+						class_id = 9
+					else:
+						class_id = 10
+						
+					self.torpedo_depth_window -=1
+					if self.torpedo_depth_window == 0:
+						self.torpedo_depth = None
+					
+					
 			
 				# Get a unique ID for this detection
 				detection_id = self.generate_unique_detection_id()
