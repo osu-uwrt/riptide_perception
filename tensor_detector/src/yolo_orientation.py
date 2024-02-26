@@ -197,7 +197,7 @@ class YOLONode(Node):
 			detection = Detection3D()
 			detection.header.frame_id = self.frame_id
 			detection.header.stamp = self.get_clock().now().to_msg()
-			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, self.torpedo_quat, conf))
+			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, hole_quat, conf))
 			return detection
 
 
