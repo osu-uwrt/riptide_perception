@@ -7,16 +7,19 @@ from rclpy.qos import qos_profile_system_default
 from rclpy.parameter import Parameter
 from rclpy.time import Time
 
-from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3
+from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Quaternion
 from vision_msgs.msg import Detection3DArray
 from tf2_geometry_msgs import do_transform_pose_stamped
 
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
 
+from transforms3d.euler import quat2euler, euler2quat
+
 from location import Location
 
 import math
+from typing import cast
 
 # Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
 # are confident in deadly reckoning the relative location of objects. The only objects that we keep track of in the translational
@@ -33,8 +36,6 @@ class MappingNode(Node):
             "buoy": dict(),
             "buoy_glyph_1": dict(),
             "buoy_glyph_2": dict(),
-            "buoy_glyph_3": dict(),
-            "buoy_glyph_4": dict(),
             "torpedo": dict(),
             "torpedo_upper_hole": dict(),
             "torpedo_lower_hole": dict(),
@@ -65,12 +66,9 @@ class MappingNode(Node):
             parameters=[
                 ("buffer_size", 100),
                 ("quantile", [0.01, 0.99]),
-                ("confidence_cutoff", 0.7),
-                ("minimum_distance", 1.0)
+                ("target_object", "gate")
             ]
         )
-
-        self.offset_object = None
 
         for object in self.objects.keys():
             self.create_location(object)
@@ -78,8 +76,9 @@ class MappingNode(Node):
 
         # Create the buffer to send 
         self.tf_buffer = tf2_ros.buffer.Buffer()
-        self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
+
+        self.target_object = str(self.get_parameter("target_object").value)
 
         self.publish_timer = self.create_timer(1.0, self.publish_pose)
 
@@ -105,53 +104,26 @@ class MappingNode(Node):
         self.objects[object]["publisher"] = self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
 
     # Check which params need updated and update them via the create_location method
-    def param_callback(self, params: 'list[Parameter]'):
+    def param_callback(self, params: list[Parameter]):
         updates = set()
-
+        self.get_logger().info(str(params))
         for param in params:
-            updates.add(str(param.name).split(".")[1])
+            if(str(param.name).split(".")) == "init_data":
+                updates.add(str(param.name).split(".")[1])
 
         for object in updates:
             self.create_location(object)
 
     def vision_callback(self, detections: Detection3DArray):
-        distance: 'dict[str, float]' = dict()
-        closest_obj_id = ""
-        for detection in detections.detections:
+
+        if self.target_object == None:
+            return
+
+        for detection in detections:
             for result in detection.results:
-                if not result.hypothesis.class_id in self.objects.keys():
-                    self.get_logger().info(f"Received detection on unknown class {result.hypothesis.class_id}!")
-                    continue
-                
                 # Skip this detection if confidence is to low
                 if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
-                    self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
-
-                if closest_obj_id == "":
-                    closest_obj_id = result.hypothesis.class_id
-                    
-                parent: str = str(self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value)
-
-                # Calculate distance using that formula from pythagoras
-                # We can do this because the pose is a transform between 2 objects therefore it is relative not absolute location
-                distance[result.hypothesis.class_id] = math.sqrt(
-                    math.pow(result.pose.pose.position.x, 2) +
-                    math.pow(result.pose.pose.position.y, 2) +
-                    math.pow(result.pose.pose.position.z, 2)
-                )
-
-                if parent == "map" and distance[closest_obj_id] > distance[result.hypothesis.class_id] and distance[result.hypothesis.class_id] > float(self.get_parameter("minimum_distance").value):
-                    closest_obj_id = result.hypothesis.class_id
-
-        for detection in detections.detections:
-            for result in detection.results:
-                if not result.hypothesis.class_id in self.objects.keys():
-                    continue #already did print, just continue here
-                
-                # Skip this detection if confidence is to low
-                if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
-                    continue # already did print, just continue here
 
                 # We have a transform from camera to child we need to transform so
                 # that we have a transform from parrent to child
@@ -162,42 +134,63 @@ class MappingNode(Node):
                 # Get the pose that is a transform from camera to child
                 pose: PoseWithCovariance = result.pose
 
+                try:
+                    transform = self.tf_buffer.lookup_transform(
+                        parent,
+                        camera,
+                        Time()
+                    )
+                except TransformException as ex:
+                    self.get_logger().error("Can't transform from " + camera + " to " + parent)
+                    continue
+
                 # If the current object isnt the closest object and its parent is map we
                 # aren't going to track its location in favor of offsetting the entire map
-                update_object = parent != "map" or child == closest_obj_id
+                update_position = parent != "map" or child == self.target_object
+                update_orientation = True
 
-                if update_object:
-                    try:
-                        transform = self.tf_buffer.lookup_transform(
-                            parent,
-                            camera,
-                            Time()
-                        )
-                    except TransformException as ex:
-                        self.get_logger().error(f"Can't transform from {camera} to {parent}: {ex}")
-                        continue
+                trans_pose = do_transform_pose_stamped(pose, transform)
+                        
+                self.objects[child]["location"].add_pose(trans_pose.pose, update_position, update_orientation)
 
-                    trans_pose = do_transform_pose_stamped(pose, transform)
-                    self.objects[child]["location"].add_pose(trans_pose.pose, True, True)
-
+    # TODO clean up this ugly method
     def publish_pose(self):
         for object in self.objects.keys():
             pose = PoseWithCovarianceStamped()
 
+            pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
             pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
-            pose.pose = self.objects[object]["location"].get_pose()
+            pose.header.frame_id = object + "_frame"
 
-            self.objects[object]["publisher"].publish(pose)
+            #self.objects[object]["publisher"].publish(pose)
 
             transform = TransformStamped()
 
-            transform.header = pose.header
-            transform.child_frame_id = object + "_frame"
             transform.header.stamp = pose.header.stamp
             transform.transform.translation = Vector3(x=pose.pose.pose.position.x, y=pose.pose.pose.position.y, z=pose.pose.pose.position.z)
             transform.transform.rotation = pose.pose.pose.orientation
+            
+            # If an object has the parent of anything other than map just apply the transform regularly
+            if str(self.get_parameter("init_data.{}.parent".format(object)).value) != "map":
+                transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
+                transform.child_frame_id = object + "_frame"
+            # If the object is our target then we set its transform to offset the offset frame
+            elif object == self.target_object:
+                transform.header.frame_id = "map"
+                transform.child_frame_id = "offset"
+                transform.transform.rotation = Quaternion(w=1.0, x=0.0, y=0.0, z=0.0)
+                self.tf_brod.sendTransform(transform)
 
+                transform.header.frame_id = "offset"
+                transform.child_frame_id = object + "_frame"
+                transform.transform.translation = Vector3(x=0.0, y=0.0, z=0.0)
+                transform.transform.rotation = pose.pose.pose.orientation
+            # If the object is a child of map and is not our target we set it as the child of the offset frame
+            else:
+                transform.header.frame_id = "offset"
+                transform.child_frame_id = object + "_frame"
+
+            self.objects[object]["publisher"].publish(pose)
             self.tf_brod.sendTransform(transform)
 
 def main(args=None):
