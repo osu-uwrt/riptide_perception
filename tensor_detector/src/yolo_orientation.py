@@ -86,7 +86,7 @@ class YOLONode(Node):
 		self.temp_markers = []
 		self.last_publish_time = time.time()
 		self.torpedo_centroid = None
-		self.torpedo_window = 0
+		self.torpedo_quat = None
 
 	def initialize_yolo(self, yolo_model_path):
 
@@ -154,8 +154,8 @@ class YOLONode(Node):
 					
 
 		if self.temp_markers:
-				self.publish_markers(self.temp_markers)
-				self.temp_markers = []  # Clear the list for the next frame
+			self.publish_markers(self.temp_markers)
+			self.temp_markers = []  # Clear the list for the next frame
 
 		annotated_frame = results[0].plot()
 		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
@@ -174,7 +174,21 @@ class YOLONode(Node):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		class_id = int(box.cls[0])
 
-		
+		if class_id == 8 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
+			
+			centroid_boxes = []
+
+			centroid_boxes[0] = (x_max-x_min)/2
+			centroid_boxes[1] = (y_max-y_min)/2
+			centroid_boxes[2] = self.torpedo_centroid[2]
+
+			# Create Detection3D message
+			detection = Detection3D()
+			detection.header.frame_id = self.frame_id
+			detection.header.stamp = self.get_clock().now().to_msg()
+			detection.results.append(self.create_object_hypothesis_with_pose(class_id-1, centroid_boxes, self.torpedo_quat, conf))
+			return detection
+
 
 		# Calculate the shrink size based on the class_detect_shrink percentage
 		shrink_x = (x_max - x_min) * self.class_detect_shrink  
@@ -213,30 +227,12 @@ class YOLONode(Node):
 
 				# Temporal smoothing of quaternion and centroid using rolling average/history
 				smoothed_quat = self.smooth_orientation(class_id, quat)
-				smoothed_centroid = self.smooth_centroid(class_id, centroid)
-
-				if class_id == 7:
-					self.torpedo_centroid = centroid
-					self.torpedo_window = 3
-				elif class_id == 8:
-					
-					if self.torpedo_centroid is None: 
-						return None
-						
-					centroid[2] = self.torpedo_centroid[2]
-
-					if centroid[1] < self.torpedo_centroid[1]:
-						class_id = 9
-					else:
-						class_id = 10
-						
-					self.torpedo_window -= 1
-					if self.torpedo_window == 0:
-						self.torpedo_centroid = None
-				
-					
-					
+				smoothed_centroid = self.smooth_centroid(class_id, centroid)		
 			
+				if class_id == 7:
+					self.torpedo_centroid = smoothed_centroid
+					self.torpedo_quat = smoothed_quat
+					
 				# Get a unique ID for this detection
 				detection_id = self.generate_unique_detection_id()
 
