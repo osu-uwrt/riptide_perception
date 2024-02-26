@@ -25,7 +25,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'Buoy_Gate_Torpedo_200_Rotation360_2575_Mirror_Nano.pt')
+        tensorrt_wrapper_dir, 'weights', 'Buoy_Gate_Torpedo_200_Rotation360_2575_Mirror_Nano.engine')
     
     ld.add_action(PushRosNamespace(LC("robot")))
 
@@ -74,9 +74,9 @@ def generate_launch_description():
                     # This maps the 'raw' images for simplicity of demonstration.
                     # In practice, this will have to be the rectified 'rect' images.
                     ("image_rect",
-                    "zed2i/zed_node/left/image_rect_color"),
+                    "zed/zed_node/left/image_rect_color"),
                     ("camera_info",
-                    "zed2i/zed_node/left/camera_info"),
+                    "zed/zed_node/left/camera_info"),
                 ],
                 parameters=[cfg_36h11],
                 extra_arguments=[{'use_intra_process_comms': True}],

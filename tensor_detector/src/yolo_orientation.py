@@ -26,7 +26,7 @@ class YOLONode(Node):
 
 		# USER DEFINED PARAMS
 		self.export = True # Whether or not to export .pt file to engine
-		self.conf = 0.9 # Confidence threshold for yolo detections
+		self.conf = 0.5 # Confidence threshold for yolo detections
 		self.iou = 0.9 # Intersection over union for yolo detections
 		self.frame_id = 'zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
@@ -90,15 +90,15 @@ class YOLONode(Node):
 
 	def initialize_yolo(self, yolo_model_path):
 
-	        self.model = YOLO(yolo_model_path, task="segment")
-	        
-	        # Check if the model needs to be exported
-	        if self.export and yolo_model_path.endswith(".pt"):
-	            self.model.export(format="engine")
-	            # Update the model path to use the .engine file
-	            engine_model_path = yolo_model_path.replace('.pt', '.engine')
-	            # Reinitialize the YOLO model with the new .engine file
-	            self.initialize_yolo(engine_model_path)
+		self.model = YOLO(yolo_model_path, task="segment")
+		
+		# Check if the model needs to be exported
+		if self.export and yolo_model_path.endswith(".pt"):
+			self.model.export(format="engine")
+			# Update the model path to use the .engine file
+			engine_model_path = yolo_model_path.replace('.pt', '.engine')
+			# Reinitialize the YOLO model with the new .engine file
+			self.initialize_yolo(engine_model_path)
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
