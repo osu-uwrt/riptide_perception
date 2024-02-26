@@ -172,21 +172,32 @@ class YOLONode(Node):
 
 	def create_detection3d_message(self, box, cv_image, conf):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		bbox_width = x_max - x_min
+		bbox_height = y_max - y_min
+		
 		class_id = int(box.cls[0])
 
 		if class_id == 8 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
+
+			hole_quat = self.torpedo_quat
+			hole_centroid = []
+
+			hole_centroid[0] = x_min + bbox_width/2 
+			hole_centroid[1] = y_min + bbox_height/2
+			hole_centroid[2] = self.torpedo_centroid[2]
+
+			if hole_centroid[1] < self.torpedo_centroid[1]:
+				class_id = 9
+			else:
+				class_id = 10
+
+			self.publish_plane_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height)
 			
-			centroid_boxes = []
-
-			centroid_boxes[0] = (x_max-x_min)/2
-			centroid_boxes[1] = (y_max-y_min)/2
-			centroid_boxes[2] = self.torpedo_centroid[2]
-
 			# Create Detection3D message
 			detection = Detection3D()
 			detection.header.frame_id = self.frame_id
 			detection.header.stamp = self.get_clock().now().to_msg()
-			detection.results.append(self.create_object_hypothesis_with_pose(class_id-1, centroid_boxes, self.torpedo_quat, conf))
+			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, self.torpedo_quat, conf))
 			return detection
 
 
@@ -232,15 +243,10 @@ class YOLONode(Node):
 				if class_id == 7:
 					self.torpedo_centroid = smoothed_centroid
 					self.torpedo_quat = smoothed_quat
-					
-				# Get a unique ID for this detection
-				detection_id = self.generate_unique_detection_id()
 
-				bbox_width = x_max - x_min
-				bbox_height = y_max - y_min
 
 				# When calling publish_plane_marker, pass these dimensions along with other required information
-				self.publish_plane_marker(smoothed_quat, smoothed_centroid, detection_id, class_id, bbox_width, bbox_height)
+				self.publish_plane_marker(smoothed_quat, smoothed_centroid, class_id, bbox_width, bbox_height)
 
 				# Create Detection3D message
 				detection = Detection3D()
@@ -436,12 +442,13 @@ class YOLONode(Node):
 
 		return rotation
 	
-	def publish_plane_marker(self, quat, centroid, detection_id, class_id, bbox_width, bbox_height):
+	def publish_plane_marker(self, quat, centroid, class_id, bbox_width, bbox_height):
+
 		marker = Marker()
 		marker.header.frame_id = self.frame_id
 		marker.header.stamp = self.get_clock().now().to_msg()
 		marker.ns = "detection_markers"  # Namespace for all detection markers
-		marker.id = detection_id  # Unique ID for each marker
+		marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
 		marker.type = Marker.CUBE
 		marker.action = Marker.ADD
 
