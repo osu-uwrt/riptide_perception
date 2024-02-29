@@ -110,7 +110,7 @@ class MappingNode(Node):
         self.objects[object]["publisher"] = self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
 
     # Check which params need updated and update them via the create_location method
-    def param_callback(self, params: list[Parameter]):
+    def param_callback(self, params):
         updates = set()
         self.get_logger().info(str(params))
         for param in params:
@@ -171,11 +171,15 @@ class MappingNode(Node):
                     offset_pose.position.y = trans_pose.pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
                     offset_pose.position.z = trans_pose.pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
 
+                    # Rotational will never be changed because we don't want to offset that
+                    # FOG go brrrrrrrrrrrrrrrr
                     self.offset.add_pose(offset_pose, True, False)
 
     # TODO clean up this ugly method
     def publish_pose(self):
 
+        # Send the transform between offset and map which is tracked in
+        # self.offset which is a Location class
         offset_transform = TransformStamped()
         offset_pose = self.offset.get_pose()
 
@@ -186,12 +190,21 @@ class MappingNode(Node):
 
         self.tf_brod.sendTransform(offset_transform)
 
+        # For every object send the covariance and transform
         for object in self.objects.keys():
             pose = PoseWithCovarianceStamped()
 
             pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
             pose.header.stamp = self.get_clock().now().to_msg()
             pose.header.frame_id = object + "_frame"
+
+            # If the object is the target object the translational covariance will be in the offset object.
+            if object == self.target_object:
+                offset_covar = self.offset.get_pose().covariance
+
+                pose.pose.covariance[0] = offset_covar[0]
+                pose.pose.covariance[7] = offset_covar[7]
+                pose.pose.covariance[14] = offset_covar[14]
 
             #self.objects[object]["publisher"].publish(pose)
 
@@ -203,6 +216,7 @@ class MappingNode(Node):
             transform.child_frame_id = object + "_frame"
 
             # If an object has the parent of anything other than map just apply the transform regularly
+            # This will eventually be changed when chamelon_tf is absorbed by mapping and the offset tf frame is removed
             if str(self.get_parameter("init_data.{}.parent".format(object)).value) == "map":
                 transform.header.frame_id = "offset"
             else:

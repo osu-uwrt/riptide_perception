@@ -57,7 +57,6 @@ class Location:
 
             # Check if we have reached the end of the array and if so start from the beginning
             if self.position_location >= self.buffer_size:
-                self.publish_actual_position_covs = True
                 self.position_location = 0
 
         # Same concept as the position updating
@@ -78,7 +77,6 @@ class Location:
             self.orientation_location += 1
 
             if self.orientation_location >= self.buffer_size:
-                self.publish_actual_orientation_covs = True
                 self.orientation_location = 0
 
     def get_pose(self) -> PoseWithCovariance:
@@ -88,7 +86,7 @@ class Location:
         trimmed = {}
 
         # Remove the outliers if we have like 10 samples
-        if self.buffer_size > 10 and self.position["x"][10] != numpy.nan:
+        if self.position["x"][self.buffer_size-1] != numpy.nan:
             for key in self.position.keys():
                 trimmed[key] = remove_outliers(self.position[key], self.quantile)
         else:
@@ -102,7 +100,7 @@ class Location:
         # Set covariance to list for now so we can add incrementally
         cov: 'list[float]' = [0.0] * 36
 
-        if self.publish_actual_position_covs:
+        if self.position["x"][self.buffer_size-1] != numpy.nan or self.position["x"][1] != numpy.nan:
             cov[0] = numpy.nanvar(trimmed["x"])
             cov[7] = numpy.nanvar(trimmed["y"])
             cov[14] = numpy.nanvar(trimmed["z"])
@@ -113,7 +111,7 @@ class Location:
             cov[14] = 1.0
 
         # Do the same steps for rotational things
-        if self.buffer_size > 10 and self.orientation["x"][10] != numpy.nan:
+        if self.orientation["x"][self.buffer_size-1] != numpy.nan:
             for key in self.orientation.keys():
                 trimmed[key] = remove_outliers(self.orientation[key], self.quantile)
         else:
@@ -130,7 +128,7 @@ class Location:
         pose.pose.orientation.y = quat[2]
         pose.pose.orientation.z = quat[3]
         
-        if self.publish_actual_orientation_covs:
+        if self.orientation["x"][self.buffer_size-1] != numpy.nan or self.orientation["x"][1] == numpy.nan:
             cov[21] = numpy.nanvar(trimmed["x"])
             cov[28] = numpy.nanvar(trimmed["y"])
             cov[35] = numpy.nanvar(trimmed["z"])
