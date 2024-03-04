@@ -100,7 +100,7 @@ class Location:
         # Set covariance to list for now so we can add incrementally
         cov: 'list[float]' = [0.0] * 36
 
-        if self.position["x"][self.buffer_size-1] != numpy.nan or self.position["x"][1] != numpy.nan:
+        if self.position["x"][self.buffer_size-1] != None:
             cov[0] = numpy.nanvar(trimmed["x"])
             cov[7] = numpy.nanvar(trimmed["y"])
             cov[14] = numpy.nanvar(trimmed["z"])
@@ -128,7 +128,7 @@ class Location:
         pose.pose.orientation.y = quat[2]
         pose.pose.orientation.z = quat[3]
         
-        if self.orientation["x"][self.buffer_size-1] != numpy.nan or self.orientation["x"][1] == numpy.nan:
+        if self.orientation["x"][self.buffer_size-1] != None:
             cov[21] = numpy.nanvar(trimmed["x"])
             cov[28] = numpy.nanvar(trimmed["y"])
             cov[35] = numpy.nanvar(trimmed["z"])
