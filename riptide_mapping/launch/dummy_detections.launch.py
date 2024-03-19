@@ -47,7 +47,6 @@ def generate_launch_description():
                 package='riptide_mapping2',
                 executable='dummydetections.py',
                 name='dummydetections',
-                respawn=True,
                 output='screen',
                 
                 parameters = [
