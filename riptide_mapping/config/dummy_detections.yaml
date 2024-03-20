@@ -51,7 +51,7 @@
         min_dist: 0.5
         max_dist: 2.0
       torpedo_upper_hole:
-        pose: [3.5, 3.5, -1.0, 0.0, 0.0, 3.1415]
+        pose: [3.5, 3.5, -1.0, 0.0, 0.0, 1.5707]
         noise: 0.05
         score: 0.8
         downward: false
@@ -59,7 +59,7 @@
         min_dist: 0.5
         max_dist: 1.25
       torpedo_lower_hole:
-        pose: [3.5, 3.5, -1.5, 0.0, 0.0, 3.1415]
+        pose: [3.5, 3.5, -1.5, 0.0, 0.0, 1.5707]
         noise: 0.05
         score: 0.8
         downward: false
