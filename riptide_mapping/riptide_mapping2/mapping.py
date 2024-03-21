@@ -10,6 +10,7 @@ from rclpy.time import Time
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Quaternion
 from vision_msgs.msg import Detection3DArray
 from tf2_geometry_msgs import do_transform_pose_stamped
+from riptide_msgs2.srv import MappingTarget
 
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
@@ -68,8 +69,7 @@ class MappingNode(Node):
             parameters=[
                 ("confidence_cutoff", 0.7),
                 ("buffer_size", 100),
-                ("quantile", [0.01, 0.99]),
-                ("target_object", "buoy")
+                ("quantile", [0.01, 0.99])
             ]
         )
 
@@ -82,7 +82,8 @@ class MappingNode(Node):
         self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
-        self.target_object = str(self.get_parameter("target_object").value)
+        self.target_object = "buoy"
+        self.lock_map = False
         self.offset = Location(Pose(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
 
         self.publish_pose()
@@ -90,6 +91,7 @@ class MappingNode(Node):
 
         self.add_on_set_parameters_callback(self.param_callback)
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
+        self.create_service(MappingTarget, "mapping_target", self.target_callback)
         
     def create_location(self, object: str):
 
@@ -120,11 +122,19 @@ class MappingNode(Node):
         for object in updates:
             self.create_location(object)
 
+    def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
+        self.target_object = str(request.target_object)
+        self.lock_map = bool(request.lock_map)
+        self.offset.reset()
+
     def vision_callback(self, detections: Detection3DArray):
 
-        if self.target_object == None:
+        if self.lock_map:
             return
+        
+        closest_object = self.closest_object(detections)
 
+        # Send the Poses for each location to their Location class
         for detection in detections.detections:
             for result in detection.results:
 
@@ -164,7 +174,7 @@ class MappingNode(Node):
                         
                 self.objects[child]["location"].add_pose(trans_pose.pose, update_position, update_orientation)
 
-                if child == self.target_object:
+                if child == self.target_object or (self.target_object == "" and child == closest_object):
                     offset_pose = Pose()
 
                     offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
@@ -174,8 +184,28 @@ class MappingNode(Node):
                     # Rotational will never be changed because we don't want to offset that
                     # FOG go brrrrrrrrrrrrrrrr
                     self.offset.add_pose(offset_pose, True, False)
+                    
+    def closest_object(self, detections: Detection3DArray) -> str:
+        
+        object = ""
+        closest_dist: float = None
+        
+        for detection in detections.detections:
+            for result in detection.results:
 
-    # TODO clean up this ugly method
+                if detection.header.frame_id != "zed_left_camera_optical_frame" or self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value != "map":
+                    continue
+
+                pose: Pose = result.pose.pose
+                dist = math.sqrt(pose.position.x**2 + pose.position.y**2 + pose.position.z**2)
+
+                if dist > 1 and dist < closest_dist:
+                    object = result.hypothesis.class_id
+                    closest_dist = dist
+
+        return object
+
+    # Publishes stuff
     def publish_pose(self):
 
         # Send the transform between offset and map which is tracked in
