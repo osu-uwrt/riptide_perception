@@ -101,9 +101,9 @@ class Location:
         cov: 'list[float]' = [0.0] * 36
 
         if self.position["x"][self.buffer_size-1] != None:
-            cov[0] = numpy.nanvar(trimmed["x"])
-            cov[7] = numpy.nanvar(trimmed["y"])
-            cov[14] = numpy.nanvar(trimmed["z"])
+            cov[0] = numpy.nanvar(self.position["x"])
+            cov[7] = numpy.nanvar(self.position["y"])
+            cov[14] = numpy.nanvar(self.position["z"])
         else:
             #publish initial covariances
             cov[0] = 1.0
@@ -118,9 +118,9 @@ class Location:
             trimmed = self.orientation
 
         quat = euler2quat(
-            numpy.nanmean(trimmed["x"]),
-            numpy.nanmean(trimmed["y"]),
-            numpy.nanmean(trimmed["z"])
+            numpy.nanmean(self.orientation["x"]),
+            numpy.nanmean(self.orientation["y"]),
+            numpy.nanmean(self.orientation["z"])
         )
         
         pose.pose.orientation.w = quat[0]
