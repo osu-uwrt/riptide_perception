@@ -127,6 +127,8 @@ class MappingNode(Node):
         self.lock_map = bool(request.lock_map)
         self.offset.reset()
 
+        return response
+
     def vision_callback(self, detections: Detection3DArray):
 
         if self.lock_map:
@@ -188,7 +190,7 @@ class MappingNode(Node):
     def closest_object(self, detections: Detection3DArray) -> str:
         
         object = ""
-        closest_dist: float = None
+        closest_dist: float = 1000
         
         for detection in detections.detections:
             for result in detection.results:
