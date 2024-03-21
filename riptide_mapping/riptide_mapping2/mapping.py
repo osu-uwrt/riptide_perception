@@ -82,7 +82,7 @@ class MappingNode(Node):
         self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
-        self.target_object = "buoy"
+        self.target_object = ""
         self.lock_map = False
         self.offset = Location(Pose(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
 
