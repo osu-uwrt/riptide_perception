@@ -4,7 +4,7 @@
     detection_data:
       gate:
         pose: [5.0, 0.0, -1.5, 0.0, 0.0, 3.1415]
-        noise: 0.01
+        noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
@@ -28,7 +28,7 @@
         max_dist: 5.0
       buoy_glyph_1:
         pose: [7.1875, -4.0, -1.6, 0.0, 0.0, 1.5707]
-        noise: 0.01
+        noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
@@ -36,7 +36,7 @@
         max_dist: 2.0
       buoy_glyph_2:
         pose: [6.8, -4.0, -1.4, 0.0, 0.0, 1.5707]
-        noise: 0.01
+        noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false

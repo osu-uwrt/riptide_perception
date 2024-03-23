@@ -1,4 +1,4 @@
-from geometry_msgs.msg import PoseWithCovariance, Pose
+from geometry_msgs.msg import PoseWithCovariance, Pose, Vector3, Point
 from transforms3d.euler import quat2euler, euler2quat
 from math import atan2, pi
 
@@ -7,10 +7,11 @@ import transforms3d as tf3d
 
 class Location:
     
-    def __init__(self, inital_pose: Pose, buffer_size: int, quantile: 'tuple[float, float]'):
+    def __init__(self, inital_pose_xyz: Point, initial_pose_rpy: Vector3, buffer_size: int, quantile: 'tuple[float, float]'):
         # If the buffer or inital pose are changed externally the Location class must be reset using the reset
         # method for the changes to take effect
-        self.inital_pose = inital_pose
+        self.initial_pose_xyz = inital_pose_xyz
+        self.initial_pose_rpy = initial_pose_rpy
         self.buffer_size = buffer_size
         self.quantile = quantile
 
@@ -21,24 +22,24 @@ class Location:
         self.publish_actual_orientation_covs = False
         
         self.position = {
-            "x": numpy.full(self.buffer_size, None, numpy.float64),
-            "y": numpy.full(self.buffer_size, None, numpy.float64),
-            "z": numpy.full(self.buffer_size, None, numpy.float64)
+            "x": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
+            "y": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
+            "z": numpy.full(self.buffer_size, numpy.nan, numpy.float64)
         }
 
         self.orientation = {
-            "x": numpy.full(self.buffer_size, None, numpy.float64),
-            "y": numpy.full(self.buffer_size, None, numpy.float64),
-            "z": numpy.full(self.buffer_size, None, numpy.float64)
+            "x": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
+            "y": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
+            "z": numpy.full(self.buffer_size, numpy.nan, numpy.float64)
         }
 
-        self.position["x"][0] = self.inital_pose.position.x
-        self.position["y"][0] = self.inital_pose.position.y
-        self.position["z"][0] = self.inital_pose.position.z
+        self.position["x"][0] = self.initial_pose_xyz.x
+        self.position["y"][0] = self.initial_pose_xyz.y
+        self.position["z"][0] = self.initial_pose_xyz.z
 
-        self.orientation["x"][0] = self.inital_pose.orientation.x * pi / 180.0
-        self.orientation["y"][0] = self.inital_pose.orientation.y * pi / 180.0
-        self.orientation["z"][0] = self.inital_pose.orientation.z * pi / 180.0
+        self.orientation["x"][0] = self.initial_pose_rpy.x * pi / 180.0
+        self.orientation["y"][0] = self.initial_pose_rpy.y * pi / 180.0
+        self.orientation["z"][0] = self.initial_pose_rpy.z * pi / 180.0
         
 
         # Variable is used so we can get rid of old poses in a rolling fashion instead of shifting entire array
@@ -71,7 +72,7 @@ class Location:
             yaw = atan2(projected_unit[1], projected_unit[0])
 
             self.orientation["x"][self.orientation_location] = 0 # maybe someday roll and pitch will be nonzero. When that happens, do a projection with euler_angle[0]
-            self.orientation["y"][self.orientation_location] = 0 # maybe someday... see above comment and do it with euler_angle[1]
+            self.orientation["y"][self.orientation_location] = 0 # maybe someday...
             self.orientation["z"][self.orientation_location] = yaw
 
             self.orientation_location += 1
@@ -84,9 +85,11 @@ class Location:
         pose = PoseWithCovariance()
 
         trimmed = {}
+        
+        buffer_warm = not numpy.isnan(self.position["x"][self.buffer_size-1])
 
         # Remove the outliers if we have like 10 samples
-        if self.position["x"][self.buffer_size-1] != numpy.nan:
+        if buffer_warm:
             for key in self.position.keys():
                 trimmed[key] = remove_outliers(self.position[key], self.quantile)
         else:
@@ -99,8 +102,8 @@ class Location:
 
         # Set covariance to list for now so we can add incrementally
         cov: 'list[float]' = [0.0] * 36
-
-        if self.position["x"][self.buffer_size-1] != None:
+                
+        if buffer_warm:
             cov[0] = numpy.nanvar(self.position["x"])
             cov[7] = numpy.nanvar(self.position["y"])
             cov[14] = numpy.nanvar(self.position["z"])
@@ -111,7 +114,7 @@ class Location:
             cov[14] = 1.0
 
         # Do the same steps for rotational things
-        if self.orientation["x"][self.buffer_size-1] != numpy.nan:
+        if buffer_warm:
             for key in self.orientation.keys():
                 trimmed[key] = remove_outliers(self.orientation[key], self.quantile)
         else:
@@ -142,8 +145,6 @@ class Location:
 
         return pose
         
-        
-    # arr[numpy.where((arr >= numpy.quantile(arr, 0.1)) & (arr <= numpy.quantile(arr, 0.99)))]
 
 # Remove any outliers using quantiles
 def remove_outliers(arr: numpy.ndarray, quantile: 'tuple[float, float]') -> numpy.ndarray:

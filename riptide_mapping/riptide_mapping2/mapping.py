@@ -7,7 +7,7 @@ from rclpy.qos import qos_profile_system_default
 from rclpy.parameter import Parameter
 from rclpy.time import Time
 
-from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Quaternion
+from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point
 from vision_msgs.msg import Detection3DArray
 from tf2_geometry_msgs import do_transform_pose_stamped
 from riptide_msgs2.srv import MappingTarget
@@ -39,9 +39,10 @@ class MappingNode(Node):
             "buoy_glyph_2": dict(),
             "buoy_glyph_3": dict(),
             "buoy_glyph_4": dict(),
-            "torpedo": dict(),
-            "torpedo_upper_hole": dict(),
-            "torpedo_lower_hole": dict(),
+            "torpedo_open": dict(),
+            "torpedo_open_hole": dict(),
+            "torpedo_closed": dict(),
+            "torpedo_closed_hole": dict(),
             "table": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict()
@@ -84,7 +85,7 @@ class MappingNode(Node):
 
         self.target_object = ""
         self.lock_map = False
-        self.offset = Location(Pose(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+        self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
 
         self.publish_pose()
         self.publish_timer = self.create_timer(1.0, self.publish_pose)
@@ -94,18 +95,25 @@ class MappingNode(Node):
         self.create_service(MappingTarget, "mapping_target", self.target_callback)
         
     def create_location(self, object: str):
+        #create the Location object using two vector3s describing coordinates and euler rotation
+        xyz = Point()
+        rpy = Vector3()
 
+        xyz.x = float(self.get_parameter('init_data.{}.pose.x'.format(object)).value)
+        xyz.y = float(self.get_parameter('init_data.{}.pose.y'.format(object)).value)
+        xyz.z = float(self.get_parameter('init_data.{}.pose.z'.format(object)).value)
+
+        rpy.x = 0.0
+        rpy.y = 0.0
+        rpy.z = float(self.get_parameter('init_data.{}.pose.yaw'.format(object)).value)
+
+        self.objects[object]["location"] = Location(xyz, rpy, int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+        
+        #create pose to store as initial. Used to publish objects with the map offset
         pose = Pose()
-
-        pose.position.x = float(self.get_parameter('init_data.{}.pose.x'.format(object)).value)
-        pose.position.y = float(self.get_parameter('init_data.{}.pose.y'.format(object)).value)
-        pose.position.z = float(self.get_parameter('init_data.{}.pose.z'.format(object)).value)
-
-        pose.orientation.x = 0.0
-        pose.orientation.y = 0.0
-        pose.orientation.z = float(self.get_parameter('init_data.{}.pose.yaw'.format(object)).value)
-
-        self.objects[object]["location"] = Location(pose, int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+        pose.position = xyz
+        (pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z) = euler2quat(rpy.x, rpy.y, rpy.z)
+        self.objects[object]["init_pose"] = pose
 
     # Creates a publisher to publish PoseWithCovariance
     def add_publisher(self, object: str):
@@ -125,22 +133,19 @@ class MappingNode(Node):
     def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
         self.target_object = str(request.target_object)
         self.lock_map = bool(request.lock_map)
-        self.offset.reset()
 
         return response
 
     def vision_callback(self, detections: Detection3DArray):
-
         if self.lock_map:
             return
         
-        closest_object = self.closest_object(detections)
-
         # Send the Poses for each location to their Location class
         for detection in detections.detections:
             for result in detection.results:
 
                 if not result.hypothesis.class_id in self.objects.keys():
+                    self.get_logger().warning(f"Unknown class id {result.hypothesis.class_id}")
                     continue #already did print, just continue here
 
                 # Skip this detection if confidence is to low
@@ -169,32 +174,35 @@ class MappingNode(Node):
 
                 # If the current object isnt the closest object and its parent is map we
                 # aren't going to track its location in favor of offsetting the entire map
-                update_position = parent != "map"
+                update_position = True
                 update_orientation = True
 
                 trans_pose = do_transform_pose_stamped(pose, transform)
-                        
-                self.objects[child]["location"].add_pose(trans_pose.pose, update_position, update_orientation)
+                
+                object_location: Location = self.objects[child]["location"]
+                object_location.add_pose(trans_pose.pose, update_position, update_orientation)
 
+                closest_object = self.closest_object(detections)
                 if child == self.target_object or (self.target_object == "" and child == closest_object):
                     offset_pose = Pose()
 
-                    offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
-                    offset_pose.position.y = trans_pose.pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
-                    offset_pose.position.z = trans_pose.pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
+                    offset_pose.position.x = object_location.get_pose().pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
+                    offset_pose.position.y = object_location.get_pose().pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
+                    offset_pose.position.z = object_location.get_pose().pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
 
                     # Rotational will never be changed because we don't want to offset that
                     # FOG go brrrrrrrrrrrrrrrr
                     self.offset.add_pose(offset_pose, True, False)
                     
     def closest_object(self, detections: Detection3DArray) -> str:
-        
         object = ""
         closest_dist: float = 1000
         
         for detection in detections.detections:
             for result in detection.results:
-
+                if not result.hypothesis.class_id in self.objects.keys():
+                    continue
+                
                 if detection.header.frame_id != "zed_left_camera_optical_frame" or self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value != "map":
                     continue
 
@@ -209,7 +217,6 @@ class MappingNode(Node):
 
     # Publishes stuff
     def publish_pose(self):
-
         # Send the transform between offset and map which is tracked in
         # self.offset which is a Location class
         offset_transform = TransformStamped()
@@ -224,24 +231,24 @@ class MappingNode(Node):
 
         # For every object send the covariance and transform
         for object in self.objects.keys():
+            parent = str(self.get_parameter("init_data.{}.parent".format(object)).value)
             pose = PoseWithCovarianceStamped()
 
             pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
             pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = object + "_frame"
+            pose.header.frame_id = parent
 
             # If the object is the target object the translational covariance will be in the offset object.
             if object == self.target_object:
-                offset_covar = self.offset.get_pose().covariance
+                offset_covar = offset_pose.covariance
 
                 pose.pose.covariance[0] = offset_covar[0]
                 pose.pose.covariance[7] = offset_covar[7]
                 pose.pose.covariance[14] = offset_covar[14]
-
-            #self.objects[object]["publisher"].publish(pose)
+            
+            self.objects[object]["publisher"].publish(pose)
 
             transform = TransformStamped()
-
             transform.header.stamp = pose.header.stamp
             transform.transform.translation = Vector3(x=pose.pose.pose.position.x, y=pose.pose.pose.position.y, z=pose.pose.pose.position.z)
             transform.transform.rotation = pose.pose.pose.orientation
@@ -249,12 +256,18 @@ class MappingNode(Node):
 
             # If an object has the parent of anything other than map just apply the transform regularly
             # This will eventually be changed when chamelon_tf is absorbed by mapping and the offset tf frame is removed
-            if str(self.get_parameter("init_data.{}.parent".format(object)).value) == "map":
+            if parent == "map":
                 transform.header.frame_id = "offset"
+                
+                # assign initial position because that offset is taken care of by map offset as long as this object is the 
+                # target object. DONT assign orientation because map offset doesn't cover that
+                init_pose: Pose = self.objects[object]["init_pose"]
+                transform.transform.translation.x = init_pose.position.x # need to assign individual components because a vector3 is not a point
+                transform.transform.translation.y = init_pose.position.y
+                transform.transform.translation.z = init_pose.position.z
             else:
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
 
-            self.objects[object]["publisher"].publish(pose)
             self.tf_brod.sendTransform(transform)
 
 def main(args=None):
