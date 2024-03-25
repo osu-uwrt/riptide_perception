@@ -168,6 +168,6 @@
     confidence_cutoff: 0.7
     
     # Size of buffer for location tracking
-    buffer_size: 50
+    buffer_size: 200
     quantile: [0.01, 0.99]
     minimum_distance: 1.0
