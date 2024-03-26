@@ -13,6 +13,7 @@ from geometry_msgs.msg import Point32, Vector3
 from scipy.spatial.transform import Rotation as R
 from collections import deque
 import time
+import os
 
 class YOLONode(Node):
 	def __init__(self):
@@ -21,12 +22,12 @@ class YOLONode(Node):
 			namespace='',
 			parameters=[
 				('yolo_model_path', '200.engine'),
-				('specific_class_id', [0,1,2,3,4,5,6,7,8]),
+				('specific_class_id', [0,1,2,3,4,5,6,7,8,9]),
 		])
 
 		# USER DEFINED PARAMS
 		self.export = True # Whether or not to export .pt file to engine
-		self.conf = 0.5 # Confidence threshold for yolo detections
+		self.conf = 0.6 # Confidence threshold for yolo detections
 		self.iou = 0.9 # Intersection over union for yolo detections
 		self.frame_id = 'zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
@@ -41,10 +42,11 @@ class YOLONode(Node):
 			4: "buoy_glyph_4",
 			5: "gate",
 			6: "earth_glyph",
-			7: "torpedo",
-			8: "torpedo_hole",
-			9: "torpedo_upper_hole",
-			10: "torpedo_lower_hole"
+			7: "torpedo_open",
+			8: "torpedo_closed",
+			9: "torpedo_hole",
+			91: "torpedo_open_hole",
+			92: "torpedo_closed_hole"
 			# Add more class IDs and their corresponding names as needed
 		}
 		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
@@ -85,20 +87,37 @@ class YOLONode(Node):
 		self.orientation_history = {}
 		self.temp_markers = []
 		self.last_publish_time = time.time()
-		self.torpedo_centroid = None
-		self.torpedo_quat = None
+		self.open_torpedo_centroid = None
+		self.open_torpedo_quat = None
+		self.closed_torpedo_centroid = None
+		self.closed_torpedo_quat = None
+		self.holes = []
+		self.latest_bbox_class_7 = None
+		self.latest_bbox_class_8 = None
 
 	def initialize_yolo(self, yolo_model_path):
+		# Check if the .engine version of the model exists
+		engine_model_path = yolo_model_path.replace('.pt', '.engine')
+		if yolo_model_path.endswith(".pt") and os.path.exists(engine_model_path):
+			# If the .engine file exists, use it instead
+			yolo_model_path = engine_model_path
 
 		self.model = YOLO(yolo_model_path, task="segment")
-		
+
 		# Check if the model needs to be exported
 		if self.export and yolo_model_path.endswith(".pt"):
 			self.model.export(format="engine")
 			# Update the model path to use the .engine file
-			engine_model_path = yolo_model_path.replace('.pt', '.engine')
-			# Reinitialize the YOLO model with the new .engine file
-			self.initialize_yolo(engine_model_path)
+			# Note: This will create a new .engine file if it didn't exist before
+			self.initialize_yolo(engine_model_path)  # Recursive call with the new .engine path
+
+	def is_inside_bbox(self, inner_bbox, outer_bbox):
+		inner_x_min, inner_y_min, inner_x_max, inner_y_max = inner_bbox
+		outer_x_min, outer_y_min, outer_x_max, outer_y_max = outer_bbox
+
+		return (inner_x_min >= outer_x_min and inner_x_max <= outer_x_max and
+				inner_y_min >= outer_y_min and inner_y_max <= outer_y_max)
+
 
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
@@ -161,8 +180,20 @@ class YOLONode(Node):
 		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 		self.publish_accumulated_point_cloud()
 		self.publisher.publish(annotated_msg)
+		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
+		# 	detections.detections.append(self.spoof_torpedo())
+		self.torpedo_seen = False
+		self.cleanup_old_holes(age_threshold=2.0)
 		self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
+
+	def cleanup_old_holes(self, age_threshold=2.0):
+		# Get the current time as a builtin_interfaces.msg.Time object
+		current_time = self.get_clock().now().to_msg()
+
+		# Filter out holes older than the specified age threshold
+		self.holes = [(bbox, timestamp) for bbox, timestamp in self.holes
+					if ((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9) < age_threshold]
 
 	def generate_unique_detection_id(self):
 			# Increment and return the counter to get a unique ID for each detection
@@ -170,26 +201,66 @@ class YOLONode(Node):
 			return self.detection_id_counter
 	
 
+	# def spoof_torpedo(self):
+
+	# 	torpedo_spoof = [
+	# 		0,
+	# 		0,
+	# 		self.torpedo_centroid[2]
+	# 	]
+	# 	for hole in self.holes:
+	# 		torpedo_spoof[0] += hole[0]
+	# 		torpedo_spoof[1] += hole[1]
+
+	# 	torpedo_spoof[0] /= len(self.holes)
+	# 	torpedo_spoof[1] /= len(self.holes)
+
+	# 	self.publish_plane_marker(self.torpedo_quat, torpedo_spoof, 7, 100, 100)
+					
+	# 	# Create Detection3D message
+	# 	detection = Detection3D()
+	# 	detection.header.frame_id = self.frame_id
+	# 	detection.header.stamp = self.get_clock().now().to_msg()
+	# 	detection.results.append(self.create_object_hypothesis_with_pose(7, torpedo_spoof, self.torpedo_quat, np.float32(1)))
+	# 	return detection
+	
 	def create_detection3d_message(self, box, cv_image, conf):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		bbox = (x_min, y_min, x_max, y_max)
 		bbox_width = x_max - x_min
 		bbox_height = y_max - y_min
 		
 		class_id = int(box.cls[0])
+		#print(class_id, flush=True)
 
-		if class_id == 8 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
-
-			hole_quat = self.torpedo_quat
-			hole_centroid = []
-
-			hole_centroid[0] = x_min + bbox_width/2 
-			hole_centroid[1] = y_min + bbox_height/2
-			hole_centroid[2] = self.torpedo_centroid[2]
-
-			if hole_centroid[1] < self.torpedo_centroid[1]:
-				class_id = 9
+		if class_id == 7:
+			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
+		elif class_id == 8:
+			self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
+		elif class_id == 9:
+			if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
+				class_id = 91
+				hole_quat = self.open_torpedo_quat
+				hole_centroid = [
+					(x_min + bbox_width/2 - self.cx) * self.open_torpedo_centroid[2] / self.fx,
+					(y_min + bbox_width/2 - self.cy) * self.open_torpedo_centroid[2] / self.fy,
+					self.open_torpedo_centroid[2]
+				]
+			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
+				class_id = 92
+				hole_quat = self.closed_torpedo_quat
+				hole_centroid = [
+					(x_min + bbox_width/2 - self.cx) * self.closed_torpedo_centroid[2] / self.fx,
+					(y_min + bbox_width/2 - self.cy) * self.closed_torpedo_centroid[2] / self.fy,
+					self.closed_torpedo_centroid[2]
+				]
 			else:
-				class_id = 10
+				return None
+			
+			self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
+
+			#print(hole_centroid ,flush=True)
+			#print(self.torpedo_centroid, flush=True)
 
 			self.publish_plane_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height)
 			
@@ -216,6 +287,29 @@ class YOLONode(Node):
 		cropped_gray_image = self.gray_image[y_min:y_max, x_min:x_max]
 		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 
+		if class_id in [7, 8]:
+			# Prepare the ROI mask, excluding the holes
+			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
+
+			# Padding for exclusion zone
+			padding = 10
+			
+			for hole_bbox, _ in self.holes:
+				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
+				# You might need to adjust the coordinates based on the ROI's position
+				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+				adjusted_hole_x_min = max(hole_x_min - x_min - padding, 0)
+				adjusted_hole_y_min = max(hole_y_min - y_min - padding, 0)
+				adjusted_hole_x_max = min(hole_x_max - x_min + padding, mask_roi.shape[1])
+				adjusted_hole_y_max = min(hole_y_max - y_min + padding, mask_roi.shape[0])
+
+				# Set the hole region in mask_roi to 0 to exclude it from feature detection
+				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
+
+			# Continue with feature detection using the adjusted mask_roi
+			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
+			good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
+
 		# Detect features within the object's bounding box
 		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
 		
@@ -237,12 +331,17 @@ class YOLONode(Node):
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
 
 				# Temporal smoothing of quaternion and centroid using rolling average/history
-				smoothed_quat = self.smooth_orientation(class_id, quat)
-				smoothed_centroid = self.smooth_centroid(class_id, centroid)		
+				#smoothed_quat = self.smooth_orientation(class_id, quat)
+				smoothed_quat = quat
+				#smoothed_centroid = self.smooth_centroid(class_id, centroid)	
+				smoothed_centroid = centroid	
 			
-				if class_id == 7:
-					self.torpedo_centroid = smoothed_centroid
-					self.torpedo_quat = smoothed_quat
+				if class_id == 7:  # Assuming class ID 7 is for upper torpedo
+					self.open_torpedo_centroid = smoothed_centroid
+					self.open_torpedo_quat = smoothed_quat
+				elif class_id == 8:  # Assuming class ID 8 is for lower torpedo
+					self.closed_torpedo_centroid = smoothed_centroid
+					self.closed_torpedo_quat = smoothed_quat
 
 
 				# When calling publish_plane_marker, pass these dimensions along with other required information
@@ -535,6 +634,9 @@ class YOLONode(Node):
 			4: (1.0, 1.0, 0.0),  # Red for class 0
 			5: (0.0, 1.0, 0.0),  # Green for class 1
 			6: (0.0, 1.0, 0.0),  # Green for class 1
+			7: (0.5, 0.5, 0.0),
+			8: (0.0, 0.5, 0.5),
+			9: (0.5, 0.0, 0.5),
 			# Add more class-color mappings as needed
 		}
 		return color_map.get(class_id, (1.0, 1.0, 1.0))  # Default to white
@@ -548,4 +650,3 @@ def main(args=None):
 
 if __name__ == '__main__':
 	main()
-
