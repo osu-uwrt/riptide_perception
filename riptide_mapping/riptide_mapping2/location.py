@@ -86,7 +86,7 @@ class Location:
         trimmed = {}
 
         # Remove the outliers if we have like 10 samples
-        if self.position["x"][self.buffer_size-1] != numpy.nan:
+        if not numpy.isnan(self.position["x"][self.buffer_size-1]):
             for key in self.position.keys():
                 trimmed[key] = remove_outliers(self.position[key], self.quantile)
         else:
@@ -100,7 +100,7 @@ class Location:
         # Set covariance to list for now so we can add incrementally
         cov: 'list[float]' = [0.0] * 36
 
-        if self.position["x"][self.buffer_size-1] != None:
+        if not numpy.isnan(self.position["x"][self.buffer_size-1]):
             cov[0] = numpy.nanvar(self.position["x"])
             cov[7] = numpy.nanvar(self.position["y"])
             cov[14] = numpy.nanvar(self.position["z"])
@@ -111,16 +111,16 @@ class Location:
             cov[14] = 1.0
 
         # Do the same steps for rotational things
-        if self.orientation["x"][self.buffer_size-1] != numpy.nan:
+        if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
             for key in self.orientation.keys():
                 trimmed[key] = remove_outliers(self.orientation[key], self.quantile)
         else:
             trimmed = self.orientation
 
         quat = euler2quat(
-            numpy.nanmean(self.orientation["x"]),
-            numpy.nanmean(self.orientation["y"]),
-            numpy.nanmean(self.orientation["z"])
+            numpy.nanmean(trimmed["x"]),
+            numpy.nanmean(trimmed["y"]),
+            numpy.nanmean(trimmed["z"])
         )
         
         pose.pose.orientation.w = quat[0]
@@ -128,10 +128,10 @@ class Location:
         pose.pose.orientation.y = quat[2]
         pose.pose.orientation.z = quat[3]
         
-        if self.orientation["x"][self.buffer_size-1] != None:
-            cov[21] = numpy.nanvar(trimmed["x"])
-            cov[28] = numpy.nanvar(trimmed["y"])
-            cov[35] = numpy.nanvar(trimmed["z"])
+        if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
+            cov[21] = numpy.nanvar(self.orientation["x"])
+            cov[28] = numpy.nanvar(self.orientation["y"])
+            cov[35] = numpy.nanvar(self.orientation["z"])
         else:
             #publish initial covariances
             cov[21] = 0.2
