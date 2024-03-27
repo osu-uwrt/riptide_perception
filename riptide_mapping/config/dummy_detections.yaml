@@ -1,55 +1,55 @@
 /**/dummydetections:
   ros__parameters:
-    timer_rate: 0.1
+    timer_rate: 0.075
     detection_data:
       gate:
-        pose: [4.5, -7.0, -1.5, 0.0, 0.0, 1.5707]
-        noise: 0.05
+        pose: [5.0, 0.0, -1.5, 0.0, 0.0, 3.1415]
+        noise: 0.00
         score: 0.8
         pub_invalid_orientation: false
-        max_visible_dist: 2.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
+        max_visible_dist: 4.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
       earth_glyph:
-        pose: [4.5, -7.0, -1.5, 0.0, 0.0, 1.5707]
+        pose: [5.0, 0.5, -1.5, 0.0, 0.0, 3.1415]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       buoy:
-        pose: [5.0, -2.0, -1.5, 0.0, 0.0, -3.1415]
+        pose: [7.0, -4.0, -1.5, 0.0, 0.0, 1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
-        max_visible_dist: 2.0
+        max_visible_dist: 5.0
       buoy_glyph_1:
-        pose: [5.0, -2.125, -1.375, 0.0, 0.0, 3.1415]
-        noise: 0.05
+        pose: [7.1875, -4.0, -1.6, 0.0, 0.0, 1.5707]
+        noise: 0.00005
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       buoy_glyph_2:
-        pose: [5.0, -1.875, -1.625, 0.0, 0.0, 3.1415]
-        noise: 0.05
+        pose: [6.8, -4.0, -1.4, 0.0, 0.0, 1.5707]
+        noise: 0.00005
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       torpedo:
-        pose: [3.5, 3.5, -1.25, 0.0, 0.0, 3.1415]
+        pose: [3.5, 3.5, -1.25, 0.0, 0.0, 1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
         max_visible_dist: 2.0
       torpedo_upper_hole:
-        pose: [3.5, 3.5, -1.0, 0.0, 0.0, 3.1415]
+        pose: [3.5, 3.5, -1.0, 0.0, 0.0, 1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
-        max_visible_dist: 1.25
+        max_visible_dist: 2.0
       torpedo_lower_hole:
-        pose: [3.5, 3.5, -1.5, 0.0, 0.0, 3.1415]
+        pose: [3.5, 3.5, -1.5, 0.0, 0.0, 1.5707]
         noise: 0.05
         score: 0.8
         pub_invalid_orientation: false
-        max_visible_dist: 1.25
+        max_visible_dist: 2.0
     
     #POOL SIMULATION SETTINGS
     simulate_pool: true #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it

@@ -1,77 +1,56 @@
 #!/usr/bin/env python3
+# THE LINE ABOVE IS NEEEDED FOR NODE TO WORK
+
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_system_default
+from rclpy.parameter import Parameter
 from rclpy.time import Time
-from rclpy.qos import qos_profile_system_default # can replace this with others
 
-from rcl_interfaces.msg import SetParametersResult
-from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose
-from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TransformStamped, Vector3
-
-from estimate import KalmanEstimate, euclideanDist
+from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Quaternion
+from vision_msgs.msg import Detection3DArray
 from tf2_geometry_msgs import do_transform_pose_stamped
-from transforms3d.euler import quat2euler, euler2quat
-from tf2_ros import TransformException
+from riptide_msgs2.srv import MappingTarget
+
 import tf2_ros
-import numpy as np
-from math import pi, atan2
+from tf2_ros import TransformException, TransformStamped
 
-DEG_TO_RAD = (pi/180)
+from transforms3d.euler import quat2euler, euler2quat
 
-#Used to translate between DOPE ids and names of objects
-object_ids = {
-    0 : "gate",
-    1 : "earth_glyph", 
-    2 : "buoy",
-    3 : "buoy_glyph_1",
-    4 : "buoy_glyph_2",
-    5 : "torpedo",
-    6 : "torpedo_upper_hole",
-    7 : "torpedo_lower_hole",
-    8 : "table"
-}
+from location import Location
 
-objects = {}
-for key in object_ids.values():
-    objects[key] = {
-        "pose" : None,
-        "publisher" : None
-    }
+import math
+from typing import cast
 
+# Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
+# are confident in deadly reckoning the relative location of objects. The only objects that we keep track of in the translational
+# system are the objects in active_objects. Rotational estimates are kept for all objects as well as they aren't relavant to robot drift.
 class MappingNode(Node):
 
     def __init__(self):
-        super().__init__('riptide_mapping2') 
-        
-        # class variables 
-        self.tf_buffer = tf2_ros.buffer.Buffer()
-        self.tl = tf2_ros.TransformListener(self.tf_buffer, self)
-        self.tf_buffer.transform
-        self.mapFrame = "map"
-        
-        ## TODO CHANGE THIS TO WORK PROPERLY
-        self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
-        self.config = {}
+        # Init the ROS Node
+        super().__init__('riptide_mapping2')
 
-        # declare the configuration data
-        self.declare_parameters(
-            namespace='',
-            parameters=[
-                # Covariance parameters for merging stats
-                ('cov_limit', 1.0),
-                ('k_value', 0.1),
+        self.objects = {
+            "gate": dict(),
+            "earth_glyph": dict(),
+            "buoy": dict(),
+            "buoy_glyph_1": dict(),
+            "buoy_glyph_2": dict(),
+            "buoy_glyph_3": dict(),
+            "buoy_glyph_4": dict(),
+            "torpedo": dict(),
+            "torpedo_upper_hole": dict(),
+            "torpedo_lower_hole": dict(),
+            "table": dict(),
+            "prequal_gate": dict(),
+            "prequal_pole": dict()
+        }
 
-                # filtering parameters in camera frame
-                ('angle_cutoff', pi),
-                ('distance_limit', 10.0),
-                ('confidence_cutoff', .7),
-                ('detection_cov_factor', 7.0)
-            ])
-        
-        # declare the fields for all of the models in the dict
-        for object in object_ids.values():
+        # Manually declare all the parameters from yaml config bc ros2 is sick
+        for object in self.objects.keys():
             self.declare_parameters(
-                namespace='',
+                namespace="",
                 parameters=[
                     ('init_data.{}.parent'.format(object), "map"),
                     ('init_data.{}.pose.x'.format(object), 0.0),
@@ -82,192 +61,201 @@ class MappingNode(Node):
                     ('init_data.{}.covar.y'.format(object), 1.0),
                     ('init_data.{}.covar.z'.format(object), 1.0),
                     ('init_data.{}.covar.yaw'.format(object), 1.0)
-                ])
-
-        # new parameter reconfigure call
-        self.add_on_set_parameters_callback(self.paramUpdateCallback)
-
-        # Creating publishers
-        for field in objects:
-            objects[field]["publisher"] = self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(field), qos_profile_system_default)
-
-        # Subscribers
-        self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.dopeCallback, qos_profile_system_default) # DOPE's information 
-
-        # Timers
-        self.publishTimer = self.create_timer(0.5, self.pubEstim) # publish the inital estimate
-        self.paramUpdateTimer = self.create_timer(1.0, self.processParamUpdates) # propagate param updates
-        self.paramUpdateTimer.cancel()
-
-        # manually trigger the callback to load init params
-        self.paramUpdateCallback(self.get_parameters(self._parameters.keys()))
-
-
-    def pubEstim(self):
-        for objectName in objects: 
-            if not objects[objectName]["pose"] is None:
-                # Publish that object's data out 
-                output_pose = objects[objectName]["pose"].getPoseEstim()
-                objects[objectName]["publisher"].publish(output_pose)
-
-                # Publish /tf data for the given object 
-                newTf = TransformStamped()
-                newTf.transform.translation = Vector3(x=output_pose.pose.pose.position.x, 
-                    y=output_pose.pose.pose.position.y, z=output_pose.pose.pose.position.z)
-                newTf.transform.rotation = output_pose.pose.pose.orientation
-                
-                newTf.header.stamp = self.get_clock().now().to_msg()
-                newTf.child_frame_id = objectName + "_frame"
-                newTf.header.frame_id = output_pose.header.frame_id
-                self.tf_brod.sendTransform(newTf)
-
-    # This timer will fire 1 second after paramter updates
-    # This lets the parameter system reload all changes before modifying the estimates that need to be updated
-    def processParamUpdates(self):
-        success = True
-        for objectName in objects: 
-            if('init_data.{}.needs_update'.format(objectName) in self.config 
-                and self.config['init_data.{}.needs_update'.format(objectName)]):
-                try:
-                    self.get_logger().info("Resetting estimate for {}".format(objectName))
-                    # reset the update flag
-                    self.config['init_data.{}.needs_update'.format(objectName)] = False
-
-                    # Get pose data from reconfig and update our map accordingly
-                    object_pose = PoseWithCovarianceStamped()
-                    object_pose.header.frame_id = self.config['init_data.{}.parent'.format(objectName)]
-                    
-                    object_pose.pose.pose.position.x = self.config['init_data.{}.pose.x'.format(objectName)]
-                    object_pose.pose.pose.position.y = self.config['init_data.{}.pose.y'.format(objectName)]
-                    object_pose.pose.pose.position.z = self.config['init_data.{}.pose.z'.format(objectName)]
-                    
-                    object_yaw = self.config['init_data.{}.pose.yaw'.format(objectName)] * DEG_TO_RAD # Need to convert this from degrees to radians.
-                    
-                    # convert rpy to quat
-                    quat = euler2quat(0, 0, object_yaw) #order defaults to sxyz
-                    
-                    object_pose.pose.pose.orientation.w = quat[0]
-                    object_pose.pose.pose.orientation.x = quat[1]
-                    object_pose.pose.pose.orientation.y = quat[2]
-                    object_pose.pose.pose.orientation.z = quat[3]
-                    
-                    object_pose.pose.covariance[0] = self.config['init_data.{}.covar.x'.format(objectName)]
-                    object_pose.pose.covariance[7] = self.config['init_data.{}.covar.y'.format(objectName)]
-                    object_pose.pose.covariance[14] = self.config['init_data.{}.covar.z'.format(objectName)]
-                    object_pose.pose.covariance[35] = self.config['init_data.{}.covar.yaw'.format(objectName)]
-
-                    # self.get_logger().info(f"initial pose: {object_pose}")
-
-                    # Create a new Estimate object on reconfig.
-                    objects[objectName]["pose"] = KalmanEstimate(object_pose, self.config['k_value'], self.config['cov_limit'], self.config['detection_cov_factor'])
-
-                except Exception as e:
-                    eStr = "Exception: {}, Exception message: {}".format(type(e).__name__, e)
-                    self.get_logger().error("Error while updating object estimate for {}. {}".format(objectName, eStr))
-                    success = False
-
-        # if we have sucessfully updated all params, cancel the timer
-        if(success):
-            self.paramUpdateTimer.cancel()
+                ]
+            )
         
+        self.declare_parameters(
+            namespace="",
+            parameters=[
+                ("confidence_cutoff", 0.7),
+                ("buffer_size", 100),
+                ("quantile", [0.01, 0.99])
+            ]
+        )
 
+        for object in self.objects.keys():
+            self.create_location(object)
+            self.add_publisher(object)
 
-    # Handles reconfiguration for the mapping system.
-    # NOTE: Reconfig reconfigures all values, not just the one specified in rqt.
-    def paramUpdateCallback(self, params):
-        # cancel the propagate timer
-        self.paramUpdateTimer.cancel()
+        # Create the buffer to send 
+        self.tf_buffer = tf2_ros.buffer.Buffer()
+        self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self)
+        self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
-        # update config and mark for re-estimation
+        self.target_object = ""
+        self.lock_map = False
+        self.offset = Location(Pose(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+
+        self.publish_pose()
+        self.publish_timer = self.create_timer(1.0, self.publish_pose)
+
+        self.add_on_set_parameters_callback(self.param_callback)
+        self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
+        self.create_service(MappingTarget, "mapping_target", self.target_callback)
+        
+    def create_location(self, object: str):
+
+        pose = Pose()
+
+        pose.position.x = float(self.get_parameter('init_data.{}.pose.x'.format(object)).value)
+        pose.position.y = float(self.get_parameter('init_data.{}.pose.y'.format(object)).value)
+        pose.position.z = float(self.get_parameter('init_data.{}.pose.z'.format(object)).value)
+
+        pose.orientation.x = 0.0
+        pose.orientation.y = 0.0
+        pose.orientation.z = float(self.get_parameter('init_data.{}.pose.yaw'.format(object)).value)
+
+        self.objects[object]["location"] = Location(pose, int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+
+    # Creates a publisher to publish PoseWithCovariance
+    def add_publisher(self, object: str):
+        self.objects[object]["publisher"] = self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
+
+    # Check which params need updated and update them via the create_location method
+    def param_callback(self, params):
+        updates = set()
+        self.get_logger().info(str(params))
         for param in params:
-            # self.get_logger().info(f"{param.name}, {param.value}")
-            self.config[param.name] = param.value
-            for objectName in objects: 
-                if(objectName in param.name):
-                    self.config['init_data.{}.needs_update'.format(objectName)] = True
+            if(str(param.name).split(".")) == "init_data":
+                updates.add(str(param.name).split(".")[1])
 
-        # allow the timer to run
-        self.paramUpdateTimer.reset()
+        for object in updates:
+            self.create_location(object)
 
-        return SetParametersResult(successful=True)
+    def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
+        self.target_object = str(request.target_object)
+        self.lock_map = bool(request.lock_map)
+        self.offset.reset()
 
-    # Handles merging DOPE's output into our representation
-    # msg: Detection3DArray (http://docs.ros.org/en/lunar/api/vision_msgs/html/msg/Detection3DArray.html)
-    def dopeCallback(self, msg: Detection3DArray):    
-        # Context: This loop will run <number of different objects DOPE thinks it sees on screen> times
-        # `detection` is of type Detection3D (http://docs.ros.org/en/lunar/api/vision_msgs/html/msg/Detection3D.html)
-        for detection in msg.detections:
-            # Note that we don't change the first loop to `detection in msg.detections.results` because we want the timestamp from the Detection3D object
-            # Context: This loop will run <number of objects DOPE can identify> times 
-            # `result` is of type ObjectHypothesisWithPose (http://docs.ros.org/en/lunar/api/vision_msgs/html/msg/ObjectHypothesisWithPose.html)
-            for result in detection.results: 
-                name = result.hypothesis.class_id 
+        return response
 
-                if not name in objects.keys():
-                    continue
-                
-                if objects[name]["pose"] is None:
-                    self.get_logger().warning(f"Rejected {name}: unknown class id")
-                    continue
+    def vision_callback(self, detections: Detection3DArray):
 
-                # DOPE's frame is the same as the camera frame, specifically the left lens of the camera.
-                # We need to convert that to the map frame, which is what is used in our mapping system 
-                # Tutorial on how this works @ http://wiki.ros.org/tf/TfUsingPython#TransformerROS_and_TransformListener
-                # Transform the pose part 
-                pose = PoseStamped()
-                pose.header.frame_id = detection.header.frame_id
-                pose.header.stamp = msg.header.stamp
-                pose.pose = result.pose.pose   
+        if self.lock_map:
+            return
+        
+        closest_object = self.closest_object(detections)
 
-                # check the distance limits we have on the detection frame
-                distance = euclideanDist(np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z]))
-                dist_lim = self.config["distance_limit"]
-                if(distance > dist_lim):
-                    self.get_logger().warning(f"Rejected {name}: distance {distance}m outside limit of {dist_lim}", throttle_duration_sec = 1)
+        # Send the Poses for each location to their Location class
+        for detection in detections.detections:
+            for result in detection.results:
+
+                if not result.hypothesis.class_id in self.objects.keys():
+                    continue #already did print, just continue here
+
+                # Skip this detection if confidence is to low
+                if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
+                    self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
 
-                # check the angular difference between the robot and vision detection
-                angleMax = self.config["angle_cutoff"]
-                rpy = quat2euler([pose.pose.orientation.w, pose.pose.orientation.x,
-                                             pose.pose.orientation.y, pose.pose.orientation.z])
-                if(abs(rpy[2]) > angleMax):
-                    self.get_logger().warning(f"Rejected {name}: relative angle {rpy[2]} outside {angleMax}", throttle_duration_sec = 1)
-                    continue
+                # We have a transform from camera to child we need to transform so
+                # that we have a transform from parrent to child
+                camera: str = detection.header.frame_id
+                parent: str = str(self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value)
+                child: str = result.hypothesis.class_id
 
-                # theshold the confidence of the detection is above the min
-                min = self.config["confidence_cutoff"]
-                if(result.hypothesis.score < min):
-                    self.get_logger().warning(f"Rejected {name}: confidence {result.hypothesis.score} below {min}", throttle_duration_sec = 1)
-                    continue
-                
-                #transform pose into parent frame and feed to estimate
-                parentFrame = objects[name]["pose"].getPoseEstim().header.frame_id
+                # Get the pose that is a transform from camera to child
+                pose: PoseWithCovariance = result.pose
+
                 try:
-                    trans = self.tf_buffer.lookup_transform(
-                        parentFrame,
-                        detection.header.frame_id,
-                        Time())
+                    transform = self.tf_buffer.lookup_transform(
+                        parent,
+                        camera,
+                        Time()
+                    )
                 except TransformException as ex:
-                    self.get_logger().error(f'Could not transform {detection.header.frame_id} to {parentFrame}: {ex}', throttle_duration_sec = 1)
-                    return
+                    self.get_logger().error(f"Can't transform from {camera} to {parent}: {ex}")
+                    continue
 
-                # transform camera pose into map frame
-                convertedPose = do_transform_pose_stamped(pose, trans)
+                # If the current object isnt the closest object and its parent is map we
+                # aren't going to track its location in favor of offsetting the entire map
+                update_position = parent != "map"
+                update_orientation = True
 
-                # Get the reading in the world frame message all together
-                reading_parent_frame = PoseWithCovarianceStamped()
-                reading_parent_frame.header.stamp = msg.header.stamp
-                reading_parent_frame.header.frame_id = parentFrame
-                reading_parent_frame.pose.pose = convertedPose.pose          
+                trans_pose = do_transform_pose_stamped(pose, transform)
+                        
+                self.objects[child]["location"].add_pose(trans_pose.pose, update_position, update_orientation)
 
-                # Merge the given position into our position for that object
-                self.get_logger().info(f"w: {result.pose.pose.orientation.w}")
-                valid, errStr = objects[name]["pose"].addPosEstim(reading_parent_frame, result.pose.pose.orientation.w <= 1)
-                if(not valid):
-                    self.get_logger().warning(f"Rejected {name}: {errStr}", throttle_duration_sec = 1)
-                else:
-                    self.get_logger().info(f"FOUND {name}", throttle_duration_sec = 1)
-            
+                if child == self.target_object or (self.target_object == "" and child == closest_object):
+                    offset_pose = Pose()
+
+                    offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
+                    offset_pose.position.y = trans_pose.pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
+                    offset_pose.position.z = trans_pose.pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
+
+                    # Rotational will never be changed because we don't want to offset that
+                    # FOG go brrrrrrrrrrrrrrrr
+                    self.offset.add_pose(offset_pose, True, False)
+                    
+    def closest_object(self, detections: Detection3DArray) -> str:
+        
+        object = ""
+        closest_dist: float = 1000
+        
+        for detection in detections.detections:
+            for result in detection.results:
+
+                if detection.header.frame_id != "zed_left_camera_optical_frame" or self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value != "map":
+                    continue
+
+                pose: Pose = result.pose.pose
+                dist = math.sqrt(pose.position.x**2 + pose.position.y**2 + pose.position.z**2)
+
+                if dist > 1 and dist < closest_dist:
+                    object = result.hypothesis.class_id
+                    closest_dist = dist
+
+        return object
+
+    # Publishes stuff
+    def publish_pose(self):
+
+        # Send the transform between offset and map which is tracked in
+        # self.offset which is a Location class
+        offset_transform = TransformStamped()
+        offset_pose = self.offset.get_pose()
+
+        offset_transform.header.stamp = self.get_clock().now().to_msg()
+        offset_transform.transform.translation = Vector3(x=offset_pose.pose.position.x, y=offset_pose.pose.position.y, z=offset_pose.pose.position.z)
+        offset_transform.header.frame_id = "map"
+        offset_transform.child_frame_id = "offset"
+
+        self.tf_brod.sendTransform(offset_transform)
+
+        # For every object send the covariance and transform
+        for object in self.objects.keys():
+            pose = PoseWithCovarianceStamped()
+
+            pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
+            pose.header.stamp = self.get_clock().now().to_msg()
+            pose.header.frame_id = object + "_frame"
+
+            # If the object is the target object the translational covariance will be in the offset object.
+            if object == self.target_object:
+                offset_covar = self.offset.get_pose().covariance
+
+                pose.pose.covariance[0] = offset_covar[0]
+                pose.pose.covariance[7] = offset_covar[7]
+                pose.pose.covariance[14] = offset_covar[14]
+
+            #self.objects[object]["publisher"].publish(pose)
+
+            transform = TransformStamped()
+
+            transform.header.stamp = pose.header.stamp
+            transform.transform.translation = Vector3(x=pose.pose.pose.position.x, y=pose.pose.pose.position.y, z=pose.pose.pose.position.z)
+            transform.transform.rotation = pose.pose.pose.orientation
+            transform.child_frame_id = object + "_frame"
+
+            # If an object has the parent of anything other than map just apply the transform regularly
+            # This will eventually be changed when chamelon_tf is absorbed by mapping and the offset tf frame is removed
+            if str(self.get_parameter("init_data.{}.parent".format(object)).value) == "map":
+                transform.header.frame_id = "offset"
+            else:
+                transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
+
+            self.objects[object]["publisher"].publish(pose)
+            self.tf_brod.sendTransform(transform)
 
 def main(args=None):
     rclpy.init(args=args)
