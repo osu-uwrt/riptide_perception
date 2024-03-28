@@ -25,7 +25,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'torp3.pt')
+        tensorrt_wrapper_dir, 'weights', 'bin300.pt')
     
     ld.add_action(PushRosNamespace(LC("robot")))
 
