@@ -114,7 +114,7 @@ class MappingNode(Node):
     # Check which params need updated and update them via the create_location method
     def param_callback(self, params):
         updates = set()
-        self.get_logger().info(str(params))
+
         for param in params:
             if(str(param.name).split(".")) == "init_data":
                 updates.add(str(param.name).split(".")[1])
@@ -209,7 +209,6 @@ class MappingNode(Node):
 
     # Publishes stuff
     def publish_pose(self):
-
         # Send the transform between offset and map which is tracked in
         # self.offset which is a Location class
         offset_transform = TransformStamped()
@@ -228,7 +227,6 @@ class MappingNode(Node):
 
             pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
             pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = object + "_frame"
 
             # If the object is the target object the translational covariance will be in the offset object.
             if object == self.target_object:
@@ -253,6 +251,8 @@ class MappingNode(Node):
                 transform.header.frame_id = "offset"
             else:
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
+            
+            pose.header.frame_id = transform.header.frame_id
 
             self.objects[object]["publisher"].publish(pose)
             self.tf_brod.sendTransform(transform)

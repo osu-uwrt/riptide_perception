@@ -83,19 +83,20 @@ class Location:
 
         pose = PoseWithCovariance()
 
-        trimmed = {}
+        trimmed_position = {}
+        trimmed_orientation = {}
 
         # Remove the outliers if we have like 10 samples
         if not numpy.isnan(self.position["x"][self.buffer_size-1]):
             for key in self.position.keys():
-                trimmed[key] = remove_outliers(self.position[key], self.quantile)
+                trimmed_position[key] = remove_outliers(self.position[key], self.quantile)
         else:
-            trimmed = self.position
+            trimmed_position = self.position
         
         # Set the position using the mean of trimmed array
-        pose.pose.position.x = numpy.nanmean(trimmed["x"])
-        pose.pose.position.y = numpy.nanmean(trimmed["y"])
-        pose.pose.position.z = numpy.nanmean(trimmed["z"])
+        pose.pose.position.x = numpy.nanmean(trimmed_position["x"])
+        pose.pose.position.y = numpy.nanmean(trimmed_position["y"])
+        pose.pose.position.z = numpy.nanmean(trimmed_position["z"])
 
         # Set covariance to list for now so we can add incrementally
         cov: 'list[float]' = [0.0] * 36
@@ -113,14 +114,14 @@ class Location:
         # Do the same steps for rotational things
         if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
             for key in self.orientation.keys():
-                trimmed[key] = remove_outliers(self.orientation[key], self.quantile)
+                trimmed_orientation[key] = remove_outliers(self.orientation[key], self.quantile)
         else:
-            trimmed = self.orientation
+            trimmed_orientation = self.orientation
 
         quat = euler2quat(
-            numpy.nanmean(trimmed["x"]),
-            numpy.nanmean(trimmed["y"]),
-            numpy.nanmean(trimmed["z"])
+            numpy.nanmean(trimmed_orientation["x"]),
+            numpy.nanmean(trimmed_orientation["y"]),
+            numpy.nanmean(trimmed_orientation["z"])
         )
         
         pose.pose.orientation.w = quat[0]
