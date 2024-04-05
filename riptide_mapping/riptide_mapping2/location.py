@@ -121,9 +121,9 @@ class Location:
             trimmed = self.orientation
 
         quat = euler2quat(
-            numpy.nanmean(self.orientation["x"]),
-            numpy.nanmean(self.orientation["y"]),
-            numpy.nanmean(self.orientation["z"])
+            numpy.nanmean(trimmed["x"]),
+            numpy.nanmean(trimmed["y"]),
+            numpy.nanmean(trimmed["z"])
         )
         
         pose.pose.orientation.w = quat[0]
@@ -131,10 +131,10 @@ class Location:
         pose.pose.orientation.y = quat[2]
         pose.pose.orientation.z = quat[3]
         
-        if self.orientation["x"][self.buffer_size-1] != None:
-            cov[21] = numpy.nanvar(trimmed["x"])
-            cov[28] = numpy.nanvar(trimmed["y"])
-            cov[35] = numpy.nanvar(trimmed["z"])
+        if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
+            cov[21] = numpy.nanvar(self.orientation["x"])
+            cov[28] = numpy.nanvar(self.orientation["y"])
+            cov[35] = numpy.nanvar(self.orientation["z"])
         else:
             #publish initial covariances
             cov[21] = 0.2
