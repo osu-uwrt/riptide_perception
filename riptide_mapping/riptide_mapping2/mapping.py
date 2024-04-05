@@ -11,6 +11,7 @@ from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pos
 from vision_msgs.msg import Detection3DArray
 from tf2_geometry_msgs import do_transform_pose_stamped
 from riptide_msgs2.srv import MappingTarget
+from riptide_msgs2.msg import MappingTargetInfo
 
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
@@ -87,12 +88,14 @@ class MappingNode(Node):
         self.lock_map = False
         self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
 
-        self.publish_pose()
-        self.publish_timer = self.create_timer(1.0, self.publish_pose)
 
         self.add_on_set_parameters_callback(self.param_callback)
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
+        self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback)
+        
+        self.publish_pose()
+        self.publish_timer = self.create_timer(1.0, self.publish_pose)
         
     def create_location(self, object: str):
         #create the Location object using two vector3s describing coordinates and euler rotation
@@ -131,8 +134,8 @@ class MappingNode(Node):
             self.create_location(object)
 
     def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
-        self.target_object = str(request.target_object)
-        self.lock_map = bool(request.lock_map)
+        self.target_object = str(request.target_info.target_object)
+        self.lock_map = bool(request.target_info.lock_map)
 
         return response
 
@@ -269,6 +272,12 @@ class MappingNode(Node):
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
 
             self.tf_brod.sendTransform(transform)
+        
+        # publish status
+        stat = MappingTargetInfo()
+        stat.target_object = self.target_object
+        stat.lock_map = self.lock_map
+        self.status_pub.publish(stat)
 
 def main(args=None):
     rclpy.init(args=args)
