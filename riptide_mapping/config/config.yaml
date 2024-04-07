@@ -93,10 +93,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 3.0
-          y: 3.0
+          x: 2.0
+          y: -3.0
           z: -1.0
-          yaw: -90.0
+          yaw: 90.0
       torpedo_open_hole:
         parent: map
         covar:
@@ -105,10 +105,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 3.0
-          y: 3.0
+          x: 2.0
+          y: -3.0
           z: -1.0
-          yaw: -90.0
+          yaw: 90.0
       torpedo_closed:
         parent: map
         covar:
@@ -117,10 +117,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 3.0
-          y: 3.0
+          x: 2.0
+          y: -3.0
           z: -1.6096
-          yaw: -90.0
+          yaw: 90.0
       torpedo_closed_hole:
         parent: map
         covar:
@@ -129,10 +129,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 3.0
-          y: 3.0
+          x: 2.0
+          y: -3.0
           z: -1.6096
-          yaw: -90.0
+          yaw: 90.0
       table:
         parent: map
         covar:  

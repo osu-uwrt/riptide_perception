@@ -18,28 +18,26 @@ class Location:
         self.reset()
 
     def reset(self):
-        self.publish_actual_position_covs = False
-        self.publish_actual_orientation_covs = False
-        
         self.position = {
-            "x": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
-            "y": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
-            "z": numpy.full(self.buffer_size, numpy.nan, numpy.float64)
+            "x": numpy.full(self.buffer_size, self.initial_pose_xyz.x, numpy.float64),
+            "y": numpy.full(self.buffer_size, self.initial_pose_xyz.y, numpy.float64),
+            "z": numpy.full(self.buffer_size, self.initial_pose_xyz.z, numpy.float64)
         }
 
         self.orientation = {
-            "x": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
-            "y": numpy.full(self.buffer_size, numpy.nan, numpy.float64),
-            "z": numpy.full(self.buffer_size, numpy.nan, numpy.float64)
+            "x": numpy.full(self.buffer_size, self.initial_pose_rpy.x * pi / 180.0, numpy.float64),
+            "y": numpy.full(self.buffer_size, self.initial_pose_rpy.y * pi / 180.0, numpy.float64),
+            "z": numpy.full(self.buffer_size, self.initial_pose_rpy.z * pi / 180.0, numpy.float64)
         }
+        
+        # mark all buffers as not warmed up yet by making the last element nan
+        self.position["x"][len(self.position["x"]) - 1] = numpy.nan
+        self.position["y"][len(self.position["y"]) - 1] = numpy.nan
+        self.position["z"][len(self.position["z"]) - 1] = numpy.nan
 
-        self.position["x"][0] = self.initial_pose_xyz.x
-        self.position["y"][0] = self.initial_pose_xyz.y
-        self.position["z"][0] = self.initial_pose_xyz.z
-
-        self.orientation["x"][0] = self.initial_pose_rpy.x * pi / 180.0
-        self.orientation["y"][0] = self.initial_pose_rpy.y * pi / 180.0
-        self.orientation["z"][0] = self.initial_pose_rpy.z * pi / 180.0
+        self.orientation["x"][len(self.orientation["x"]) - 1] = numpy.nan
+        self.orientation["y"][len(self.orientation["x"]) - 1] = numpy.nan
+        self.orientation["z"][len(self.orientation["x"]) - 1] = numpy.nan
         
 
         # Variable is used so we can get rid of old poses in a rolling fashion instead of shifting entire array
