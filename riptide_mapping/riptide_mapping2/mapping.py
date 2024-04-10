@@ -169,7 +169,7 @@ class MappingNode(Node):
                     transform = self.tf_buffer.lookup_transform(
                         parent,
                         camera,
-                        Time()
+                        detections.header.stamp
                     )
                 except TransformException as ex:
                     self.get_logger().error(f"Can't transform from {camera} to {parent}: {ex}")
