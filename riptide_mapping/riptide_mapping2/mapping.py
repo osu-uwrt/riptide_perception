@@ -123,8 +123,10 @@ class MappingNode(Node):
             self.create_location(object)
 
     def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
-        self.target_object = str(request.target_object)
-        self.lock_map = bool(request.lock_map)
+        if request.target_info.target_object != None:
+            self.target_object = str(request.target_info.target_object)
+        if request.target_info.lock_map != None:
+            self.lock_map = bool(request.target_info.lock_map)
         self.offset.reset()
 
         return response
