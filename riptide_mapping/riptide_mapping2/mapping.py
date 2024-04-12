@@ -23,6 +23,8 @@ from location import Location
 import math
 from typing import cast
 
+STALE_TIME = 1 #seconds
+
 # Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
 # are confident in deadly reckoning the relative location of objects. The only objects that we keep track of in the translational
 # system are the objects in active_objects. Rotational estimates are kept for all objects as well as they aren't relavant to robot drift.
@@ -81,7 +83,7 @@ class MappingNode(Node):
 
         # Create the buffer to send 
         self.tf_buffer = tf2_ros.buffer.Buffer()
-        self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self)
+        self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self, spin_thread=True)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
         self.target_object = ""
@@ -94,8 +96,9 @@ class MappingNode(Node):
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback)
         
+        self.last_pub_time = Time()
         self.publish_pose()
-        self.publish_timer = self.create_timer(1.0, self.publish_pose)
+        self.publish_timer = self.create_timer(0.25, self.publish_pose_if_stale)
         
     def create_location(self, object: str):
         #create the Location object using two vector3s describing coordinates and euler rotation
@@ -172,7 +175,7 @@ class MappingNode(Node):
                         detections.header.stamp
                     )
                 except TransformException as ex:
-                    self.get_logger().error(f"Can't transform from {camera} to {parent}: {ex}")
+                    self.get_logger().error(f"When processing {result.hypothesis.class_id}: Can't transform from {camera} to {parent}: {ex}")
                     continue
 
                 # If the current object isnt the closest object and its parent is map we
@@ -192,10 +195,12 @@ class MappingNode(Node):
                     offset_pose.position.x = object_location.get_pose().pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
                     offset_pose.position.y = object_location.get_pose().pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
                     offset_pose.position.z = object_location.get_pose().pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
-
+                                        
                     # Rotational will never be changed because we don't want to offset that
                     # FOG go brrrrrrrrrrrrrrrr
                     self.offset.add_pose(offset_pose, True, False)
+            
+        self.publish_pose()
                     
     def closest_object(self, detections: Detection3DArray) -> str:
         object = ""
@@ -217,6 +222,10 @@ class MappingNode(Node):
                     closest_dist = dist
 
         return object
+    
+    def publish_pose_if_stale(self):
+        if (self.get_clock().now() - self.last_pub_time).to_msg().sec > STALE_TIME:
+            self.publish_pose()
 
     # Publishes stuff
     def publish_pose(self):
@@ -258,7 +267,7 @@ class MappingNode(Node):
             transform.child_frame_id = object + "_frame"
 
             # If an object has the parent of anything other than map just apply the transform regularly
-            # This will eventually be changed when chamelon_tf is absorbed by mapping and the offset tf frame is removed
+            # This will eventually be changed when chameleon_tf is absorbed by mapping and the offset tf frame is removed
             if parent == "map":
                 transform.header.frame_id = "offset"
                 
@@ -272,12 +281,16 @@ class MappingNode(Node):
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
 
             self.tf_brod.sendTransform(transform)
+            
         
         # publish status
         stat = MappingTargetInfo()
         stat.target_object = self.target_object
         stat.lock_map = self.lock_map
         self.status_pub.publish(stat)
+        
+        self.last_pub_time = self.get_clock().now()
+        self.get_logger().info(f"sent transform, current time is {self.get_clock().now().to_msg()}")
 
 def main(args=None):
     rclpy.init(args=args)

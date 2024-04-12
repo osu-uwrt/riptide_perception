@@ -137,7 +137,7 @@ class YOLONode(Node):
 	def depth_callback(self, msg):
 		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
 
-	def image_callback(self, msg):
+	def image_callback(self, msg: Image):
 		if self.depth_image is None or not self.camera_info_gathered:
 			return
 
@@ -148,8 +148,9 @@ class YOLONode(Node):
 		results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
 
 		detections = Detection3DArray()
-		detections.header.frame_id = self.frame_id
-		detections.header.stamp = self.get_clock().now().to_msg()
+		# detections.header.frame_id = self.frame_id
+		# detections.header.stamp = msg.header.stamp
+		detections.header = msg.header
 
 		if self.mask is None or self.mask.shape[:2] != cv_image.shape[:2]:
 			self.mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
@@ -161,7 +162,7 @@ class YOLONode(Node):
 				class_id = box.cls[0]
 				if class_id in self.specific_class_id:
 					conf = box.conf[0]
-					detection = self.create_detection3d_message(box, cv_image, conf)
+					detection = self.create_detection3d_message(msg.header, box, cv_image, conf)
 					if detection:
 						detections.detections.append(detection)
 
@@ -225,7 +226,7 @@ class YOLONode(Node):
 	# 	detection.results.append(self.create_object_hypothesis_with_pose(7, torpedo_spoof, self.torpedo_quat, np.float32(1)))
 	# 	return detection
 	
-	def create_detection3d_message(self, box, cv_image, conf):
+	def create_detection3d_message(self, header, box, cv_image, conf):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		bbox = (x_min, y_min, x_max, y_max)
 		bbox_width = x_max - x_min
@@ -267,8 +268,9 @@ class YOLONode(Node):
 			
 			# Create Detection3D message
 			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			detection.header.stamp = self.get_clock().now().to_msg()
+			# detection.header.frame_id = self.frame_id
+			# detection.header.stamp = self.get_clock().now().to_msg()
+			detection.header = header
 			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, hole_quat, conf))
 			return detection
 
