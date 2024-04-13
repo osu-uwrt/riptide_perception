@@ -3,12 +3,14 @@
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_system_default
+from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
 from rclpy.parameter import Parameter
 from rclpy.time import Time
+from rclpy.executors import MultiThreadedExecutor
 
+from std_msgs.msg import Header
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point
-from vision_msgs.msg import Detection3DArray
+from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
 from riptide_msgs2.srv import MappingTarget
 from riptide_msgs2.msg import MappingTargetInfo
@@ -20,10 +22,38 @@ from transforms3d.euler import quat2euler, euler2quat
 
 from location import Location
 
+from tf2_msgs.msg import TFMessage
+
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import Duration
+from rclpy.qos import HistoryPolicy
+from rclpy.qos import QoSProfile
+
 import math
 from typing import cast
 
-STALE_TIME = 1 #seconds
+STALE_TIME = 2 #seconds
+
+class TransformListenerWithHook(tf2_ros.TransformListener):
+    def __init__(self, buffer: tf2_ros.buffer.Buffer, node: Node, hook):
+        super().__init__(buffer=buffer, node=node, qos=qos_profile_sensor_data)
+        self.hook = hook
+    
+    def callback(self, data: TFMessage) -> None:
+        super().callback(data)
+        # for transform in data.transforms:
+        #     if transform.child_frame_id == "talos/base_link":
+        #         print("Im a little piss boy", flush=True)
+                
+        self.hook()
+
+
+class OutstandingDetectionInfo:
+    def __init__(self, det_result: ObjectHypothesisWithPose, det_header: Header, closest_object: str):
+        self.det_result = det_result
+        self.det_header = det_header
+        self.closest_object = closest_object
+        
 
 # Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
 # are confident in deadly reckoning the relative location of objects. The only objects that we keep track of in the translational
@@ -50,6 +80,8 @@ class MappingNode(Node):
             "prequal_gate": dict(),
             "prequal_pole": dict()
         }
+        
+        self.outstanding_detections: list[OutstandingDetectionInfo] = []
 
         # Manually declare all the parameters from yaml config bc ros2 is sick
         for object in self.objects.keys():
@@ -82,14 +114,13 @@ class MappingNode(Node):
             self.add_publisher(object)
 
         # Create the buffer to send 
-        self.tf_buffer = tf2_ros.buffer.Buffer()
-        self.tf_listener = tf2_ros.transform_listener.TransformListener(self.tf_buffer, self, spin_thread=True)
+        self.tf_buffer = tf2_ros.buffer.Buffer(node=self)
+        self.tf_listener = TransformListenerWithHook(self.tf_buffer, self, self.update_outstanding_detections)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
         self.target_object = ""
         self.lock_map = False
         self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
-
 
         self.add_on_set_parameters_callback(self.param_callback)
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
@@ -100,6 +131,36 @@ class MappingNode(Node):
         self.publish_pose()
         self.publish_timer = self.create_timer(0.25, self.publish_pose_if_stale)
         
+        # qos = QoSProfile(
+        #         depth=100,
+        #         durability=DurabilityPolicy.VOLATILE,
+        #         history=HistoryPolicy.KEEP_ALL,
+        #         # deadline=Duration(nanoseconds=50000000)
+        #         )
+        
+        # static_qos = QoSProfile(
+        #     depth=100,
+        #     durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        #     history=HistoryPolicy.KEEP_LAST,
+        #     )
+        
+        # self.tfSub = self.create_subscription(TFMessage, "/tf", self.tf_cb, qos_profile=qos)
+        # self.tfStaticSub = self.create_subscription(TFMessage, "/tf_static", self.tf_static_cb, qos_profile=static_qos)
+    
+    
+    # def tf_cb(self, msg: TFMessage):
+    #     for tf in msg.transforms:
+    #         self.tf_buffer.set_transform(tf, "default_authority")
+    #         if tf.child_frame_id == "buoy_frame":
+    #             self.get_logger().info(f"GOT BUOY TRANS AT TIME {self.get_clock().now().to_msg()}, trans stamp is {tf.header.stamp}")
+    #     # pass
+    
+    # def tf_static_cb(self, msg: TFMessage):
+    #     for tf in msg.transforms:
+    #         self.tf_buffer.set_transform_static(tf, "default_authority")
+    #         # self.get_logger().info(f"GOT CHILD ID {tf.child_frame_id}")
+    #         # if "zed_left" in tf.child_frame_id:
+    
     def create_location(self, object: str):
         #create the Location object using two vector3s describing coordinates and euler rotation
         xyz = Point()
@@ -128,7 +189,7 @@ class MappingNode(Node):
     # Check which params need updated and update them via the create_location method
     def param_callback(self, params):
         updates = set()
-        self.get_logger().info(str(params))
+        # self.get_logger().info(str(params))
         for param in params:
             if(str(param.name).split(".")) == "init_data":
                 updates.add(str(param.name).split(".")[1])
@@ -146,6 +207,8 @@ class MappingNode(Node):
         if self.lock_map:
             return
         
+        closest_object = self.closest_object(detections)
+        
         # Send the Poses for each location to their Location class
         for detection in detections.detections:
             for result in detection.results:
@@ -159,48 +222,80 @@ class MappingNode(Node):
                     self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
 
-                # We have a transform from camera to child we need to transform so
-                # that we have a transform from parrent to child
-                camera: str = detection.header.frame_id
-                parent: str = str(self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value)
-                child: str = result.hypothesis.class_id
-
-                # Get the pose that is a transform from camera to child
-                pose: PoseWithCovariance = result.pose
-
-                try:
-                    transform = self.tf_buffer.lookup_transform(
-                        parent,
-                        camera,
-                        detections.header.stamp
-                    )
-                except TransformException as ex:
-                    self.get_logger().error(f"When processing {result.hypothesis.class_id}: Can't transform from {camera} to {parent}: {ex}")
-                    continue
-
-                # If the current object isnt the closest object and its parent is map we
-                # aren't going to track its location in favor of offsetting the entire map
-                update_position = True
-                update_orientation = True
-
-                trans_pose = do_transform_pose_stamped(pose, transform)
-                
-                object_location: Location = self.objects[child]["location"]
-                object_location.add_pose(trans_pose.pose, update_position, update_orientation)
-
-                closest_object = self.closest_object(detections)
-                if child == self.target_object or (self.target_object == "" and child == closest_object):
-                    offset_pose = Pose()
-
-                    offset_pose.position.x = object_location.get_pose().pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
-                    offset_pose.position.y = object_location.get_pose().pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
-                    offset_pose.position.z = object_location.get_pose().pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
-                                        
-                    # Rotational will never be changed because we don't want to offset that
-                    # FOG go brrrrrrrrrrrrrrrr
-                    self.offset.add_pose(offset_pose, True, False)
+                if not self.try_update_pose(result, detections.header, closest_object):
+                    self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
             
         self.publish_pose()
+    
+    
+    def update_outstanding_detections(self):
+        current_time = self.get_clock().now()
+        oustanding_detections_remaining: list[OutstandingDetectionInfo] = []
+        for outstanding in self.outstanding_detections:
+            elapsed_nanoseconds = current_time.nanoseconds - (outstanding.det_header.stamp.sec * 1e9) - outstanding.det_header.stamp.nanosec
+            elapsed_seconds = elapsed_nanoseconds / float(1e9)
+            
+            if not self.try_update_pose(outstanding.det_result, outstanding.det_header, outstanding.closest_object) and not elapsed_seconds > STALE_TIME:     
+                oustanding_detections_remaining.append(outstanding)
+            
+            if elapsed_seconds > STALE_TIME:
+                self.get_logger().error(f"Timing out result for detection for class {outstanding.det_result.hypothesis.class_id} because the tf2 lookup could " + \
+                    f"not be completed. Result originated at time {outstanding.det_header.stamp}")
+                
+                # self.get_logger().info(f"frames: {self.tf_buffer.all_frames_as_yaml()}", throttle_duration_sec=1)
+                pass
+
+                
+        self.outstanding_detections = oustanding_detections_remaining
+    
+    
+    def try_update_pose(self, result: ObjectHypothesisWithPose, detection_header: Header, closest_object: str):        
+        # We have a transform from camera to child we need to transform so
+        # that we have a transform from parrent to child
+        parent: str = str(self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value)
+        child: str = result.hypothesis.class_id
+
+        # Get the pose that is a transform from camera to child
+        pose: PoseWithCovariance = result.pose
+
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                parent,
+                detection_header.frame_id,
+                detection_header.stamp
+            )
+        except TransformException as ex:
+            # self.get_logger().error(f"When processing {result.hypothesis.class_id}: Can't look up transform from {detection_header.frame_id} to {parent}: {ex}")
+            return False
+
+        # If the current object isnt the closest object and its parent is map we
+        # aren't going to track its location in favor of offsetting the entire map
+        update_position = True
+        update_orientation = True
+
+        trans_pose = do_transform_pose_stamped(pose, transform)
+        
+        object_location: Location = self.objects[child]["location"]
+        object_location.add_pose(trans_pose.pose, update_position, update_orientation)
+
+        if child == self.target_object or (self.target_object == "" and child == closest_object):
+            offset_pose = Pose()
+
+            # offset_pose.position.x = object_location.get_pose().pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
+            # offset_pose.position.y = object_location.get_pose().pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
+            # offset_pose.position.z = object_location.get_pose().pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
+            
+            offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
+            offset_pose.position.y = trans_pose.pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
+            offset_pose.position.z = trans_pose.pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
+            
+            
+            # Rotational will never be changed because we don't want to offset that
+            # FOG go brrrrrrrrrrrrrrrr
+            self.offset.add_pose(offset_pose, True, False)
+        
+        return True
+    
                     
     def closest_object(self, detections: Detection3DArray) -> str:
         object = ""
@@ -224,7 +319,8 @@ class MappingNode(Node):
         return object
     
     def publish_pose_if_stale(self):
-        if (self.get_clock().now() - self.last_pub_time).to_msg().sec > STALE_TIME:
+        elapsed = (self.get_clock().now() - self.last_pub_time).to_msg()
+        if elapsed.sec + float(elapsed.nanosec / 1e9) >= STALE_TIME:
             self.publish_pose()
 
     # Publishes stuff
@@ -234,12 +330,15 @@ class MappingNode(Node):
         offset_transform = TransformStamped()
         offset_pose = self.offset.get_pose()
 
-        offset_transform.header.stamp = self.get_clock().now().to_msg()
+        now = self.get_clock().now().to_msg()
         offset_transform.transform.translation = Vector3(x=offset_pose.pose.position.x, y=offset_pose.pose.position.y, z=offset_pose.pose.position.z)
+        offset_transform.header.stamp = now
         offset_transform.header.frame_id = "map"
         offset_transform.child_frame_id = "offset"
+        
+        transforms = []
 
-        self.tf_brod.sendTransform(offset_transform)
+        transforms.append(offset_transform)
 
         # For every object send the covariance and transform
         for object in self.objects.keys():
@@ -247,7 +346,7 @@ class MappingNode(Node):
             pose = PoseWithCovarianceStamped()
 
             pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
-            pose.header.stamp = self.get_clock().now().to_msg()
+            pose.header.stamp = now
             pose.header.frame_id = parent
 
             # If the object is the target object the translational covariance will be in the offset object.
@@ -280,8 +379,13 @@ class MappingNode(Node):
             else:
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
 
-            self.tf_brod.sendTransform(transform)
-            
+            transforms.append(transform)
+        
+        self.tf_brod.sendTransform(transforms)
+        
+        # feed the buffer
+        for transform in transforms:
+            self.tf_buffer.set_transform(transform, "default_authority")
         
         # publish status
         stat = MappingTargetInfo()
@@ -290,7 +394,7 @@ class MappingNode(Node):
         self.status_pub.publish(stat)
         
         self.last_pub_time = self.get_clock().now()
-        self.get_logger().info(f"sent transform, current time is {self.get_clock().now().to_msg()}")
+
 
 def main(args=None):
     rclpy.init(args=args)
