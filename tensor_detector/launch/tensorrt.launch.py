@@ -6,7 +6,6 @@ from launch_ros.actions.composable_node_container import ComposableNode, Composa
 from launch.substitutions import LaunchConfiguration as LC
 
 import os
-
 from ament_index_python.packages import get_package_share_directory
 
 cfg_36h11 = {
@@ -25,7 +24,7 @@ def generate_launch_description():
     params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
 
     weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'bin300.pt')
+        tensorrt_wrapper_dir, 'weights', 'BinZoomCrop.pt')
     
     ld.add_action(PushRosNamespace(LC("robot")))
 

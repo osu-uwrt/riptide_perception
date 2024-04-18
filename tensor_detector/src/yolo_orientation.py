@@ -27,7 +27,7 @@ class YOLONode(Node):
 
 		# USER DEFINED PARAMS
 		self.export = True # Whether or not to export .pt file to engine
-		self.conf = 0.6 # Confidence threshold for yolo detections
+		self.conf = 0.8 # Confidence threshold for yolo detections
 		self.iou = 0.9 # Intersection over union for yolo detections
 		self.frame_id = 'zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
@@ -95,6 +95,7 @@ class YOLONode(Node):
 		self.holes = []
 		self.latest_bbox_class_7 = None
 		self.latest_bbox_class_8 = None
+		#self.detection_timestamp = None
 
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
@@ -149,6 +150,8 @@ class YOLONode(Node):
 
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
+		# self.detection_timestamp = msg.header.stamp
+		# detections.header.stamp = msg.header.stamp
 		detections.header.stamp = self.get_clock().now().to_msg()
 
 		if self.mask is None or self.mask.shape[:2] != cv_image.shape[:2]:
@@ -234,6 +237,7 @@ class YOLONode(Node):
 		class_id = int(box.cls[0])
 		#print(class_id, flush=True)
 
+		
 		if class_id == 7:
 			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
 		elif class_id == 8:
@@ -309,7 +313,6 @@ class YOLONode(Node):
 
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-			good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
 
 		# Detect features within the object's bounding box
 		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
@@ -329,14 +332,18 @@ class YOLONode(Node):
 				if normal[2] > 0:
 					normal = -normal
 
+			
+				
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
+
+				
+
 
 				# Temporal smoothing of quaternion and centroid using rolling average/history
 				#smoothed_quat = self.smooth_orientation(class_id, quat)
 				smoothed_quat = quat
 				#smoothed_centroid = self.smooth_centroid(class_id, centroid)	
 				smoothed_centroid = centroid	
-			
 				if class_id == 7:  # Assuming class ID 7 is for upper torpedo
 					self.open_torpedo_centroid = smoothed_centroid
 					self.open_torpedo_quat = smoothed_quat
