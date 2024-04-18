@@ -45,18 +45,6 @@ def generate_launch_description():
         ]
     ))
 
-
-    
-    #
-    # ZED LAUNCH
-    #
-    ld.add_action(IncludeLaunchDescription(
-        AnyLaunchDescriptionSource(os.path.join(
-            get_package_share_directory('riptide_hardware2'),
-            "launch", "zed.launch.py"
-        ))
-    ))
-
     #
     # APRILTAG STUFF
     #

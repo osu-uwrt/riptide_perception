@@ -221,8 +221,9 @@ class MappingNode(Node):
                 if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
                     self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
-
-                if not self.try_update_pose(result, detections.header, closest_object):
+                
+                update_success, _ = self.try_update_pose(result, detections.header, closest_object)
+                if not update_success:
                     self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
             
         self.publish_pose()
@@ -235,12 +236,13 @@ class MappingNode(Node):
             elapsed_nanoseconds = current_time.nanoseconds - (outstanding.det_header.stamp.sec * 1e9) - outstanding.det_header.stamp.nanosec
             elapsed_seconds = elapsed_nanoseconds / float(1e9)
             
-            if not self.try_update_pose(outstanding.det_result, outstanding.det_header, outstanding.closest_object) and not elapsed_seconds > STALE_TIME:     
+            update_success, error_msg = self.try_update_pose(outstanding.det_result, outstanding.det_header, outstanding.closest_object)
+            if not update_success and not elapsed_seconds > STALE_TIME:     
                 oustanding_detections_remaining.append(outstanding)
             
             if elapsed_seconds > STALE_TIME:
                 self.get_logger().error(f"Timing out result for detection for class {outstanding.det_result.hypothesis.class_id} because the tf2 lookup could " + \
-                    f"not be completed. Result originated at time {outstanding.det_header.stamp}")
+                    f"not be completed. Result originated at time {outstanding.det_header.stamp}. Final TF lookup error: {error_msg}")
                 
                 # self.get_logger().info(f"frames: {self.tf_buffer.all_frames_as_yaml()}", throttle_duration_sec=1)
                 pass
@@ -266,7 +268,7 @@ class MappingNode(Node):
             )
         except TransformException as ex:
             # self.get_logger().error(f"When processing {result.hypothesis.class_id}: Can't look up transform from {detection_header.frame_id} to {parent}: {ex}")
-            return False
+            return False, str(ex)
 
         # If the current object isnt the closest object and its parent is map we
         # aren't going to track its location in favor of offsetting the entire map
@@ -294,7 +296,7 @@ class MappingNode(Node):
             # FOG go brrrrrrrrrrrrrrrr
             self.offset.add_pose(offset_pose, True, False)
         
-        return True
+        return True, ""
     
                     
     def closest_object(self, detections: Detection3DArray) -> str:

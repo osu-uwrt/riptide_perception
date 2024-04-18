@@ -29,7 +29,7 @@ class YOLONode(Node):
 		self.export = True # Whether or not to export .pt file to engine
 		self.conf = 0.6 # Confidence threshold for yolo detections
 		self.iou = 0.9 # Intersection over union for yolo detections
-		self.frame_id = 'zed_left_camera_optical_frame' 
+		self.frame_id = 'talos/zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
