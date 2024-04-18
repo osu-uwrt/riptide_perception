@@ -282,7 +282,7 @@ class YOLONode(Node):
 			if self.use_incoming_timestamp:
 				detection.header.stamp = self.detection_timestamp
 			else:
-				detection.header.stamp = self.detection_timestamp
+				detection.header.stamp = self.get_clock().now().to_msg()
 			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, hole_quat, conf))
 			return detection
 
@@ -682,3 +682,4 @@ def main(args=None):
 
 if __name__ == '__main__':
 	main()
+	
