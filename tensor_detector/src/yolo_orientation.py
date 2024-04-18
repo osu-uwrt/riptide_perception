@@ -266,9 +266,9 @@ class YOLONode(Node):
 				return None
 			
 			if self.use_incoming_timestamp:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
-			else:
 				self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+			else:
+				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 			
 
 			#print(hole_centroid ,flush=True)
