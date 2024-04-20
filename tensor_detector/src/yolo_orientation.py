@@ -26,8 +26,9 @@ class YOLONode(Node):
 		])
 
 		# USER DEFINED PARAMS
+		self.use_incoming_timestamp = True
 		self.export = True # Whether or not to export .pt file to engine
-		self.conf = 0.6 # Confidence threshold for yolo detections
+		self.conf = 0.8 # Confidence threshold for yolo detections
 		self.iou = 0.9 # Intersection over union for yolo detections
 		self.frame_id = 'talos/zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
@@ -95,6 +96,7 @@ class YOLONode(Node):
 		self.holes = []
 		self.latest_bbox_class_7 = None
 		self.latest_bbox_class_8 = None
+		self.detection_timestamp = None
 
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
@@ -148,9 +150,12 @@ class YOLONode(Node):
 		results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
 
 		detections = Detection3DArray()
-		# detections.header.frame_id = self.frame_id
-		# detections.header.stamp = msg.header.stamp
-		detections.header = msg.header
+		detections.header.frame_id = self.frame_id
+		if self.use_incoming_timestamp:
+			self.detection_timestamp = msg.header.stamp
+			detections.header.stamp = msg.header.stamp
+		else:
+			detections.header.stamp = self.get_clock().now().to_msg()
 
 		if self.mask is None or self.mask.shape[:2] != cv_image.shape[:2]:
 			self.mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
@@ -235,6 +240,7 @@ class YOLONode(Node):
 		class_id = int(box.cls[0])
 		#print(class_id, flush=True)
 
+		
 		if class_id == 7:
 			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
 		elif class_id == 8:
@@ -259,7 +265,11 @@ class YOLONode(Node):
 			else:
 				return None
 			
-			self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
+			if self.use_incoming_timestamp:
+				self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+			else:
+				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
+			
 
 			#print(hole_centroid ,flush=True)
 			#print(self.torpedo_centroid, flush=True)
@@ -268,9 +278,11 @@ class YOLONode(Node):
 			
 			# Create Detection3D message
 			detection = Detection3D()
-			# detection.header.frame_id = self.frame_id
-			# detection.header.stamp = self.get_clock().now().to_msg()
-			detection.header = header
+			detection.header.frame_id = self.frame_id
+			if self.use_incoming_timestamp:
+				detection.header.stamp = self.detection_timestamp
+			else:
+				detection.header.stamp = self.get_clock().now().to_msg()
 			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, hole_quat, conf))
 			return detection
 
@@ -311,7 +323,6 @@ class YOLONode(Node):
 
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-			good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
 
 		# Detect features within the object's bounding box
 		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
@@ -331,14 +342,18 @@ class YOLONode(Node):
 				if normal[2] > 0:
 					normal = -normal
 
+			
+				
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
+
+				
+
 
 				# Temporal smoothing of quaternion and centroid using rolling average/history
 				#smoothed_quat = self.smooth_orientation(class_id, quat)
 				smoothed_quat = quat
 				#smoothed_centroid = self.smooth_centroid(class_id, centroid)	
 				smoothed_centroid = centroid	
-			
 				if class_id == 7:  # Assuming class ID 7 is for upper torpedo
 					self.open_torpedo_centroid = smoothed_centroid
 					self.open_torpedo_quat = smoothed_quat
@@ -353,7 +368,10 @@ class YOLONode(Node):
 				# Create Detection3D message
 				detection = Detection3D()
 				detection.header.frame_id = self.frame_id
-				detection.header.stamp = self.get_clock().now().to_msg()
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
 
 				# Set the pose
 				detection.results.append(self.create_object_hypothesis_with_pose(class_id, smoothed_centroid, smoothed_quat, conf))
@@ -387,7 +405,11 @@ class YOLONode(Node):
 			# Prepare the PointCloud message
 			cloud = PointCloud()
 			cloud.header.frame_id = self.frame_id
-			cloud.header.stamp = self.get_clock().now().to_msg()
+			if self.use_incoming_timestamp:
+				cloud.header.stamp = self.detection_timestamp
+			else:
+				cloud.header.stamp = self.get_clock().now().to_msg()
+			
 
 			# Convert accumulated 3D points to Point32 messages and add to the PointCloud
 			for point in self.accumulated_points:
@@ -442,7 +464,11 @@ class YOLONode(Node):
 		# Prepare PointCloud message
 		cloud = PointCloud()
 		cloud.header.frame_id = self.frame_id  # Adjust the frame ID as necessary
-		cloud.header.stamp = self.get_clock().now().to_msg()
+		
+		if self.use_incoming_timestamp:
+			cloud.header.stamp = self.detection_timestamp
+		else:
+			cloud.header.stamp = self.get_clock().now().to_msg()
 
 		# Convert points to a numpy array
 		points_3d = np.array(points_3d)
@@ -548,7 +574,10 @@ class YOLONode(Node):
 
 		marker = Marker()
 		marker.header.frame_id = self.frame_id
-		marker.header.stamp = self.get_clock().now().to_msg()
+		if self.use_incoming_timestamp:
+			marker.header.stamp = self.detection_timestamp
+		else:
+			marker.header.stamp = self.get_clock().now().to_msg()
 		marker.ns = "detection_markers"  # Namespace for all detection markers
 		marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
 		marker.type = Marker.CUBE

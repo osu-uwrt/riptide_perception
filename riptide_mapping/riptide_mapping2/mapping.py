@@ -4,9 +4,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
-from rclpy.parameter import Parameter
 from rclpy.time import Time
-from rclpy.executors import MultiThreadedExecutor
 
 from std_msgs.msg import Header
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point
@@ -18,17 +16,11 @@ from riptide_msgs2.msg import MappingTargetInfo
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
 
-from transforms3d.euler import quat2euler, euler2quat
+from transforms3d.euler import euler2quat
 
 from location import Location
 
 from tf2_msgs.msg import TFMessage
-
-from rclpy.qos import DurabilityPolicy
-from rclpy.qos import Duration
-from rclpy.qos import HistoryPolicy
-from rclpy.qos import QoSProfile
-
 import math
 from typing import cast
 
@@ -41,10 +33,6 @@ class TransformListenerWithHook(tf2_ros.TransformListener):
     
     def callback(self, data: TFMessage) -> None:
         super().callback(data)
-        # for transform in data.transforms:
-        #     if transform.child_frame_id == "talos/base_link":
-        #         print("Im a little piss boy", flush=True)
-                
         self.hook()
 
 
@@ -115,7 +103,7 @@ class MappingNode(Node):
 
         # Create the buffer to send 
         self.tf_buffer = tf2_ros.buffer.Buffer(node=self)
-        self.tf_listener = TransformListenerWithHook(self.tf_buffer, self, self.update_outstanding_detections)
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
         self.target_object = ""
@@ -129,38 +117,9 @@ class MappingNode(Node):
         
         self.last_pub_time = Time()
         self.publish_pose()
-        self.publish_timer = self.create_timer(0.25, self.publish_pose_if_stale)
+        self.publish_timer = self.create_timer(0.125, self.update_oustanding_items)
         
-        # qos = QoSProfile(
-        #         depth=100,
-        #         durability=DurabilityPolicy.VOLATILE,
-        #         history=HistoryPolicy.KEEP_ALL,
-        #         # deadline=Duration(nanoseconds=50000000)
-        #         )
         
-        # static_qos = QoSProfile(
-        #     depth=100,
-        #     durability=DurabilityPolicy.TRANSIENT_LOCAL,
-        #     history=HistoryPolicy.KEEP_LAST,
-        #     )
-        
-        # self.tfSub = self.create_subscription(TFMessage, "/tf", self.tf_cb, qos_profile=qos)
-        # self.tfStaticSub = self.create_subscription(TFMessage, "/tf_static", self.tf_static_cb, qos_profile=static_qos)
-    
-    
-    # def tf_cb(self, msg: TFMessage):
-    #     for tf in msg.transforms:
-    #         self.tf_buffer.set_transform(tf, "default_authority")
-    #         if tf.child_frame_id == "buoy_frame":
-    #             self.get_logger().info(f"GOT BUOY TRANS AT TIME {self.get_clock().now().to_msg()}, trans stamp is {tf.header.stamp}")
-    #     # pass
-    
-    # def tf_static_cb(self, msg: TFMessage):
-    #     for tf in msg.transforms:
-    #         self.tf_buffer.set_transform_static(tf, "default_authority")
-    #         # self.get_logger().info(f"GOT CHILD ID {tf.child_frame_id}")
-    #         # if "zed_left" in tf.child_frame_id:
-    
     def create_location(self, object: str):
         #create the Location object using two vector3s describing coordinates and euler rotation
         xyz = Point()
@@ -243,8 +202,7 @@ class MappingNode(Node):
             if elapsed_seconds > STALE_TIME:
                 self.get_logger().error(f"Timing out result for detection for class {outstanding.det_result.hypothesis.class_id} because the tf2 lookup could " + \
                     f"not be completed. Result originated at time {outstanding.det_header.stamp}. Final TF lookup error: {error_msg}")
-                
-                # self.get_logger().info(f"frames: {self.tf_buffer.all_frames_as_yaml()}", throttle_duration_sec=1)
+
                 pass
 
                 
@@ -283,14 +241,9 @@ class MappingNode(Node):
         if child == self.target_object or (self.target_object == "" and child == closest_object):
             offset_pose = Pose()
 
-            # offset_pose.position.x = object_location.get_pose().pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
-            # offset_pose.position.y = object_location.get_pose().pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
-            # offset_pose.position.z = object_location.get_pose().pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
-            
             offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
             offset_pose.position.y = trans_pose.pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
             offset_pose.position.z = trans_pose.pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
-            
             
             # Rotational will never be changed because we don't want to offset that
             # FOG go brrrrrrrrrrrrrrrr
@@ -320,7 +273,10 @@ class MappingNode(Node):
 
         return object
     
-    def publish_pose_if_stale(self):
+    def update_oustanding_items(self):
+        self.update_outstanding_detections()
+        
+        #publish poses if they are stale
         elapsed = (self.get_clock().now() - self.last_pub_time).to_msg()
         if elapsed.sec + float(elapsed.nanosec / 1e9) >= STALE_TIME:
             self.publish_pose()
