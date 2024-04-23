@@ -1,3 +1,6 @@
-#include <mapping.hpp>
+#include "riptide_mapping/mapping.hpp"
 
-// TODO implement mapping.hpp
+MappingNode::MappingNode() : Node("riptide_mapping") {
+    
+}
+
