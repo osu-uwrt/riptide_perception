@@ -4,3 +4,6 @@ MappingNode::MappingNode() : Node("riptide_mapping") {
     
 }
 
+MappingNode::~MappingNode() {
+    
+}
