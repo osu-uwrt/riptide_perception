@@ -20,21 +20,21 @@ set(deps
  GTSAM
 )
 
-add_library(mapping_node SHARED
+add_library(mapping SHARED
  src/mapping.cpp
  src/location.cpp
 )
 
-target_include_directories(mapping_node PUBLIC
+target_include_directories(mapping PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 
 
-ament_target_dependencies(mapping_node ${deps})
+ament_target_dependencies(mapping ${deps})
 
-add_executable(${PROJECT_NAME} src/mapping_node.cpp)
+add_executable(mapping_node src/mapping_node.cpp)
 
-target_link_libraries(${PROJECT_NAME} mapping_node)
+target_link_libraries(mapping_node mapping)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -48,5 +48,12 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+install(
+  DIRECTORY include/
+  DESTINATION include/
+)
+
+install(TARGETS mapping_node
+    DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
