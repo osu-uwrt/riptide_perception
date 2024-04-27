@@ -148,6 +148,7 @@ class YOLONode(Node):
 
 	def image_callback(self, msg: Image):
 		if self.depth_image is None or not self.camera_info_gathered:
+			self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
 			return
 
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
