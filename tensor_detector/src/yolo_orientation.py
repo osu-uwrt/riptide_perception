@@ -59,7 +59,7 @@ class YOLONode(Node):
 		self.specific_class_id = self.get_parameter('specific_class_id').get_parameter_value()._integer_array_value
 
 		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left_raw/camera_info', self.camera_info_callback, 1)
 		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
 		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
 		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
@@ -125,15 +125,22 @@ class YOLONode(Node):
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
 			if self.print_camera_info:
-				print(f"camera info: {msg}")
+				self.get_logger().info(f"Camera info: {msg}")
+    
+			self.intrinsic_matrix = np.array(msg.k).reshape((3, 3))
 			self.fx = msg.k[0]
 			self.cx = msg.k[2]
 			self.fy = msg.k[4]
 			self.cy = msg.k[5]
+   
+			self.distortion_matrix = np.array(msg.d)
+   
 			self.camera_info_gathered = True
 
 	def depth_info_callback(self, msg):
 		if not self.depth_info_gathered:
+			self.depth_intrinsic_matrix = np.array(msg.k).reshape((3, 3))
+			self.depth_distortion_matrix = np.array(msg.d)
 			self.depth_info_gathered = True
 
 	def depth_callback(self, msg):
@@ -251,7 +258,7 @@ class YOLONode(Node):
 				hole_quat = self.open_torpedo_quat
 				hole_centroid = [
 					(x_min + bbox_width/2 - self.cx) * self.open_torpedo_centroid[2] / self.fx,
-					(y_min + bbox_width/2 - self.cy) * self.open_torpedo_centroid[2] / self.fy,
+					(y_min + bbox_height/2 - self.cy) * self.open_torpedo_centroid[2] / self.fy,
 					self.open_torpedo_centroid[2]
 				]
 			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
@@ -259,7 +266,7 @@ class YOLONode(Node):
 				hole_quat = self.closed_torpedo_quat
 				hole_centroid = [
 					(x_min + bbox_width/2 - self.cx) * self.closed_torpedo_centroid[2] / self.fx,
-					(y_min + bbox_width/2 - self.cy) * self.closed_torpedo_centroid[2] / self.fy,
+					(y_min + bbox_height/2 - self.cy) * self.closed_torpedo_centroid[2] / self.fy,
 					self.closed_torpedo_centroid[2]
 				]
 			else:
