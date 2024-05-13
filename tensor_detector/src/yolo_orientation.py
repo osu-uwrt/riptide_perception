@@ -59,9 +59,9 @@ class YOLONode(Node):
 		self.specific_class_id = self.get_parameter('specific_class_id').get_parameter_value()._integer_array_value
 
 		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left_raw/camera_info', self.camera_info_callback, 1)
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
 		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left_raw/image_raw_color', self.image_callback, 10)
+		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left/image_rect_color', self.image_callback, 10)
 		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
 		
 		# Creating publishers
