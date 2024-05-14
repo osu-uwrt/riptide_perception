@@ -41,14 +41,12 @@ class YOLONode(Node):
 			2: "buoy_glyph_2",
 			3: "buoy_glyph_3",
 			4: "buoy_glyph_4",
-			5: "gate",
-			6: "earth_glyph",
-			7: "torpedo_open",
-			8: "torpedo_closed",
-			9: "torpedo_hole",
+			5: "torpedo_open",
+			6: "torpedo_closed",
+			7: "torpedo_hole",
 			91: "torpedo_open_hole",
 			92: "torpedo_closed_hole",
-			10: "bin"
+			8: "bin"
 			# Add more class IDs and their corresponding names as needed
 		}
 		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
@@ -215,30 +213,6 @@ class YOLONode(Node):
 			self.detection_id_counter += 1
 			return self.detection_id_counter
 	
-
-	# def spoof_torpedo(self):
-
-	# 	torpedo_spoof = [
-	# 		0,
-	# 		0,
-	# 		self.torpedo_centroid[2]
-	# 	]
-	# 	for hole in self.holes:
-	# 		torpedo_spoof[0] += hole[0]
-	# 		torpedo_spoof[1] += hole[1]
-
-	# 	torpedo_spoof[0] /= len(self.holes)
-	# 	torpedo_spoof[1] /= len(self.holes)
-
-	# 	self.publish_plane_marker(self.torpedo_quat, torpedo_spoof, 7, 100, 100)
-					
-	# 	# Create Detection3D message
-	# 	detection = Detection3D()
-	# 	detection.header.frame_id = self.frame_id
-	# 	detection.header.stamp = self.get_clock().now().to_msg()
-	# 	detection.results.append(self.create_object_hypothesis_with_pose(7, torpedo_spoof, self.torpedo_quat, np.float32(1)))
-	# 	return detection
-	
 	def create_detection3d_message(self, header, box, cv_image, conf):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		bbox = (x_min, y_min, x_max, y_max)
@@ -246,30 +220,24 @@ class YOLONode(Node):
 		bbox_height = y_max - y_min
 		
 		class_id = int(box.cls[0])
-		#print(class_id, flush=True)
+
+		bbox_center_x = (x_min + x_max) / 2
+		bbox_center_y = (y_min + y_max) / 2
 
 		
-		if class_id == 7:
+		if class_id == 5:
 			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
-		elif class_id == 8:
+		elif class_id == 6:
 			self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
-		elif class_id == 9:
+		elif class_id == 7:
 			if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
 				class_id = 91
 				hole_quat = self.open_torpedo_quat
-				hole_centroid = [
-					(x_min + bbox_width/2 - self.cx) * self.open_torpedo_centroid[2] / self.fx,
-					(y_min + bbox_height/2 - self.cy) * self.open_torpedo_centroid[2] / self.fy,
-					self.open_torpedo_centroid[2]
-				]
+				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
 			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
 				class_id = 92
 				hole_quat = self.closed_torpedo_quat
-				hole_centroid = [
-					(x_min + bbox_width/2 - self.cx) * self.closed_torpedo_centroid[2] / self.fx,
-					(y_min + bbox_height/2 - self.cy) * self.closed_torpedo_centroid[2] / self.fy,
-					self.closed_torpedo_centroid[2]
-				]
+				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
 			else:
 				return None
 			
@@ -278,9 +246,6 @@ class YOLONode(Node):
 			else:
 				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 			
-
-			#print(hole_centroid ,flush=True)
-			#print(self.torpedo_centroid, flush=True)
 
 			self.publish_plane_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height)
 			
@@ -310,7 +275,7 @@ class YOLONode(Node):
 		cropped_gray_image = self.gray_image[y_min:y_max, x_min:x_max]
 		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 
-		if class_id in [7, 8]:
+		if class_id in [5, 6]:
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
 
@@ -347,6 +312,9 @@ class YOLONode(Node):
 			
 			if points_3d is not None and len(points_3d) >= self.min_points:
 				normal, _, centroid = self.fit_plane_to_points(points_3d)
+
+				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
+				
 				if normal[2] > 0:
 					normal = -normal
 
@@ -362,10 +330,10 @@ class YOLONode(Node):
 				smoothed_quat = quat
 				#smoothed_centroid = self.smooth_centroid(class_id, centroid)	
 				smoothed_centroid = centroid	
-				if class_id == 7:  # Assuming class ID 7 is for upper torpedo
+				if class_id == 5:  # Assuming class ID 7 is for upper torpedo
 					self.open_torpedo_centroid = smoothed_centroid
 					self.open_torpedo_quat = smoothed_quat
-				elif class_id == 8:  # Assuming class ID 8 is for lower torpedo
+				elif class_id == 6:  # Assuming class ID 8 is for lower torpedo
 					self.closed_torpedo_centroid = smoothed_centroid
 					self.closed_torpedo_quat = smoothed_quat
 
@@ -387,6 +355,11 @@ class YOLONode(Node):
 				return detection
 		return None
 
+	def calculate_centroid(self, center_x, center_y, z):
+		center_3d_x = (center_x - self.cx) * z / self.fx
+		center_3d_y = (center_y - self.cy) * z / self.fy
+		return [center_3d_x, center_3d_y, z]
+	
 	def create_object_hypothesis_with_pose(self, class_id, centroid, quat, conf):
 		hypothesis_with_pose = ObjectHypothesisWithPose()
 		hypothesis = ObjectHypothesis()
@@ -462,9 +435,8 @@ class YOLONode(Node):
 			if np.isnan(z) or z == 0:
 				continue
 
-			x3d = (xi - self.cx) * z / self.fx
-			y3d = (yi - self.cy) * z / self.fy
-			points_3d.append([x3d, y3d, z])
+			point_3d = self.calculate_centroid(xi, yi, z)
+			points_3d.append(point_3d)
 
 		# Now, overlay points on the image
 		self.overlay_points_on_image(cv_image, points_3d)
