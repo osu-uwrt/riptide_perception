@@ -247,8 +247,9 @@ class YOLONode(Node):
 				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 			
 
-			self.publish_plane_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height)
-			
+			self.publish_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height)
+			self.publish_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height, Marker.ARROW, "orientation_markers")
+
 			# Create Detection3D message
 			detection = Detection3D()
 			detection.header.frame_id = self.frame_id
@@ -338,8 +339,9 @@ class YOLONode(Node):
 					self.closed_torpedo_quat = smoothed_quat
 
 
-				# When calling publish_plane_marker, pass these dimensions along with other required information
-				self.publish_plane_marker(smoothed_quat, smoothed_centroid, class_id, bbox_width, bbox_height)
+				# When calling publish_marker, pass these dimensions along with other required information
+				self.publish_marker(smoothed_quat, smoothed_centroid, class_id, bbox_width, bbox_height)
+				self.publish_marker(smoothed_quat, smoothed_centroid, class_id, bbox_width, bbox_height, Marker.ARROW, "o")
 
 				# Create Detection3D message
 				detection = Detection3D()
@@ -550,49 +552,91 @@ class YOLONode(Node):
 
 		return rotation
 	
-	def publish_plane_marker(self, quat, centroid, class_id, bbox_width, bbox_height):
-
-		marker = Marker()
-		marker.header.frame_id = self.frame_id
+	def publish_marker(self, quat, centroid, class_id, bbox_width, bbox_height, marker_type=Marker.CUBE, ns="detection_markers"):
+		# Create a plane marker
+		plane_marker = Marker()
+		plane_marker.header.frame_id = self.frame_id
 		if self.use_incoming_timestamp:
-			marker.header.stamp = self.detection_timestamp
+			plane_marker.header.stamp = self.detection_timestamp
 		else:
-			marker.header.stamp = self.get_clock().now().to_msg()
-		marker.ns = "detection_markers"  # Namespace for all detection markers
-		marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
-		marker.type = Marker.CUBE
-		marker.action = Marker.ADD
+			plane_marker.header.stamp = self.get_clock().now().to_msg()
+		plane_marker.ns = "detection_markers"  # Namespace for all detection markers
+		plane_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
+		plane_marker.type = Marker.CUBE
+		plane_marker.action = Marker.ADD
 
-		# Set the position of the marker to be the centroid of the plane
-		marker.pose.position.x = centroid[0]
-		marker.pose.position.y = centroid[1]
-		marker.pose.position.z = centroid[2]
+		# Set the position of the plane marker to be the centroid of the plane
+		plane_marker.pose.position.x = centroid[0]
+		plane_marker.pose.position.y = centroid[1]
+		plane_marker.pose.position.z = centroid[2]
 
-		# Set the marker's orientation
-		marker.pose.orientation.x = quat[0]
-		marker.pose.orientation.y = quat[1]
-		marker.pose.orientation.z = quat[2]
-		marker.pose.orientation.w = quat[3]
+		# Set the plane marker's orientation
+		plane_marker.pose.orientation.x = quat[0]
+		plane_marker.pose.orientation.y = quat[1]
+		plane_marker.pose.orientation.z = quat[2]
+		plane_marker.pose.orientation.w = quat[3]
 
-		# Set a scale for the marker (you might want to adjust this based on the object size)
-		# Set the scale of the marker based on the bounding box size
-		marker.scale.x = float(bbox_width)/150.0
-		marker.scale.y = float(bbox_height)/150.0
-		if class_id == 0 :
-			marker.scale.z = 0.01 
+		# Set the scale of the plane marker based on the bounding box size
+		plane_marker.scale.x = float(bbox_width) / 150.0
+		plane_marker.scale.y = float(bbox_height) / 150.0
+		if class_id == 0:
+			plane_marker.scale.z = 0.01
 		else:
-			marker.scale.z = 0.05
-		
-		# Set the color and transparency (alpha) of the marker
-		# You might want to use different colors for different classes
+			plane_marker.scale.z = 0.05
+
+		# Set the color and transparency (alpha) of the plane marker
 		color = self.get_color_for_class(class_id)
-		marker.color.r = color[0]
-		marker.color.g = color[1]
-		marker.color.b = color[2]
-		marker.color.a = 0.8  # Semi-transparent
+		plane_marker.color.r = color[0]
+		plane_marker.color.g = color[1]
+		plane_marker.color.b = color[2]
+		plane_marker.color.a = 0.8  # Semi-transparent
 
-		# Append the marker to publish all at once
-		self.temp_markers.append(marker)
+		# Append the plane marker to publish all at once
+		self.temp_markers.append(plane_marker)
+
+		# Create an arrow marker
+		arrow_marker = Marker()
+		arrow_marker.header.frame_id = self.frame_id
+		if self.use_incoming_timestamp:
+			arrow_marker.header.stamp = self.detection_timestamp
+		else:
+			arrow_marker.header.stamp = self.get_clock().now().to_msg()
+		arrow_marker.ns = "orientation_markers"  # Namespace for all detection markers
+		arrow_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
+		arrow_marker.type = Marker.ARROW
+		arrow_marker.action = Marker.ADD
+
+		# Set the position of the arrow marker to be the centroid of the plane
+		arrow_marker.pose.position.x = centroid[0]
+		arrow_marker.pose.position.y = centroid[1]
+		arrow_marker.pose.position.z = centroid[2]
+
+		# Create a rotation for -90 degrees around the y-axis (or another axis as needed)
+		additional_rotation = R.from_euler('y', -90, degrees=True).as_quat()
+
+		# Apply the additional rotation to the plane's quaternion
+		arrow_quat = R.from_quat(quat) * R.from_quat(additional_rotation)
+		arrow_quat = arrow_quat.as_quat()
+
+		# Set the arrow marker's orientation
+		arrow_marker.pose.orientation.x = arrow_quat[0]
+		arrow_marker.pose.orientation.y = arrow_quat[1]
+		arrow_marker.pose.orientation.z = arrow_quat[2]
+		arrow_marker.pose.orientation.w = arrow_quat[3]
+
+		# Set the scale for the arrow marker
+		arrow_marker.scale.x = 1.0  # Length of the arrow
+		arrow_marker.scale.y = 0.05  # Width of the arrow
+		arrow_marker.scale.z = 0.05  # Height of the arrow
+
+		# Set the color and transparency (alpha) of the arrow marker
+		arrow_marker.color.r = color[0]
+		arrow_marker.color.g = color[1]
+		arrow_marker.color.b = color[2]
+		arrow_marker.color.a = 0.8  # Semi-transparent
+
+		# Append the arrow marker to publish all at once
+		self.temp_markers.append(arrow_marker)
 
 	def smooth_orientation(self, class_id, current_orientation):
 		if class_id not in self.orientation_history:
