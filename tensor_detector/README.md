@@ -2,7 +2,7 @@
 # Tensor Detector
 
 ## Overview
-The `Tensor Detector` package is part of the `riptide_perception` suite and contains a node designed for object detection and pose/orientation estimation. The node utilizes a YOLOv8 segmentation model to perform real-time detection and localization of objects using RGB and depth data from a ZED camera.
+The `Tensor Detector` package is part of `riptide_perception` and contains a node designed for object detection and pose/orientation estimation. The node utilizes a YOLOv8 segmentation model to perform real-time detection and localization of objects using RGB and depth data from a ZED camera.
 
 ## Common Configuration
 The common configuration for this package is specified in `tensorrt.yaml` and includes parameters used by the node.
@@ -29,7 +29,7 @@ The common configuration for this package is specified in `tensorrt.yaml` and in
 - `os`
 
 ## Usage
-The node in this package is launched by the `riptide_launch` service. For more details, refer to the [riptide_launch repository](https://github.com/osu-uwrt/riptide_launch).
+The node in this package is launched by the `riptide_launch` service. For more details, refer to [riptide_launch](https://github.com/osu-uwrt/riptide_launch).
 ```bash
 ros2 launch riptide_launch tensorrt.launch.py
 ```
@@ -41,6 +41,9 @@ ros2 launch riptide_launch tensorrt.launch.py
 ## Troubleshooting
 ### Problem: Inaccurate Detections
 - **Solution**: Check the model in the configuration file to ensure it is correct and properly set up.
+
+### Problem: Orientation Slightly Off
+- **Solution**: Ensure the ZED camera is using the correct calibration file.
 
 ## Node
 
