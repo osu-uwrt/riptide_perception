@@ -85,14 +85,14 @@ The `yolo_orientation` node utilizes a YOLOv8 segmentation model for real-time o
 | `/talos/zed/zed_node/depth/depth_registered`| `sensor_msgs/Image`   | Receives the depth image stream.                      |
 
 **Publishers**
-| Publisher Topic        | Message Type                | Description                                         |
-|------------------------|-----------------------------|-----------------------------------------------------|
-| `/visualization_marker`| `visualization_msgs/Marker` | Publishes visualization markers for detected objects.|
-| `/visualization_marker_array`| `visualization_msgs/MarkerArray`| Publishes an array of visualization markers.|
-| `/yolo`                | `sensor_msgs/Image`         | Publishes annotated images with detection results.  |
-| `/point_cloud`         | `sensor_msgs/PointCloud`    | Publishes point clouds of detected objects.         |
-| `/yolo_mask`           | `sensor_msgs/Image`         | Publishes mask images for detected objects.         |
-| `/detected_objects`    | `vision_msgs/Detection3DArray` | Publishes detected objects with 3D positions and orientations.|
+| Publisher Topic                    | Message Type                | Description                                         |
+|------------------------------------|-----------------------------|-----------------------------------------------------|
+| `/talos/visualization_marker`      | `visualization_msgs/Marker` | Publishes visualization markers for detected objects.|
+| `/talos/visualization_marker_array`| `visualization_msgs/MarkerArray`| Publishes an array of visualization markers.|
+| `/talos/yolo`                      | `sensor_msgs/Image`         | Publishes annotated images with detection results.  |
+| `/talos/point_cloud`               | `sensor_msgs/PointCloud`    | Publishes point clouds of detected objects.         |
+| `/talos/yolo_mask`                 | `sensor_msgs/Image`         | Publishes mask images for detected objects.         |
+| `/talos/detected_objects`          | `vision_msgs/Detection3DArray` | Publishes detected objects with 3D positions and orientations.|
 
 #### Functional Description
 1. **Segmentation Model**:
