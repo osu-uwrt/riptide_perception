@@ -9,52 +9,86 @@ from ultralytics import YOLO
 import numpy as np
 from visualization_msgs.msg import Marker, MarkerArray
 from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose, ObjectHypothesis
-from geometry_msgs.msg import Point32, Vector3
+from geometry_msgs.msg import Point32
 from scipy.spatial.transform import Rotation as R
-from collections import deque
+from ament_index_python.packages import get_package_share_directory
 import time
 import os
+import yaml
 
 class YOLONode(Node):
 	def __init__(self):
 		super().__init__('yolo_node')
 		self.declare_parameters(
-			namespace='',
-			parameters=[
-				('yolo_model_path', '200.engine'),
-				('specific_class_id', [0,1,2,3,4,5,6,7,8,9,10]),
-		])
+            namespace='',
+            parameters=[
+                ('yolo_model', ''),
+                ('class_id_map', ''),
+                ('threshold', 0.9),
+                ('iou', 0.9),
+            ]
+        )
 
-		# USER DEFINED PARAMS
-		self.use_incoming_timestamp = True
+		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
+       
+	    # Load parameters
+		yolo_model = self.get_parameter('yolo_model').get_parameter_value().string_value
+		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
+		
+
+		self.get_logger().info(f"Model path: {yolo_model_path}") 
+		
+
+		class_id_map_str = self.get_parameter('class_id_map').get_parameter_value().string_value
+		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
+
+		self.get_logger().info(f"Class id map info: {self.class_id_map}") 
+		
+		self.conf = self.get_parameter('threshold').get_parameter_value().double_value
+		self.iou = self.get_parameter('iou').get_parameter_value().double_value
+
+		##########################
+		# USER DEFINED PARAMS    #
+		##########################
+		self.use_incoming_timestamp = False
 		self.export = True # Whether or not to export .pt file to engine
-		self.conf = 0.8 # Confidence threshold for yolo detections
-		self.iou = 0.9 # Intersection over union for yolo detections
 		self.frame_id = 'talos/zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
 		self.history_size = 10 # Window size for rolling average smoothing
+		
 		self.class_id_map = {
-			0: "buoy",
-			1: "buoy_glyph_1",
-			2: "buoy_glyph_2",
-			3: "buoy_glyph_3",
-			4: "buoy_glyph_4",
-			5: "torpedo_open",
-			6: "torpedo_closed",
-			7: "torpedo_hole",
-			91: "torpedo_open_hole",
-			92: "torpedo_closed_hole",
-			8: "bin"
-			# Add more class IDs and their corresponding names as needed
+					0: 'buoy', 
+					1: 'buoy_glyph_1', 
+					2: 'buoy_glyph_2', 
+					3: 'buoy_glyph_3', 
+					4: 'buoy_glyph_4', 
+					5: 'torpedo_open', 
+					6: 'torpedo_closed', 
+					7: 'torpedo_hole', 
+					8: 'bin'
+					}
+		# Update internal class_id_map
+		self.class_id_map.update({
+            91: "torpedo_open_hole",
+            92: "torpedo_closed_hole"
+        })  # Internal mappings
+
+		self.color_map = { # Color map for classes published to markers
+			'buoy': (1.0, 0.0, 0.0),  
+			'buoy_glyph_1': (0.0, 1.0, 0.0),  
+			'buoy_glyph_1': (0.0, 0.0, 1.0),
+			'buoy_glyph_1': (1.0, 1.0, 1.0),
+			'buoy_glyph_1': (1.0, 1.0, 0.0),
+			'torpedo_open': (0.0, 1.0, 0.0),
+			'torpedo_closed': (0.0, 1.0, 0.0),
+			'torpedo_hole': (0.5, 0.5, 0.0),
+			'bin': (0.0, 0.5, 0.5),
 		}
+
 		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
 		self.print_camera_info = False # Print the camera info recieved
-
-		# Setting up initial params
-		yolo_model_path = self.get_parameter('yolo_model_path').get_parameter_value().string_value
-		self.specific_class_id = self.get_parameter('specific_class_id').get_parameter_value()._integer_array_value
 
 		# Creating subscriptions
 		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
@@ -157,8 +191,8 @@ class YOLONode(Node):
 
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
+		self.detection_timestamp = msg.header.stamp
 		if self.use_incoming_timestamp:
-			self.detection_timestamp = msg.header.stamp
 			detections.header.stamp = msg.header.stamp
 		else:
 			detections.header.stamp = self.get_clock().now().to_msg()
@@ -171,9 +205,9 @@ class YOLONode(Node):
 				if box.conf[0] <= self.conf:
 					continue
 				class_id = box.cls[0]
-				if class_id in self.specific_class_id:
+				if class_id in self.class_id_map:
 					conf = box.conf[0]
-					detection = self.create_detection3d_message(msg.header, box, cv_image, conf)
+					detection = self.create_detection3d_message(box, cv_image, conf)
 					if detection:
 						detections.detections.append(detection)
 
@@ -213,7 +247,7 @@ class YOLONode(Node):
 			self.detection_id_counter += 1
 			return self.detection_id_counter
 	
-	def create_detection3d_message(self, header, box, cv_image, conf):
+	def create_detection3d_message(self, box, cv_image, conf):
 		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 		bbox = (x_min, y_min, x_max, y_max)
 		bbox_width = x_max - x_min
@@ -224,18 +258,19 @@ class YOLONode(Node):
 		bbox_center_x = (x_min + x_max) / 2
 		bbox_center_y = (y_min + y_max) / 2
 
+		class_name = self.class_id_map.get(class_id, "Unknown")
 		
-		if class_id == 5:
+		if class_name == "torpedo_open":
 			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
-		elif class_id == 6:
+		elif class_name == "torpedo_closed":
 			self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
-		elif class_id == 7:
+		elif class_name == "torpedo_hole":
 			if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
-				class_id = 91
+				class_name = "torpedo_open_hole"
 				hole_quat = self.open_torpedo_quat
 				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
 			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
-				class_id = 92
+				class_name = "torpedo_closed_hole"
 				hole_quat = self.closed_torpedo_quat
 				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
 			else:
@@ -247,8 +282,7 @@ class YOLONode(Node):
 				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 			
 
-			self.publish_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height)
-			self.publish_marker(hole_quat, hole_centroid, class_id, bbox_width, bbox_height, Marker.ARROW, "orientation_markers")
+			self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
 
 			# Create Detection3D message
 			detection = Detection3D()
@@ -257,7 +291,7 @@ class YOLONode(Node):
 				detection.header.stamp = self.detection_timestamp
 			else:
 				detection.header.stamp = self.get_clock().now().to_msg()
-			detection.results.append(self.create_object_hypothesis_with_pose(class_id, hole_centroid, hole_quat, conf))
+			detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
 			return detection
 
 
@@ -276,7 +310,7 @@ class YOLONode(Node):
 		cropped_gray_image = self.gray_image[y_min:y_max, x_min:x_max]
 		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 
-		if class_id in [5, 6]:
+		if class_name in ["torpedo_open", "torpedo_closed"]:
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
 
@@ -325,23 +359,16 @@ class YOLONode(Node):
 
 				
 
-
-				# Temporal smoothing of quaternion and centroid using rolling average/history
-				#smoothed_quat = self.smooth_orientation(class_id, quat)
-				smoothed_quat = quat
-				#smoothed_centroid = self.smooth_centroid(class_id, centroid)	
-				smoothed_centroid = centroid	
-				if class_id == 5:  # Assuming class ID 7 is for upper torpedo
-					self.open_torpedo_centroid = smoothed_centroid
-					self.open_torpedo_quat = smoothed_quat
-				elif class_id == 6:  # Assuming class ID 8 is for lower torpedo
-					self.closed_torpedo_centroid = smoothed_centroid
-					self.closed_torpedo_quat = smoothed_quat
+				if class_name == "torpedo_open":  
+					self.open_torpedo_centroid = centroid
+					self.open_torpedo_quat = quat
+				elif class_name == "torpedo_closed":
+					self.closed_torpedo_centroid = centroid
+					self.closed_torpedo_quat = quat
 
 
 				# When calling publish_marker, pass these dimensions along with other required information
-				self.publish_marker(smoothed_quat, smoothed_centroid, class_id, bbox_width, bbox_height)
-				self.publish_marker(smoothed_quat, smoothed_centroid, class_id, bbox_width, bbox_height, Marker.ARROW, "o")
+				self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
 
 				# Create Detection3D message
 				detection = Detection3D()
@@ -352,7 +379,7 @@ class YOLONode(Node):
 					detection.header.stamp = self.get_clock().now().to_msg()
 
 				# Set the pose
-				detection.results.append(self.create_object_hypothesis_with_pose(class_id, smoothed_centroid, smoothed_quat, conf))
+				detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
 
 				return detection
 		return None
@@ -362,11 +389,10 @@ class YOLONode(Node):
 		center_3d_y = (center_y - self.cy) * z / self.fy
 		return [center_3d_x, center_3d_y, z]
 	
-	def create_object_hypothesis_with_pose(self, class_id, centroid, quat, conf):
+	def create_object_hypothesis_with_pose(self, class_name, centroid, quat, conf):
 		hypothesis_with_pose = ObjectHypothesisWithPose()
 		hypothesis = ObjectHypothesis()
 
-		class_name = self.class_id_map.get(class_id, "Unknown")
 		hypothesis.class_id = class_name
 		hypothesis.score = conf.item() # Convert from numpy float to float
 
@@ -552,14 +578,11 @@ class YOLONode(Node):
 
 		return rotation
 	
-	def publish_marker(self, quat, centroid, class_id, bbox_width, bbox_height, marker_type=Marker.CUBE, ns="detection_markers"):
+	def publish_marker(self, quat, centroid, class_name, bbox_width, bbox_height):
 		# Create a plane marker
 		plane_marker = Marker()
 		plane_marker.header.frame_id = self.frame_id
-		if self.use_incoming_timestamp:
-			plane_marker.header.stamp = self.detection_timestamp
-		else:
-			plane_marker.header.stamp = self.get_clock().now().to_msg()
+		plane_marker.header.stamp = self.detection_timestamp
 		plane_marker.ns = "detection_markers"  # Namespace for all detection markers
 		plane_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
 		plane_marker.type = Marker.CUBE
@@ -579,13 +602,13 @@ class YOLONode(Node):
 		# Set the scale of the plane marker based on the bounding box size
 		plane_marker.scale.x = float(bbox_width) / 150.0
 		plane_marker.scale.y = float(bbox_height) / 150.0
-		if class_id == 0:
+		if class_name == "buoy":
 			plane_marker.scale.z = 0.01
 		else:
 			plane_marker.scale.z = 0.05
 
 		# Set the color and transparency (alpha) of the plane marker
-		color = self.get_color_for_class(class_id)
+		color = self.get_color_for_class(class_name)
 		plane_marker.color.r = color[0]
 		plane_marker.color.g = color[1]
 		plane_marker.color.b = color[2]
@@ -597,10 +620,7 @@ class YOLONode(Node):
 		# Create an arrow marker
 		arrow_marker = Marker()
 		arrow_marker.header.frame_id = self.frame_id
-		if self.use_incoming_timestamp:
-			arrow_marker.header.stamp = self.detection_timestamp
-		else:
-			arrow_marker.header.stamp = self.get_clock().now().to_msg()
+		arrow_marker.header.stamp = self.detection_timestamp
 		arrow_marker.ns = "orientation_markers"  # Namespace for all detection markers
 		arrow_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
 		arrow_marker.type = Marker.ARROW
@@ -638,38 +658,6 @@ class YOLONode(Node):
 		# Append the arrow marker to publish all at once
 		self.temp_markers.append(arrow_marker)
 
-	def smooth_orientation(self, class_id, current_orientation):
-		if class_id not in self.orientation_history:
-			self.orientation_history[class_id] = deque(maxlen=self.history_size)
-
-		# Add the current orientation to the history
-		self.orientation_history[class_id].append(current_orientation)
-
-		# Calculate the average orientation
-		average_orientation = np.mean(self.orientation_history[class_id], axis=0)
-
-		# Normalize the averaged orientation to ensure it's a unit vector
-		norm = np.linalg.norm(average_orientation)
-		if norm == 0:  # Avoid division by zero
-			return current_orientation
-		averaged_normalized_orientation = average_orientation / norm
-
-		return averaged_normalized_orientation
-
-
-	def smooth_centroid(self, class_id, current_centroid):
-		if class_id not in self.centroid_history:
-			self.centroid_history[class_id] = deque(maxlen=self.history_size)
-
-		# Add the current centroid to the history
-		self.centroid_history[class_id].append(current_centroid)
-
-		# Calculate the average centroid
-		average_centroid = np.mean(self.centroid_history[class_id], axis=0)
-
-		return average_centroid
-
-
 	def publish_markers(self, markers):
 		current_time = time.time()
 		if current_time - self.last_publish_time > self.publish_interval:
@@ -680,22 +668,9 @@ class YOLONode(Node):
 			# Clear the markers after publishing
 			markers.clear()
 
-	def get_color_for_class(self, class_id):
-		# Define a simple color map for classes, or use a more sophisticated method as needed
-		color_map = {
-			0: (1.0, 0.0, 0.0),  # Red for class 0
-			1: (0.0, 1.0, 0.0),  # Green for class 1
-			2: (0.0, 0.0, 1.0),  # Blue for class 2
-			3: (1.0, 1.0, 1.0),  # Green for class 1
-			4: (1.0, 1.0, 0.0),  # Red for class 0
-			5: (0.0, 1.0, 0.0),  # Green for class 1
-			6: (0.0, 1.0, 0.0),  # Green for class 1
-			7: (0.5, 0.5, 0.0),
-			8: (0.0, 0.5, 0.5),
-			9: (0.5, 0.0, 0.5),
-			# Add more class-color mappings as needed
-		}
-		return color_map.get(class_id, (1.0, 1.0, 1.0))  # Default to white
+	def get_color_for_class(self, class_name):
+		
+		return self.color_map.get(class_name, (1.0, 1.0, 1.0))  # Default to white
 
 def main(args=None):
 	rclpy.init(args=args)

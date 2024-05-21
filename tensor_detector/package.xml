@@ -2,14 +2,16 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>tensor_detector</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="cjtucker321@gmail.com">coalman321</maintainer>
+  <version>1.0.0</version>
+  <description>
+  The `Tensor Detector` package is part of the `riptide_perception` suite and contains a node designed for object detection and pose/orientation estimation. 
+  The node utilizes a YOLOv8 segmentation model to perform real-time detection and localization of objects using RGB and depth data from a ZED camera.
+  </description>
+  <maintainer email="zehdar@live.com">zehdari</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>rclcpp</depend>
   <depend>vision_msgs</depend>
   <depend>OpenCV</depend>
   <depend>cv_bridge</depend>

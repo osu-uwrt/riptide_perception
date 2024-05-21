@@ -1,10 +1,9 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import AnyLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, LogInfo
 from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.actions.composable_node_container import ComposableNode, ComposableNodeContainer
 from launch.substitutions import LaunchConfiguration as LC
-
+import yaml
 import os
 from ament_index_python.packages import get_package_share_directory
 
@@ -21,11 +20,8 @@ def generate_launch_description():
 
     tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
 
-    params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'tensorrt.yaml')
+    params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'yolo_orientation.yaml')
 
-    weights_path = os.path.join(
-        tensorrt_wrapper_dir, 'weights', 'binlab.pt')
-    
     ld.add_action(PushRosNamespace(LC("robot")))
 
     ld.add_action(DeclareLaunchArgument(
@@ -35,13 +31,11 @@ def generate_launch_description():
     ))
 
     ld.add_action(Node(
-            package='tensor_detector',  
-            executable='yolo_orientation.py',  
-            name='yolo_orientation_node', 
-            output='screen',
-            parameters=[
-            {"yolo_model_path": weights_path}
-        ]
+        package='tensor_detector',
+        executable='yolo_orientation.py',
+        name='yolo_orientation_node',
+        output='screen',
+        parameters=[params_path]
     ))
 
     #
