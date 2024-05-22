@@ -18,7 +18,7 @@ import yaml
 
 class YOLONode(Node):
 	def __init__(self):
-		super().__init__('yolo_node')
+		super().__init__('yolo_orientation')
 		self.declare_parameters(
             namespace='',
             parameters=[

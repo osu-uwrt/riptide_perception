@@ -1,17 +1,16 @@
-talos:
-  yolo_orientation_node:
-    ros__parameters:
-      yolo_model: "binlab.pt"
-      class_id_map: "{
-        0: 'buoy', 
-        1: 'buoy_glyph_1', 
-        2: 'buoy_glyph_2', 
-        3: 'buoy_glyph_3', 
-        4: 'buoy_glyph_4', 
-        5: 'torpedo_open', 
-        6: 'torpedo_closed', 
-        7: 'torpedo_hole', 
-        8: 'bin'
-      }"
-      threshold: 0.9
-      iou: 0.9
+/**/yolo_orientation:
+  ros__parameters:
+    yolo_model: "binlab.pt"
+    class_id_map: "{
+      0: 'buoy', 
+      1: 'buoy_glyph_1', 
+      2: 'buoy_glyph_2', 
+      3: 'buoy_glyph_3', 
+      4: 'buoy_glyph_4', 
+      5: 'torpedo_open', 
+      6: 'torpedo_closed', 
+      7: 'torpedo_hole', 
+      8: 'bin'
+    }"
+    threshold: 0.9
+    iou: 0.9
