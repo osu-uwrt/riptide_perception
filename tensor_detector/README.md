@@ -14,24 +14,6 @@ The common configuration for this package is specified in `tensorrt.yaml` and in
 | `threshold`      | `float`             | Confidence threshold for object detection.       |
 | `iou`            | `float`             | Intersection over Union threshold for object detection.|
 
-## Dependencies
-List all the dependencies required by the package.
-
-### Dependencies List
-- `rclpy`
-- `sensor_msgs`
-- `cv_bridge`
-- `cv2`
-- `ultralytics`
-- `numpy`
-- `visualization_msgs`
-- `vision_msgs`
-- `geometry_msgs`
-- `scipy`
-- `collections`
-- `time`
-- `os`
-
 ## Usage
 The node in this package is launched by the `riptide_launch` service. For more details, refer to [riptide_launch](https://github.com/osu-uwrt/riptide_launch).
 
@@ -107,11 +89,6 @@ The `yolo_orientation` node utilizes a YOLOv8 segmentation model for real-time o
    - Applies Singular Value Decomposition (SVD) to determine the orientation and pose of detected objects.
    - The bounding box center provides x/y coordinates of the centroid.
    - SVD provides the z-coordinate and orientation.
-
-#### Data Flow
-- **Input**: Subscribes to RGB and depth image streams, and camera information topics.
-- **Processing**: Detects objects, tracks features, converts 2D points to 3D, and estimates pose using SVD.
-- **Output**: Publishes annotated images, point clouds, and detected objects with their 3D positions and orientations.
 
 #### Key Functions and Classes
 | Function/Class                         | Description                                                  |

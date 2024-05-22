@@ -33,7 +33,7 @@ def generate_launch_description():
     ld.add_action(Node(
         package='tensor_detector',
         executable='yolo_orientation.py',
-        name='yolo_orientation_node',
+        name='yolo_orientation',
         output='screen',
         parameters=[params_path]
     ))
