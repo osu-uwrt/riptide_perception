@@ -5,14 +5,6 @@ from launch.substitutions import LaunchConfiguration as LC
 import os
 from ament_index_python.packages import get_package_share_directory
 
-cfg_36h11 = {
-    "image_transport": "raw",
-    "family": "36h11",
-    "size": 0.508,
-    "max_hamming": 0,
-    "z_up": True
-}
-
 def generate_launch_description():
     ld = LaunchDescription()
 
