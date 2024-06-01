@@ -1,6 +1,6 @@
 /**/yolo_orientation:
   ros__parameters:
-    yolo_model: "binlab.pt"
+    yolo_model: "COCO_95_03.pt"
     class_id_map: "{
       0: 'buoy', 
       1: 'buoy_glyph_1', 
@@ -12,5 +12,5 @@
       7: 'torpedo_hole', 
       8: 'bin'
     }"
-    threshold: 0.9
+    threshold: 0.8
     iou: 0.9

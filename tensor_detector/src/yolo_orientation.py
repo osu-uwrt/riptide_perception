@@ -50,14 +50,16 @@ class YOLONode(Node):
 		##########################
 		# USER DEFINED PARAMS    #
 		##########################
-		self.use_incoming_timestamp = False
+		self.log_processing_time = True
+		self.use_incoming_timestamp = True
 		self.export = True # Whether or not to export .pt file to engine
+		self.print_camera_info = False # Print the camera info recieved
 		self.frame_id = 'talos/zed_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
 		self.history_size = 10 # Window size for rolling average smoothing
-		
+		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
 		self.class_id_map = {
 					0: 'buoy', 
 					1: 'buoy_glyph_1', 
@@ -74,7 +76,6 @@ class YOLONode(Node):
             91: "torpedo_open_hole",
             92: "torpedo_closed_hole"
         })  # Internal mappings
-
 		self.color_map = { # Color map for classes published to markers
 			'buoy': (1.0, 0.0, 0.0),  
 			'buoy_glyph_1': (0.0, 1.0, 0.0),  
@@ -87,8 +88,6 @@ class YOLONode(Node):
 			'bin': (0.0, 0.5, 0.5),
 		}
 
-		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
-		self.print_camera_info = False # Print the camera info recieved
 
 		# Creating subscriptions
 		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
@@ -129,6 +128,7 @@ class YOLONode(Node):
 		self.latest_bbox_class_7 = None
 		self.latest_bbox_class_8 = None
 		self.detection_timestamp = None
+		self.detection_time = None
 
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
@@ -179,10 +179,14 @@ class YOLONode(Node):
 		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
 
 	def image_callback(self, msg: Image):
+
+		if self.log_processing_time:
+			self.detection_time = time.time()
+
 		if self.depth_image is None or not self.camera_info_gathered:
 			self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
 			return
-
+		
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
@@ -231,6 +235,10 @@ class YOLONode(Node):
 		# 	detections.detections.append(self.spoof_torpedo())
 		self.torpedo_seen = False
 		self.cleanup_old_holes(age_threshold=2.0)
+		if self.log_processing_time:
+			self.detection_time = time.time() - self.detection_time
+			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
+			self.get_logger().info(f"FPS: {1/self.detection_time}")
 		self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
 
@@ -582,7 +590,10 @@ class YOLONode(Node):
 		# Create a plane marker
 		plane_marker = Marker()
 		plane_marker.header.frame_id = self.frame_id
-		plane_marker.header.stamp = self.detection_timestamp
+		if self.use_incoming_timestamp:
+			plane_marker.header.stamp = self.detection_timestamp
+		else:
+			plane_marker.header.stamp = self.get_clock().now().to_msg()
 		plane_marker.ns = "detection_markers"  # Namespace for all detection markers
 		plane_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
 		plane_marker.type = Marker.CUBE
@@ -620,7 +631,10 @@ class YOLONode(Node):
 		# Create an arrow marker
 		arrow_marker = Marker()
 		arrow_marker.header.frame_id = self.frame_id
-		arrow_marker.header.stamp = self.detection_timestamp
+		if self.use_incoming_timestamp:
+			arrow_marker.header.stamp = self.detection_timestamp
+		else:
+			arrow_marker.header.stamp = self.get_clock().now().to_msg()
 		arrow_marker.ns = "orientation_markers"  # Namespace for all detection markers
 		arrow_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
 		arrow_marker.type = Marker.ARROW
