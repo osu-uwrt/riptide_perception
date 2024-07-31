@@ -2,6 +2,8 @@ from geometry_msgs.msg import PoseWithCovariance, Pose, Vector3, Point
 from transforms3d.euler import quat2euler, euler2quat
 from math import atan2, pi
 
+from scipy.stats import circmean, circvar
+
 import numpy
 import transforms3d as tf3d
 
@@ -36,9 +38,8 @@ class Location:
         self.position["z"][len(self.position["z"]) - 1] = numpy.nan
 
         self.orientation["x"][len(self.orientation["x"]) - 1] = numpy.nan
-        self.orientation["y"][len(self.orientation["x"]) - 1] = numpy.nan
-        self.orientation["z"][len(self.orientation["x"]) - 1] = numpy.nan
-        
+        self.orientation["y"][len(self.orientation["y"]) - 1] = numpy.nan
+        self.orientation["z"][len(self.orientation["z"]) - 1] = numpy.nan
 
         # Variable is used so we can get rid of old poses in a rolling fashion instead of shifting entire array
         self.position_location = 1
@@ -117,11 +118,31 @@ class Location:
                 trimmed[key] = remove_outliers(self.orientation[key], self.quantile)
         else:
             trimmed = self.orientation
+        
+        # # numpy unwrap and scipy circmean not working. this is the chatgpt solution
+        # def angleMean(angles):
+        #     # Convert angles to Cartesian coordinates
+        #     x = numpy.cos(angles)
+        #     y = numpy.sin(angles)
 
+        #     # Compute the average Cartesian coordinates
+        #     avgX = numpy.nanmean(x)
+        #     avgY = numpy.nanmean(y)
+            
+        #     # Compute the mean angle
+        #     mean = numpy.arctan2(avgY, avgX)
+        #     if mean < 0:
+        #         mean += 3.1415 * 2
+
+        #     return mean
+            
         quat = euler2quat(
-            numpy.nanmean(trimmed["x"]),
-            numpy.nanmean(trimmed["y"]),
-            numpy.nanmean(trimmed["z"])
+            # angleMean(trimmed["x"]),
+            # angleMean(trimmed["y"]),
+            # angleMean(trimmed["z"])
+            circmean(trimmed['x'], nan_policy="omit"),
+            circmean(trimmed['y'], nan_policy="omit"),
+            circmean(trimmed['z'], nan_policy="omit")
         )
         
         pose.pose.orientation.w = quat[0]
@@ -130,9 +151,9 @@ class Location:
         pose.pose.orientation.z = quat[3]
         
         if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
-            cov[21] = numpy.nanvar(self.orientation["x"])
-            cov[28] = numpy.nanvar(self.orientation["y"])
-            cov[35] = numpy.nanvar(self.orientation["z"])
+            cov[21] = circvar(self.orientation["x"])
+            cov[28] = circvar(self.orientation["y"])
+            cov[35] = circvar(self.orientation["z"])
         else:
             #publish initial covariances
             cov[21] = 0.2
