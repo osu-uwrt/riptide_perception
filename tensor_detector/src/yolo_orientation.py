@@ -59,7 +59,7 @@ class YOLONode(Node):
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
 		self.history_size = 10 # Window size for rolling average smoothing
-		self.default_normal = np.array([0, 0, 1]) # Default normal for quaternion calculation
+		self.default_normal = np.array([0.0, 0.0, 1.0]) # Default normal for quaternion calculation
 		self.class_id_map = {
 					0: 'buoy', 
 					1: 'mapping_map', 
@@ -404,7 +404,7 @@ class YOLONode(Node):
  
 			# Padding for exclusion zone
 			padding = 10
-			self.get_logger().info(f"holes: {len(self.mapping_holes)}")
+			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 			for hole_bbox in self.mapping_holes:
 				
 				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
@@ -465,8 +465,10 @@ class YOLONode(Node):
 					normal = -normal
  
  
- 
-				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
+				if class_name == "buoy":
+					quat, _ = self.calculate_quaternion_and_euler_angles(self.default_normal)
+				else:
+					quat, _ = self.calculate_quaternion_and_euler_angles(normal)
  
  
  
@@ -666,8 +668,8 @@ class YOLONode(Node):
 	def calculate_quaternion_and_euler_angles(self, normal):
  
 		if np.allclose(normal, self.default_normal):
-			quat = [0, 0, 0, 1]  # No rotation needed
-			euler_angles = normal.as_euler('xyz',degrees=True)
+			quat = [0.0, 0.0, 0.0, 1.0]  # No rotation needed
+			euler_angles = None
 		else:
 			rotation = self.calculate_rotation(normal)
 			quat = rotation.as_quat()
