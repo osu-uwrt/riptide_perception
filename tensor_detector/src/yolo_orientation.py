@@ -50,7 +50,7 @@ class YOLONode(Node):
 		##########################
 		# USER DEFINED PARAMS    #
 		##########################
-		self.log_processing_time = True
+		self.log_processing_time = False
 		self.use_incoming_timestamp = True
 		self.export = True # Whether or not to export .pt file to engine
 		self.print_camera_info = False # Print the camera info recieved
@@ -211,15 +211,17 @@ class YOLONode(Node):
 				class_id = box.cls[0]
 				if class_id in self.class_id_map:
 					conf = box.conf[0]
- 
+					
 					# If its a hole, store it, otherwise make the detection message
 					if class_id == 2:
+						#self.get_logger().info(f"class id: {class_id}")
 						self.mapping_holes.append(box)
+						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 					else:
 						detection = self.create_detection3d_message(box, cv_image, conf)
  
-					if detection:
-						detections.detections.append(detection)
+						if detection:
+							detections.detections.append(detection)
  
 					self.mask.fill(0)
 					for contour in result.masks.xy:
@@ -231,17 +233,23 @@ class YOLONode(Node):
  
 		# Create detection3d for the holes if there are 4
 		if len(self.mapping_holes) == 4:
+			self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 			self.find_smallest_and_largest_holes()
  
 			# Publish smallest
 			class_id = self.smallest_hole.cls[0]
 			conf = self.smallest_hole.conf[0]
 			detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
+   
+			if detection:
+				detections.detections.append(detection)
  
 			# Publish largest
 			class_id = self.largest_hole.cls[0]
 			conf = self.largest_hole.conf[0]
 			detection = self.create_detection3d_message(self.largest_hole, cv_image, conf, "largest")
+			if detection:
+				detections.detections.append(detection)
  
  
 		if self.temp_markers:
@@ -319,12 +327,12 @@ class YOLONode(Node):
 		elif class_name == "mapping_hole":
 			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
 				hole_quat = self.mapping_map_quat
-				hole_centroid = self.open_torpedo_quat
+				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
 				if hole_scale == "smallest":
-					class_name = "mapping_smallest_hole"
+					class_name = "torpedo_small_hole"
 				elif hole_scale == "largest":
-					class_name = "mapping_largest_hole"
-				else: 
+					class_name = "torpedo_large_hole"
+				else:
 					return None
  
 				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
@@ -390,16 +398,18 @@ class YOLONode(Node):
 		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
  
 		if class_name == "mapping_map":
+			
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
  
 			# Padding for exclusion zone
 			padding = 10
- 
+			self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 			for hole_bbox in self.mapping_holes:
+				
 				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
 				# You might need to adjust the coordinates based on the ROI's position
-				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+				hole_x_min, hole_y_min, hole_x_max, hole_y_max = map(int, hole_bbox.xyxy[0])
 				adjusted_hole_x_min = max(hole_x_min - x_min - padding, 0)
 				adjusted_hole_y_min = max(hole_y_min - y_min - padding, 0)
 				adjusted_hole_x_max = min(hole_x_max - x_min + padding, mask_roi.shape[1])
@@ -469,6 +479,7 @@ class YOLONode(Node):
 				elif class_name == "mapping_map":
 					self.mapping_map_centroid = centroid
 					self.mapping_map_quat = quat
+					class_name = "torpedo"
  
  
 				# When calling publish_marker, pass these dimensions along with other required information
