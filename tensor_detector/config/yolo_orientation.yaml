@@ -6,7 +6,7 @@
       1: 'mapping_map', 
       2: 'mapping_hole', 
       3: 'gate_hot', 
-      4: 'gate_cold'
+      4: 'bin_temperature'
     }"
     threshold: 0.8
     iou: 0.9
