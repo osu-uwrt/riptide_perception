@@ -1,45 +1,45 @@
-from geometry_msgs.msg import PoseWithCovariance, Pose
+from geometry_msgs.msg import PoseWithCovariance, Pose, Vector3, Point
 from transforms3d.euler import quat2euler, euler2quat
 from math import atan2, pi
+
+from scipy.stats import circmean, circvar
 
 import numpy
 import transforms3d as tf3d
 
 class Location:
     
-    def __init__(self, inital_pose: Pose, buffer_size: int, quantile: 'tuple[float, float]'):
+    def __init__(self, inital_pose_xyz: Point, initial_pose_rpy: Vector3, buffer_size: int, quantile: 'tuple[float, float]'):
         # If the buffer or inital pose are changed externally the Location class must be reset using the reset
         # method for the changes to take effect
-        self.inital_pose = inital_pose
+        self.initial_pose_xyz = inital_pose_xyz
+        self.initial_pose_rpy = initial_pose_rpy
         self.buffer_size = buffer_size
         self.quantile = quantile
 
         self.reset()
 
     def reset(self):
-        self.publish_actual_position_covs = False
-        self.publish_actual_orientation_covs = False
-        
         self.position = {
-            "x": numpy.full(self.buffer_size, None, numpy.float64),
-            "y": numpy.full(self.buffer_size, None, numpy.float64),
-            "z": numpy.full(self.buffer_size, None, numpy.float64)
+            "x": numpy.full(self.buffer_size, self.initial_pose_xyz.x, numpy.float64),
+            "y": numpy.full(self.buffer_size, self.initial_pose_xyz.y, numpy.float64),
+            "z": numpy.full(self.buffer_size, self.initial_pose_xyz.z, numpy.float64)
         }
 
         self.orientation = {
-            "x": numpy.full(self.buffer_size, None, numpy.float64),
-            "y": numpy.full(self.buffer_size, None, numpy.float64),
-            "z": numpy.full(self.buffer_size, None, numpy.float64)
+            "x": numpy.full(self.buffer_size, self.initial_pose_rpy.x * pi / 180.0, numpy.float64),
+            "y": numpy.full(self.buffer_size, self.initial_pose_rpy.y * pi / 180.0, numpy.float64),
+            "z": numpy.full(self.buffer_size, self.initial_pose_rpy.z * pi / 180.0, numpy.float64)
         }
-
-        self.position["x"][0] = self.inital_pose.position.x
-        self.position["y"][0] = self.inital_pose.position.y
-        self.position["z"][0] = self.inital_pose.position.z
-
-        self.orientation["x"][0] = self.inital_pose.orientation.x * pi / 180.0
-        self.orientation["y"][0] = self.inital_pose.orientation.y * pi / 180.0
-        self.orientation["z"][0] = self.inital_pose.orientation.z * pi / 180.0
         
+        # mark all buffers as not warmed up yet by making the last element nan
+        self.position["x"][len(self.position["x"]) - 1] = numpy.nan
+        self.position["y"][len(self.position["y"]) - 1] = numpy.nan
+        self.position["z"][len(self.position["z"]) - 1] = numpy.nan
+
+        self.orientation["x"][len(self.orientation["x"]) - 1] = numpy.nan
+        self.orientation["y"][len(self.orientation["y"]) - 1] = numpy.nan
+        self.orientation["z"][len(self.orientation["z"]) - 1] = numpy.nan
 
         # Variable is used so we can get rid of old poses in a rolling fashion instead of shifting entire array
         self.position_location = 1
@@ -71,7 +71,7 @@ class Location:
             yaw = atan2(projected_unit[1], projected_unit[0])
 
             self.orientation["x"][self.orientation_location] = 0 # maybe someday roll and pitch will be nonzero. When that happens, do a projection with euler_angle[0]
-            self.orientation["y"][self.orientation_location] = 0 # maybe someday... see above comment and do it with euler_angle[1]
+            self.orientation["y"][self.orientation_location] = 0 # maybe someday...
             self.orientation["z"][self.orientation_location] = yaw
 
             self.orientation_location += 1
@@ -84,9 +84,11 @@ class Location:
         pose = PoseWithCovariance()
 
         trimmed = {}
+        
+        buffer_warm = not numpy.isnan(self.position["x"][self.buffer_size-1])
 
         # Remove the outliers if we have like 10 samples
-        if not numpy.isnan(self.position["x"][self.buffer_size-1]):
+        if buffer_warm:
             for key in self.position.keys():
                 trimmed[key] = remove_outliers(self.position[key], self.quantile)
         else:
@@ -99,8 +101,8 @@ class Location:
 
         # Set covariance to list for now so we can add incrementally
         cov: 'list[float]' = [0.0] * 36
-
-        if not numpy.isnan(self.position["x"][self.buffer_size-1]):
+                
+        if buffer_warm:
             cov[0] = numpy.nanvar(self.position["x"])
             cov[7] = numpy.nanvar(self.position["y"])
             cov[14] = numpy.nanvar(self.position["z"])
@@ -111,16 +113,36 @@ class Location:
             cov[14] = 1.0
 
         # Do the same steps for rotational things
-        if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
+        if buffer_warm:
             for key in self.orientation.keys():
                 trimmed[key] = remove_outliers(self.orientation[key], self.quantile)
         else:
             trimmed = self.orientation
+        
+        # # numpy unwrap and scipy circmean not working. this is the chatgpt solution
+        # def angleMean(angles):
+        #     # Convert angles to Cartesian coordinates
+        #     x = numpy.cos(angles)
+        #     y = numpy.sin(angles)
 
+        #     # Compute the average Cartesian coordinates
+        #     avgX = numpy.nanmean(x)
+        #     avgY = numpy.nanmean(y)
+            
+        #     # Compute the mean angle
+        #     mean = numpy.arctan2(avgY, avgX)
+        #     if mean < 0:
+        #         mean += 3.1415 * 2
+
+        #     return mean
+            
         quat = euler2quat(
-            numpy.nanmean(trimmed["x"]),
-            numpy.nanmean(trimmed["y"]),
-            numpy.nanmean(trimmed["z"])
+            # angleMean(trimmed["x"]),
+            # angleMean(trimmed["y"]),
+            # angleMean(trimmed["z"])
+            circmean(trimmed['x'], nan_policy="omit"),
+            circmean(trimmed['y'], nan_policy="omit"),
+            circmean(trimmed['z'], nan_policy="omit")
         )
         
         pose.pose.orientation.w = quat[0]
@@ -129,9 +151,9 @@ class Location:
         pose.pose.orientation.z = quat[3]
         
         if not numpy.isnan(self.orientation["x"][self.buffer_size-1]):
-            cov[21] = numpy.nanvar(self.orientation["x"])
-            cov[28] = numpy.nanvar(self.orientation["y"])
-            cov[35] = numpy.nanvar(self.orientation["z"])
+            cov[21] = circvar(self.orientation["x"])
+            cov[28] = circvar(self.orientation["y"])
+            cov[35] = circvar(self.orientation["z"])
         else:
             #publish initial covariances
             cov[21] = 0.2
@@ -142,8 +164,6 @@ class Location:
 
         return pose
         
-        
-    # arr[numpy.where((arr >= numpy.quantile(arr, 0.1)) & (arr <= numpy.quantile(arr, 0.99)))]
 
 # Remove any outliers using quantiles
 def remove_outliers(arr: numpy.ndarray, quantile: 'tuple[float, float]') -> numpy.ndarray:

@@ -26,14 +26,14 @@ CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707)
 
 objects = [
     "gate",
+    "gate_hot",
+    "gate_cold",
     "buoy",
-    "earth_glyph",
-    "buoy_glyph_1",
-    "buoy_glyph_2",
     "torpedo",
-    "torpedo_upper_hole",
-    "torpedo_lower_hole",
-    "bin"
+    "torpedo_large_hole",
+    "torpedo_small_hole",
+    "bin",
+    "table"
 ]
 
 config = {}
@@ -112,10 +112,10 @@ class DummyDetectionNode(Node):
             return False
         
         #distance to object
-        objectDist = objectPoseCameraFrame.position.x ** 2 + \
+        objectDist = sqrt(objectPoseCameraFrame.position.x ** 2 + \
                     objectPoseCameraFrame.position.y ** 2 + \
-                    objectPoseCameraFrame.position.z ** 2
-                
+                    objectPoseCameraFrame.position.z ** 2)
+                        
         #object position relative to camera. Measured in angles to make it easier to eval fov
         objectHAng = abs(atan(objectPoseCameraFrame.position.y / 
                             objectPoseCameraFrame.position.x) * 180 / pi)
@@ -147,7 +147,7 @@ class DummyDetectionNode(Node):
         maxDist = config[f"detection_data.{objectName}.max_dist"]
         minDist = config[f"detection_data.{objectName}.min_dist"]
         downward = config[f"detection_data.{objectName}.downward"]
-        
+                
         objectQuatArr = euler2quat(
             objectPose[3],
             objectPose[4],
