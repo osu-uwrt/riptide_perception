@@ -54,16 +54,13 @@ class MappingNode(Node):
 
         self.objects = {
             "gate": dict(),
-            "earth_glyph": dict(),
+            "gate_hot": dict(),
+            "gate_cold": dict(),
             "buoy": dict(),
-            "buoy_glyph_1": dict(),
-            "buoy_glyph_2": dict(),
-            "buoy_glyph_3": dict(),
-            "buoy_glyph_4": dict(),
-            "torpedo_open": dict(),
-            "torpedo_open_hole": dict(),
-            "torpedo_closed": dict(),
-            "torpedo_closed_hole": dict(),
+            "torpedo": dict(),
+            "torpedo_large_hole": dict(),
+            "torpedo_small_hole": dict(),
+            "bin": dict(),
             "table": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict()

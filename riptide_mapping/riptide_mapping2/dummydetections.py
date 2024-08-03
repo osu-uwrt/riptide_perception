@@ -26,15 +26,14 @@ CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707)
 
 objects = [
     "gate",
+    "gate_hot",
+    "gate_cold",
     "buoy",
-    "earth_glyph",
-    "buoy_glyph_1",
-    "buoy_glyph_2",
-    "torpedo_open",
-    "torpedo_open_hole",
-    "torpedo_closed",
-    "torpedo_closed_hole",
-    "bin"
+    "torpedo",
+    "torpedo_large_hole",
+    "torpedo_small_hole",
+    "bin",
+    "table"
 ]
 
 config = {}
