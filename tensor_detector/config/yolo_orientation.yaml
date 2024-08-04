@@ -1,6 +1,6 @@
 /**/yolo_orientation:
   ros__parameters:
-    yolo_model: "robosub_2024_1.pt"
+    yolo_model: "robosub_2024_5.pt"
     class_id_map: "{
       0: 'buoy', 
       1: 'mapping_map', 

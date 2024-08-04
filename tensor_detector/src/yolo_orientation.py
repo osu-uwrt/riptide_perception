@@ -215,6 +215,11 @@ class YOLONode(Node):
 					# If its a hole, store it, otherwise make the detection message
 					if class_id == 2:
 						#self.get_logger().info(f"class id: {class_id}")
+						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+						if self.use_incoming_timestamp:
+							self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+						else:
+							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 						self.mapping_holes.append(box)
 						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 					else:
@@ -233,7 +238,7 @@ class YOLONode(Node):
  
 		# Create detection3d for the holes if there are 4
 		if len(self.mapping_holes) == 4:
-			self.get_logger().info(f"holes: {len(self.mapping_holes)}")
+			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 			self.find_smallest_and_largest_holes()
  
 			# Publish smallest
@@ -328,12 +333,17 @@ class YOLONode(Node):
 			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
 				hole_quat = self.mapping_map_quat
 				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
+
+				
+
 				if hole_scale == "smallest":
 					class_name = "torpedo_small_hole"
 				elif hole_scale == "largest":
 					class_name = "torpedo_large_hole"
 				else:
 					return None
+				
+				
  
 				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
  
@@ -398,29 +408,32 @@ class YOLONode(Node):
 		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
  
 		if class_name == "mapping_map":
-			
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
- 
-			# Padding for exclusion zone
-			padding = 10
-			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-			for hole_bbox in self.mapping_holes:
-				
-				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
-				# You might need to adjust the coordinates based on the ROI's position
-				hole_x_min, hole_y_min, hole_x_max, hole_y_max = map(int, hole_bbox.xyxy[0])
-				adjusted_hole_x_min = max(hole_x_min - x_min - padding, 0)
-				adjusted_hole_y_min = max(hole_y_min - y_min - padding, 0)
-				adjusted_hole_x_max = min(hole_x_max - x_min + padding, mask_roi.shape[1])
-				adjusted_hole_y_max = min(hole_y_max - y_min + padding, mask_roi.shape[0])
- 
+
+			# Dynamic padding calculation based on bounding box size
+			padding_x = int((x_max - x_min) * 0.1)  # 10% of the bounding box width
+			padding_y = int((y_max - y_min) * 0.1)  # 10% of the bounding box height
+			#self.get_logger().info(f"holes for exclusion count: {len(self.holes)}")
+
+			for hole_bbox, _ in self.holes:
+				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+				adjusted_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
+				adjusted_hole_y_min = max(hole_y_min - y_min - padding_y, 0)
+				adjusted_hole_x_max = min(hole_x_max - x_min + padding_x, mask_roi.shape[1])
+				adjusted_hole_y_max = min(hole_y_max - y_min + padding_y, mask_roi.shape[0])
+
 				# Set the hole region in mask_roi to 0 to exclude it from feature detection
 				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
- 
+
+			# Apply morphological operations to refine the exclusion zones
+			kernel = np.ones((5, 5), np.uint8)
+			mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
+			mask_roi = cv2.erode(mask_roi, kernel, iterations=1)
+
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
- 
+
 		elif class_name in ["torpedo_open", "torpedo_closed"]:
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
