@@ -27,5 +27,13 @@ def generate_launch_description():
         output='screen',
         parameters=[params_path]
     ))
+    
+    ld.add_action(Node(
+        package='tensor_detector',
+        executable='dfc_converter.py',
+        name='dfc_converter',
+        output='screen',
+        parameters=[params_path]
+    ))
 
     return ld
