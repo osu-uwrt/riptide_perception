@@ -57,10 +57,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 2.0
-          y: -4.0
-          z: -1.5
-          yaw: 90.0
+          x: -2.0
+          y: 0.0
+          z: -1.0
+          yaw: 0.0
       torpedo_large_hole:
         parent: torpedo_frame
         covar:  
@@ -72,7 +72,7 @@
           x: 0.0
           y: 0.25
           z: 0.25
-          yaw: 90.0
+          yaw: 0.0
       torpedo_small_hole:
         parent: torpedo_frame
         covar:  
@@ -84,7 +84,7 @@
           x: 0.0
           y: -0.25
           z: -0.25
-          yaw: 90.0
+          yaw: 0.0
       bin:
         parent: map
         covar:  
