@@ -20,20 +20,19 @@ def generate_launch_description():
         description="name of the robot"
     ))
 
-    ld.add_action(Node(
-        package='tensor_detector',
-        executable='yolo_orientation.py',
-        name='yolo_orientation',
-        output='screen',
-        parameters=[params_path]
-    ))
+    # ld.add_action(Node(
+    #     package='tensor_detector',
+    #     executable='yolo_orientation.py',
+    #     name='yolo_orientation',
+    #     output='screen',
+    #     parameters=[params_path]
+    # ))
     
     ld.add_action(Node(
         package='tensor_detector',
         executable='dfc_converter.py',
         name='dfc_converter',
-        output='screen',
-        parameters=[params_path]
+        output='screen'
     ))
 
     return ld

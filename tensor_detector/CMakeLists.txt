@@ -42,6 +42,10 @@ install(PROGRAMS
   src/yolo_orientation.py 
   DESTINATION lib/${PROJECT_NAME}  
 )
+install(PROGRAMS
+  src/dfc_converter.py 
+  DESTINATION lib/${PROJECT_NAME}  
+)
 
 #install launch
 install(
