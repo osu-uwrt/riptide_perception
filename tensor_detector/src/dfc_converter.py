@@ -9,6 +9,7 @@ from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithP
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from transforms3d.quaternions import quat2mat
 
 import cv2
 import numpy as np
@@ -20,11 +21,11 @@ class DFCConverter(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        self.objects = ["blah", "bin", "worm", "coral"]
+        self.objects = ["blah", "bin_temperature", "worm", "coral"]
         
         self.objectIds = [10, 2, 13, 14]
         
-        self.objectDepths = [-10, -10, -10, -10]
+        self.objectDepths = [-10, -2, -10, -10]
         
         self.dfc_subscription = self.create_subscription(Detection3DArray, 'dfc_objects', self.dfc_callback, 1)
         
@@ -55,7 +56,7 @@ class DFCConverter(Node):
                     try:
                         tf = self.tf_buffer.lookup_transform(usedFrameId, "world", msg.header.stamp)
                         transformedRay = (result.detection.pose.pose.x, result.detection.pose.pose.y, result.detection.pose.pose.z)
-                        transformedRay = tf.transform.rotation * transformedRay
+                        transformedRay = quat2mat(tf.transform.rotation) * transformedRay
                         
                         loc = self.line_plane_intersection(transformedRay, (tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z), self.objectDepths[self.objectIds.index(resultClassId)])
                         
