@@ -45,13 +45,13 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: 7.0
-          y: -4.0
-          z: -1.5
-          yaw: 90.0
+          x: -2.0
+          y: -0.0
+          z: -1.0
+          yaw: 0.0
       torpedo:
         parent: map
-        covar:  
+        covar:
           x: 0.5
           y: 0.5
           z: 0.5
@@ -63,7 +63,7 @@
           yaw: 0.0
       torpedo_large_hole:
         parent: torpedo_frame
-        covar:  
+        covar:
           x: 0.5
           y: 0.5
           z: 0.5
@@ -75,7 +75,7 @@
           yaw: 0.0
       torpedo_small_hole:
         parent: torpedo_frame
-        covar:  
+        covar:
           x: 0.001
           y: 0.001
           z: 0.001
@@ -87,7 +87,7 @@
           yaw: 0.0
       bin:
         parent: map
-        covar:  
+        covar:
           x: 0.001
           y: 0.001
           z: 0.001
@@ -99,7 +99,7 @@
           yaw: 0.0
       table:
         parent: map
-        covar:  
+        covar:
           x: 0.001
           y: 0.001
           z: 0.001
@@ -111,7 +111,7 @@
           yaw: 0.0
       prequal_gate:
         parent: map
-        covar:  
+        covar:
           x: 0.001
           y: 0.001
           z: 0.001
@@ -123,7 +123,7 @@
           yaw: 180.0
       prequal_pole:
         parent: map
-        covar:  
+        covar:
           x: 0.001
           y: 0.001
           z: 0.001
@@ -135,14 +135,14 @@
           yaw: 180.0
     # Covariance filter parameters
     cov_limit: 0.01 # Minimum value for the covariance matrix elements
-    k_value: 0.1   # Covariance step size (< 1.0) applied per detection
+    k_value: 0.1 # Covariance step size (< 1.0) applied per detection
     detection_cov_factor: 7.0
 
     # relative position filter parameters
     angle_cutoff: 15.0
     distance_limit: 10.0
     confidence_cutoff: 0.7
-    
+
     # Size of buffer for location tracking
     buffer_size: 100
     quantile: [0.01, 0.99]

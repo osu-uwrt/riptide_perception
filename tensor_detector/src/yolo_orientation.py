@@ -437,6 +437,8 @@ class YOLONode(Node):
 		elif class_name == "buoy":
 			# Sample the depth value at the center of the bounding box
 			depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
+			if np.isnan(depth_value):
+				return None
 			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
 			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
 			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
