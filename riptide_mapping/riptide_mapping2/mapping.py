@@ -322,19 +322,30 @@ class MappingNode(Node):
 
             # If an object has the parent of anything other than map just apply the transform regularly
             # This will eventually be changed when chameleon_tf is absorbed by mapping and the offset tf frame is removed
+
+            frame_valid = True; #if the mapping frame is valid / nans have occured
+
             if parent == "map":
                 transform.header.frame_id = "offset"
                 
                 # assign initial position because that offset is taken care of by map offset as long as this object is the 
                 # target object. DONT assign orientation because map offset doesn't cover that
                 init_pose: Pose = self.objects[object]["init_pose"]
+
+                #check init pose for nans
+                if not (math.isfinite(init_pose.position.x) or math.isfinite(init_pose.position.y) or math.isfinite(init_pose.position.z)):
+                    frame_valid = False;
+
                 transform.transform.translation.x = init_pose.position.x # need to assign individual components because a vector3 is not a point
                 transform.transform.translation.y = init_pose.position.y
                 transform.transform.translation.z = init_pose.position.z
             else:
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
 
-            transforms.append(transform)
+            if(frame_valid):
+                transforms.append(transform)
+            else:
+                self.get_logger().error("Recieving NAN in position vector from objects:init_pose")
         
         self.tf_brod.sendTransform(transforms)
         
