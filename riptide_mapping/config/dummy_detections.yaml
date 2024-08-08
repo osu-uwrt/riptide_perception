@@ -3,71 +3,55 @@
     timer_period: 0.05
     detection_data:
       gate:
-        pose: [5.0, 0.0, -1.5, 0.0, 0.0, 3.1415]
-        noise: 0.05
+        pose: [5.0, 0.0, -1.0, 0.0, 0.0, 3.1415]
+        noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
         max_dist: 4.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      earth_glyph:
-        pose: [5.0, 0.5, -1.5, 0.0, 0.0, 3.1415]
-        noise: 0.01
+      gate_hot:
+        pose: [5.0, 0.4, -1.0, 0.0, 0.0, 3.1415]
+        noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
-        min_dist: 0.5
-        max_dist: 2.0
+        min_dist: 0.25
+        max_dist: 3.0
+      gate_cold:
+        pose: [5.0, -0.4, -1.0, 0.0, 0.0, 3.1415]
+        noise: 0.001
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.25
+        max_dist: 3.0
       buoy:
-        pose: [7.0, -4.0, -1.5, 0.0, 0.0, 1.5707]
-        noise: 0.01
+        pose: [7.0, -4.0, -1.5, 0.0, 0.0, 3.1415]
+        noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 5.0
-      buoy_glyph_1:
-        pose: [7.1875, -4.0, -1.6, 0.0, 0.0, 1.5707]
+        max_dist: 4.0
+      torpedo:
+        pose: [2.0, -4.0, -1.5, 0.0, 0.0, 1.5707]
         noise: 0.05
-        score: 0.8
-        downward: false
-        pub_invalid_orientation: false
-        min_dist: 0.5
-        max_dist: 2.0
-      buoy_glyph_2:
-        pose: [6.8, -4.0, -1.4, 0.0, 0.0, 1.5707]
-        noise: 0.05
-        score: 0.8
-        downward: false
-        pub_invalid_orientation: false
-        min_dist: 0.5
-        max_dist: 2.0
-      torpedo_open:
-        pose: [3.0, 3.0, -1.0, 0.0, 0.0, -1.5707]
-        noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 3.5
-      torpedo_open_hole:
-        pose: [3.0, 3.0, -1.0, 0.0, 0.0, -1.5707]
+      torpedo_large_hole:
+        pose: [2.25, -4.0, -0.75, 0.0, 0.0, 1.5707]
         noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      torpedo_closed:
-        pose: [3.0, 3.0, -1.6096, 0.0, 0.0, -1.5707]
-        noise: 0.01
-        score: 0.8
-        downward: false
-        pub_invalid_orientation: false
-        min_dist: 1.0
-        max_dist: 3.5
-      torpedo_closed_hole:
-        pose: [3.0, 3.0, -1.6096, 0.0, 0.0, -1.5707]
+      torpedo_small_hole:
+        pose: [1.75, -4.0, -1.25, 0.0, 0.0, 1.5707]
         noise: 0.01
         score: 0.8
         downward: false
@@ -75,16 +59,24 @@
         min_dist: 0.5
         max_dist: 3.0
       bin:
-        pose: [5.0, 5.0, -1.5, 0.0, 0.0, 0.0]
+        pose: [1.5, 3.5, -1.5, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
+      table:
+        pose: [8.0, -8.0, -1.5, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 1.0
+        max_dist: 4.0
     
     #POOL SIMULATION SETTINGS
-    simulate_pool: true #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
+    simulate_pool: false #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
     
     #the following settings are only used when simulate_pool is TRUE
     forward_camera_frame: <robot>/zed_base_link #if <robot> is present in name, it will be populated with the robot name
