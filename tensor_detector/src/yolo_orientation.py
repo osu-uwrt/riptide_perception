@@ -15,6 +15,7 @@ from ament_index_python.packages import get_package_share_directory
 import time
 import os
 import yaml
+import math
  
 class YOLONode(Node):
 	def __init__(self):
@@ -437,7 +438,10 @@ class YOLONode(Node):
 		elif class_name == "buoy":
 			# Sample the depth value at the center of the bounding box
 			depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-			if np.isnan(depth_value):
+			self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
+			self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
+			self.get_logger().info(f"depth: {depth_value}")
+			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(self.depth_image):
 				return None
 			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
 			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
