@@ -9,8 +9,8 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 5.0
-          y: 0.0
+          x: 6.0
+          y: -1.0
           z: -1.0
           yaw: 180.0
       gate_hot:
@@ -45,10 +45,10 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: -2.0
-          y: -0.0
+          x: 14
+          y: 2.5
           z: -1.0
-          yaw: 0.0
+          yaw: 180
       torpedo:
         parent: map
         covar:
@@ -57,10 +57,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: -2.0
-          y: 0.0
+          x: 19.0
+          y: 2.7
           z: -1.0
-          yaw: 0.0
+          yaw: -145.0
       torpedo_large_hole:
         parent: torpedo_frame
         covar:
@@ -93,8 +93,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.5
-          y: 3.5
+          x: 20
+          y: -4.17
           z: -1.5
           yaw: 0.0
       table:
@@ -105,8 +105,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 8.0
-          y: -8.0
+          x: 24.0
+          y: 1.85
           z: -1.5
           yaw: 0.0
       prequal_gate:
