@@ -281,7 +281,7 @@ class YOLONode(Node):
 			self.detection_time = time.time() - self.detection_time
 			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
 			self.get_logger().info(f"FPS: {1/self.detection_time}")
-		self.get_logger().info(f"detections: {detections}")
+		# self.get_logger().info(f"detections: {detections}")
 		self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
  
@@ -335,9 +335,19 @@ class YOLONode(Node):
 		bbox_center_y = (y_min + y_max) / 2
  
 		class_name = self.class_id_map.get(class_id, "Unknown")
-		self.get_logger().info(f"class name: {class_name}")
+		#self.get_logger().info(f"class name: {class_name}")
 		if class_name == "mapping_map":
+			
+			map_width = x_max - x_min
+			map_height = y_max - y_min
+			map_area = max(map_width,map_height)
+			self.get_logger().info(f"map max: {map_area}")
+			if map_area < 130:
+				return None
+			self.get_logger().info(f"publishing map")
 			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
+			
+
 		elif class_name == "mapping_hole":
 			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
 				hole_quat = self.mapping_map_quat
@@ -447,9 +457,9 @@ class YOLONode(Node):
 		elif class_name == "buoy":
 			# Sample the depth value at the center of the bounding box
 			depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-			self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
-			self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
-			self.get_logger().info(f"depth: {depth_value}")
+			# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
+			# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
+			# self.get_logger().info(f"depth: {depth_value}")
 			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
 				self.get_logger().info("rejecting buoy")
 				return None
