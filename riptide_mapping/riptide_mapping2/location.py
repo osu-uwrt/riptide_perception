@@ -17,11 +17,6 @@ class Location:
         self.buffer_size = buffer_size
         self.quantile = quantile
         
-        self.buffer_warm = False
-
-        self.reset()
-
-    def reset(self):
         self.position = {
             "x": numpy.full(self.buffer_size, self.initial_pose_xyz.x, numpy.float64),
             "y": numpy.full(self.buffer_size, self.initial_pose_xyz.y, numpy.float64),
@@ -33,6 +28,23 @@ class Location:
             "y": numpy.full(self.buffer_size, self.initial_pose_rpy.y * pi / 180.0, numpy.float64),
             "z": numpy.full(self.buffer_size, self.initial_pose_rpy.z * pi / 180.0, numpy.float64)
         }
+        
+        self.buffer_warm = False
+
+        self.reset()
+
+    def reset(self):
+        # self.position = {
+        #     "x": numpy.full(self.buffer_size, self.initial_pose_xyz.x, numpy.float64),
+        #     "y": numpy.full(self.buffer_size, self.initial_pose_xyz.y, numpy.float64),
+        #     "z": numpy.full(self.buffer_size, self.initial_pose_xyz.z, numpy.float64)
+        # }
+
+        # self.orientation = {
+        #     "x": numpy.full(self.buffer_size, self.initial_pose_rpy.x * pi / 180.0, numpy.float64),
+        #     "y": numpy.full(self.buffer_size, self.initial_pose_rpy.y * pi / 180.0, numpy.float64),
+        #     "z": numpy.full(self.buffer_size, self.initial_pose_rpy.z * pi / 180.0, numpy.float64)
+        # }
         
         # mark all buffers as not warmed up yet by making the last element nan
         self.position["x"][len(self.position["x"]) - 1] = numpy.nan

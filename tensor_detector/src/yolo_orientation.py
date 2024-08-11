@@ -289,7 +289,7 @@ class YOLONode(Node):
 		x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
 		hole_width = x_max - x_min
 		hole_height = y_max - y_min
-		hole_size = max(hole_width, hole_height)
+		hole_size = hole_height*hole_width
 		return hole_size
  
 	def find_smallest_and_largest_holes(self):
