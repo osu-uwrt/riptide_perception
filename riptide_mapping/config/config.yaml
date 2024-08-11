@@ -9,33 +9,33 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 6.0
-          y: -1.0
-          z: -1.0
+          x: 5.5
+          y: 0.0
+          z: -0.25
           yaw: 180.0
       gate_hot:
-        parent: gate_frame
+        parent: map
         covar:
-          x: 0.5
-          y: 0.5
-          z: 0.5
-          yaw: 0.0
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 50.0
         pose:
-          x: 0.0
-          y: -0.4
-          z: 0.0
-          yaw: 0.0
+          x: 5.5
+          y: 0.0
+          z: -0.25
+          yaw: 180.0
       gate_cold:
-        parent: gate_frame
+        parent: map
         covar:
-          x: 0.5
-          y: 0.5
-          z: 0.5
-          yaw: 70.0
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 50.0
         pose:
-          x: 0.0
-          y: 0.4
-          z: 0.0
+          x: -2.0
+          y: 0.0
+          z: -0.25
           yaw: 0.0
       buoy:
         parent: map
@@ -45,10 +45,10 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: 14
-          y: 2.5
+          x: -2.0
+          y: 0.0
           z: -1.0
-          yaw: 180
+          yaw: 0.0
       torpedo:
         parent: map
         covar:
@@ -57,33 +57,33 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 19.0
-          y: 2.7
-          z: -1.0
-          yaw: -145.0
+          x: 1.0
+          y: 0.0
+          z: -1.5
+          yaw: 180.0
       torpedo_large_hole:
-        parent: torpedo_frame
+        parent: map
         covar:
           x: 0.5
           y: 0.5
           z: 0.5
           yaw: 0.5
         pose:
-          x: 0.0
-          y: 0.25
-          z: 0.25
+          x: 1.0
+          y: 0.0
+          z: -1.5
           yaw: 0.0
       torpedo_small_hole:
-        parent: torpedo_frame
+        parent: map
         covar:
           x: 0.001
           y: 0.001
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.0
-          y: -0.25
-          z: -0.25
+          x: 1.0
+          y: 0.0
+          z: -1.5
           yaw: 0.0
       bin:
         parent: map
@@ -93,10 +93,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 20
+          x: 15.0
           y: -4.17
-          z: -1.5
-          yaw: 0.0
+          z: -1.75
+          yaw: 135.0
       table:
         parent: map
         covar:
@@ -105,9 +105,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 24.0
-          y: 1.85
-          z: -1.5
+          x: 20.5
+          y: -4.27
+          z: -1.0
           yaw: 0.0
       prequal_gate:
         parent: map

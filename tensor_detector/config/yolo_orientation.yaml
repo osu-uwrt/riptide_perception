@@ -1,6 +1,6 @@
 /**/yolo_orientation:
   ros__parameters:
-    yolo_model: "robosub_2024_8.pt"
+    yolo_model: "robosub_2024_v5.pt"
     class_id_map: "{
       0: 'buoy', 
       1: 'mapping_map', 
@@ -10,5 +10,5 @@
       5: 'bin_temperature',
       6: 'bin'
     }"
-    threshold: 0.8
+    threshold: 0.75
     iou: 0.9

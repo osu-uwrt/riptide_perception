@@ -65,7 +65,10 @@ class YOLONode(Node):
 					0: 'buoy', 
 					1: 'mapping_map', 
 					2: 'mapping_hole', 
-					3: 'gate_hot'
+					3: 'gate_hot',
+					4: 'gate_cold',
+					5: 'bin',
+     				6: 'bin_temperature'
 					}
 		# Update internal class_id_map
 		self.class_id_map.update({
@@ -87,11 +90,11 @@ class YOLONode(Node):
 		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
  
 		# Creating publishers
-		self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
+		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
 		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
-		self.publisher = self.create_publisher(Image, 'yolo', 10)
+		#self.publisher = self.create_publisher(Image, 'yolo', 10)
 		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
-		self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
+		#self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
 		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
  
 		# CV and Yolo init
@@ -165,12 +168,14 @@ class YOLONode(Node):
 			self.distortion_matrix = np.array(msg.d)
  
 			self.camera_info_gathered = True
+		# self.zed_info_subscription.destroy()
  
 	def depth_info_callback(self, msg):
 		if not self.depth_info_gathered:
 			self.depth_intrinsic_matrix = np.array(msg.k).reshape((3, 3))
 			self.depth_distortion_matrix = np.array(msg.d)
 			self.depth_info_gathered = True
+		# self.depth_info_subscription.destroy()
  
 	def depth_callback(self, msg):
 		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
@@ -211,9 +216,10 @@ class YOLONode(Node):
 				if box.conf[0] <= self.conf:
 					continue
 				class_id = box.cls[0]
+				
 				if class_id in self.class_id_map:
 					conf = box.conf[0]
-					
+					#self.get_logger().info(f"class id: {class_id}")
 					# If its a hole, store it, otherwise make the detection message
 					if class_id == 2:
 						#self.get_logger().info(f"class id: {class_id}")
@@ -235,7 +241,7 @@ class YOLONode(Node):
 						contour = np.array(contour, dtype=np.int32)
 						cv2.fillPoly(self.mask, [contour], 255)
 					mask_msg = self.bridge.cv2_to_imgmsg(self.mask,encoding="mono8")
-					self.mask_publisher.publish(mask_msg)
+					#self.mask_publisher.publish(mask_msg)
  
  
 		# Create detection3d for the holes if there are 4
@@ -247,7 +253,7 @@ class YOLONode(Node):
 			class_id = self.smallest_hole.cls[0]
 			conf = self.smallest_hole.conf[0]
 			detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
-   
+
 			if detection:
 				detections.detections.append(detection)
  
@@ -264,9 +270,9 @@ class YOLONode(Node):
 			self.temp_markers = []  # Clear the list for the next frame
  
 		annotated_frame = results[0].plot()
-		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+		#annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 		self.publish_accumulated_point_cloud()
-		self.publisher.publish(annotated_msg)
+		#self.publisher.publish(annotated_msg)
 		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
 		# 	detections.detections.append(self.spoof_torpedo())
 		self.torpedo_seen = False
@@ -275,6 +281,7 @@ class YOLONode(Node):
 			self.detection_time = time.time() - self.detection_time
 			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
 			self.get_logger().info(f"FPS: {1/self.detection_time}")
+		self.get_logger().info(f"detections: {detections}")
 		self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
  
@@ -328,7 +335,7 @@ class YOLONode(Node):
 		bbox_center_y = (y_min + y_max) / 2
  
 		class_name = self.class_id_map.get(class_id, "Unknown")
- 
+		self.get_logger().info(f"class name: {class_name}")
 		if class_name == "mapping_map":
 			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
 		elif class_name == "mapping_hole":
@@ -336,7 +343,9 @@ class YOLONode(Node):
 				hole_quat = self.mapping_map_quat
 				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
 
-				
+				if self.mapping_map_centroid[2] > 5:
+					return None
+					
 
 				if hole_scale == "smallest":
 					class_name = "torpedo_small_hole"
@@ -441,7 +450,8 @@ class YOLONode(Node):
 			self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
 			self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
 			self.get_logger().info(f"depth: {depth_value}")
-			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(self.depth_image):
+			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
+				self.get_logger().info("rejecting buoy")
 				return None
 			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
 			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
