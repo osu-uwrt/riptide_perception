@@ -6,7 +6,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
 from rclpy.time import Time
 
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Int8
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point
 from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
@@ -54,16 +54,13 @@ class MappingNode(Node):
 
         self.objects = {
             "gate": dict(),
-            "earth_glyph": dict(),
+            "gate_hot": dict(),
+            "gate_cold": dict(),
             "buoy": dict(),
-            "buoy_glyph_1": dict(),
-            "buoy_glyph_2": dict(),
-            "buoy_glyph_3": dict(),
-            "buoy_glyph_4": dict(),
-            "torpedo_open": dict(),
-            "torpedo_open_hole": dict(),
-            "torpedo_closed": dict(),
-            "torpedo_closed_hole": dict(),
+            "torpedo": dict(),
+            "torpedo_large_hole": dict(),
+            "torpedo_small_hole": dict(),
+            "bin": dict(),
             "table": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict()
@@ -114,6 +111,7 @@ class MappingNode(Node):
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback)
+        self.led_pulse_pub = self.create_publisher(Int8, "led/pulse", qos_profile_system_default)
         
         self.last_pub_time = Time()
         self.publish_pose()
@@ -159,6 +157,11 @@ class MappingNode(Node):
     def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
         self.target_object = str(request.target_info.target_object)
         self.lock_map = bool(request.target_info.lock_map)
+        
+        if self.target_object in self.objects.keys():
+            self.get_logger().info(f"reset {self.target_object}")
+            self.objects[self.target_object]["location"].reset()
+            self.offset.cool_buffer()
 
         return response
 
@@ -180,6 +183,8 @@ class MappingNode(Node):
                 if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
                     self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
+                
+                self.led_pulse_pub.publish(Int8())
                 
                 update_success, _ = self.try_update_pose(result, detections.header, closest_object)
                 if not update_success:
@@ -309,7 +314,8 @@ class MappingNode(Node):
 
             # If the object is the target object the translational covariance will be in the offset object.
             if object == self.target_object:
-                offset_covar = offset_pose.covariance
+                # offset_covar = offset_pose.covariance
+                offset_covar = self.offset.get_pose().covariance
 
                 pose.pose.covariance[0] = offset_covar[0]
                 pose.pose.covariance[7] = offset_covar[7]
@@ -325,19 +331,30 @@ class MappingNode(Node):
 
             # If an object has the parent of anything other than map just apply the transform regularly
             # This will eventually be changed when chameleon_tf is absorbed by mapping and the offset tf frame is removed
+
+            frame_valid = True; #if the mapping frame is valid / nans have occured
+
             if parent == "map":
                 transform.header.frame_id = "offset"
                 
                 # assign initial position because that offset is taken care of by map offset as long as this object is the 
                 # target object. DONT assign orientation because map offset doesn't cover that
                 init_pose: Pose = self.objects[object]["init_pose"]
+
+                #check init pose for nans
+                if not (math.isfinite(init_pose.position.x) or math.isfinite(init_pose.position.y) or math.isfinite(init_pose.position.z)):
+                    frame_valid = False
+
                 transform.transform.translation.x = init_pose.position.x # need to assign individual components because a vector3 is not a point
                 transform.transform.translation.y = init_pose.position.y
                 transform.transform.translation.z = init_pose.position.z
             else:
                 transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
 
-            transforms.append(transform)
+            if(frame_valid):
+                transforms.append(transform)
+            else:
+                self.get_logger().error("Recieving NAN in position vector from objects:init_pose")
         
         self.tf_brod.sendTransform(transforms)
         
