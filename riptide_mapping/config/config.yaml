@@ -9,10 +9,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 6.22
+          x: -2.0
           y: 0.0
           z: -0.25
-          yaw: -135.0
+          yaw: 0.0
       gate_hot:
         parent: map
         covar:
@@ -21,10 +21,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 6.22
+          x: -2.0
           y: 0.0
           z: -0.25
-          yaw: -135.0
+          yaw: 0.0
       gate_cold:
         parent: map
         covar:
@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 6.22
+          x: -2.0
           y: 0.0
           z: -0.25
-          yaw: -135.0
+          yaw: 0.0
       buoy:
         parent: map
         covar:
@@ -57,10 +57,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 15.97
-          y: 2.38
-          z: -1.5
-          yaw: 170.0
+          x: -2.0
+          y: 0.0
+          z: -1.2
+          yaw: 0.0
       torpedo_large_hole:
         parent: map
         covar:
@@ -69,10 +69,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 15.97
-          y: 2.38
-          z: -1.5
-          yaw: 170.0
+          x: -2.0
+          y: 0.0
+          z: -1.2
+          yaw: 0.0
       torpedo_small_hole:
         parent: map
         covar:
@@ -81,10 +81,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 15.97
-          y: 2.38
-          z: -1.5
-          yaw: 170.0
+          x: -2.0
+          y: 0.0
+          z: -1.2
+          yaw: 0.0
       bin:
         parent: map
         covar:

@@ -79,6 +79,8 @@ class YOLONode(Node):
 			'buoy': (1.0, 0.0, 0.0),  
 			'mapping_map': (0.0, 1.0, 0.0),  
 			'mapping_hole': (0.0, 0.0, 1.0),
+			'mapping_largest_hole': (0.0, 0.0, 1.0),
+			'mapping_smallest_hole': (1.0, 0.0, 0.0),
 			'gate_hot': (1.0, 1.0, 1.0)
 		}
  
@@ -92,7 +94,7 @@ class YOLONode(Node):
 		# Creating publishers
 		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
 		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
-		#self.publisher = self.create_publisher(Image, 'yolo', 10)
+		self.publisher = self.create_publisher(Image, 'yolo', 10)
 		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
 		#self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
 		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
@@ -129,6 +131,9 @@ class YOLONode(Node):
 		self.largest_hole = None
 		self.smallest_hole = None
 		self.latest_buoy = None
+		self.plane_normal = None
+  
+		self.map_min_area = 50 #130 
  
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
@@ -145,7 +150,7 @@ class YOLONode(Node):
 			# Update the model path to use the .engine file
 			# Note: This will create a new .engine file if it didn't exist before
 			self.initialize_yolo(engine_model_path)  # Recursive call with the new .engine path
- 
+		
 	def is_inside_bbox(self, inner_bbox, outer_bbox):
 		inner_x_min, inner_y_min, inner_x_max, inner_y_max = inner_bbox
 		outer_x_min, outer_y_min, outer_x_max, outer_y_max = outer_bbox
@@ -248,31 +253,34 @@ class YOLONode(Node):
 		if len(self.mapping_holes) == 4:
 			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 			self.find_smallest_and_largest_holes()
- 
-			# Publish smallest
-			class_id = self.smallest_hole.cls[0]
-			conf = self.smallest_hole.conf[0]
-			detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
 
-			if detection:
-				detections.detections.append(detection)
- 
-			# Publish largest
-			class_id = self.largest_hole.cls[0]
-			conf = self.largest_hole.conf[0]
-			detection = self.create_detection3d_message(self.largest_hole, cv_image, conf, "largest")
-			if detection:
-				detections.detections.append(detection)
- 
+			if self.smallest_hole is not None:
+				class_id = self.smallest_hole.cls[0]
+				conf = self.smallest_hole.conf[0]
+				detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
+				if detection:
+					detections.detections.append(detection)
+			else:
+				self.get_logger().warning("No smallest hole found.")
+			
+			if self.largest_hole is not None:
+				class_id = self.largest_hole.cls[0]
+				conf = self.largest_hole.conf[0]
+				detection = self.create_detection3d_message(self.largest_hole, cv_image, conf, "largest")
+				if detection:
+					detections.detections.append(detection)
+			else:
+				self.get_logger().warning("No largest hole found.")
+	
  
 		if self.temp_markers:
 			self.publish_markers(self.temp_markers)
 			self.temp_markers = []  # Clear the list for the next frame
  
 		annotated_frame = results[0].plot()
-		#annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 		self.publish_accumulated_point_cloud()
-		#self.publisher.publish(annotated_msg)
+		self.publisher.publish(annotated_msg)
 		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
 		# 	detections.detections.append(self.spoof_torpedo())
 		self.torpedo_seen = False
@@ -292,23 +300,84 @@ class YOLONode(Node):
 		hole_size = hole_height*hole_width
 		return hole_size
  
+	# def find_smallest_and_largest_holes(self):
+	# 	hole_sizes = []
+	# 	for hole in self.mapping_holes:
+	# 		hole_size = self.get_hole_size(hole)
+ 
+	# 		if self.largest_hole is None:
+	# 			self.largest_hole = hole
+	# 		else:
+	# 			largest_hole_size = self.get_hole_size(self.largest_hole)
+	# 			if hole_size > largest_hole_size:
+	# 				self.largest_hole = hole
+ 
+	# 		if self.smallest_hole is None:
+	# 			self.smallest_hole = hole
+	# 		else:
+	# 			smallest_hole_size = self.get_hole_size(self.smallest_hole)
+	# 			if hole_size < smallest_hole_size:
+	# 				self.smallest_hole = hole
+ 
 	def find_smallest_and_largest_holes(self):
+		if self.plane_normal is None or self.mapping_map_centroid is None:
+			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole sizes.")
+			return
+
+		hole_sizes = []
 		for hole in self.mapping_holes:
-			hole_size = self.get_hole_size(hole)
- 
-			if self.largest_hole is None:
-				self.largest_hole = hole
+			x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
+			corners_2d = [
+				(x_min, y_min),
+				(x_max, y_min),
+				(x_max, y_max),
+				(x_min, y_max)
+			]
+			corners_3d = []
+			for (u, v) in corners_2d:
+				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([u, v, 1.0])
+
+				n = self.plane_normal
+				p0 = self.mapping_map_centroid
+
+				numerator = np.dot(n, p0)
+				denominator = np.dot(n, d)
+				if denominator == 0:
+					self.get_logger().warning(f"Denominator zero for point ({u}, {v}). Skipping this corner.")
+					continue
+				t = numerator / denominator
+				if t <= 0:
+					self.get_logger().warning(f"Intersection behind the camera for point ({u}, {v}). Skipping this corner.")
+					continue
+				point_3d = t * d
+				corners_3d.append(point_3d)
+
+			if len(corners_3d) == 4:
+				width_vector = corners_3d[1] - corners_3d[0]
+				height_vector = corners_3d[3] - corners_3d[0]
+				width = np.linalg.norm(width_vector)
+				height = np.linalg.norm(height_vector)
+				hole_size = width * height
+				hole_sizes.append((hole, hole_size))
+				#self.get_logger().info(f"Hole size computed: {hole_size}")
 			else:
-				largest_hole_size = self.get_hole_size(self.largest_hole)
-				if hole_size > largest_hole_size:
-					self.largest_hole = hole
- 
-			if self.smallest_hole is None:
-				self.smallest_hole = hole
-			else:
-				smallest_hole_size = self.get_hole_size(self.smallest_hole)
-				if hole_size < smallest_hole_size:
-					self.smallest_hole = hole
+				self.get_logger().warning(f"Not enough valid corners for hole. Expected 4, got {len(corners_3d)}")
+				continue
+
+		if not hole_sizes:
+			self.get_logger().warning("No valid hole sizes computed.")
+			return
+
+		# Sort holes based on hole_size
+		hole_sizes.sort(key=lambda x: x[1])
+
+		self.smallest_hole = hole_sizes[0][0]
+		self.largest_hole = hole_sizes[-1][0]
+
+		#self.get_logger().info(f"Smallest hole size: {hole_sizes[0][1]}")
+		#self.get_logger().info(f"Largest hole size: {hole_sizes[-1][1]}")
+
+
  
 	def cleanup_old_holes(self, age_threshold=2.0):
 		# Get the current time as a builtin_interfaces.msg.Time object
@@ -341,21 +410,43 @@ class YOLONode(Node):
 			map_width = x_max - x_min
 			map_height = y_max - y_min
 			map_area = max(map_width,map_height)
-			self.get_logger().info(f"map max: {map_area}")
-			if map_area < 130:
+			#self.get_logger().info(f"map max: {map_area}")
+			if map_area < self.map_min_area:
+				self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
 				return None
-			self.get_logger().info(f"publishing map")
+			self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
+			#self.get_logger().info(f"publishing map")
 			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
 			
 
 		elif class_name == "mapping_hole":
 			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
-				hole_quat = self.mapping_map_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
+				#hole_quat = self.mapping_map_quat
+				#hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
 
-				if self.mapping_map_centroid[2] > 5:
+				# if self.mapping_map_centroid[2] > 5:
+				# 	return None
+				if self.plane_normal is None:
 					return None
-					
+				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
+				d = d / np.linalg.norm(d)
+				
+				# Plane normal and point
+				n = self.plane_normal  # From SVD
+				p0 = self.mapping_map_centroid  # Centroid of the plane
+
+				# Compute t
+				numerator = np.dot(n, p0)
+				denominator = np.dot(n, d)
+				if denominator == 0:
+					return None  # Avoid division by zero
+
+				t = numerator / denominator
+				hole_position = t * d
+
+				# Update centroid and orientation
+				hole_centroid = hole_position
+				hole_quat = self.mapping_map_quat
 
 				if hole_scale == "smallest":
 					class_name = "torpedo_small_hole"
@@ -524,7 +615,7 @@ class YOLONode(Node):
 				
 
  
-
+				self.plane_normal = normal
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
  
  
