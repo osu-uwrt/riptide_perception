@@ -1,3 +1,6 @@
 [submodule "tensor_detector/yolov5-tensorrt"]
 	path = tensor_detector/yolov5-tensorrt
 	url = https://github.com/noahmr/yolov5-tensorrt.git
+[submodule "yolov8_detector/YoloV8Seg-TensorRT"]
+	path = yolov8_detector/YoloV8Seg-TensorRT
+	url = https://github.com/markcfong561/YoloV8Seg-TensorRT.git
