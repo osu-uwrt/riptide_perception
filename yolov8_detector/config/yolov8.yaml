@@ -83,5 +83,5 @@
       "hair drier",
       "toothbrush"
       ]
-    conf_threshold: 0.4
-    iou_threshold: 0.9
+    conf_threshold: 0.6
+    iou_threshold: 0.6

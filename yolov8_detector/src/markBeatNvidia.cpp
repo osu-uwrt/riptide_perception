@@ -16,8 +16,10 @@ public:
         auto qos = rclcpp::SensorDataQoS();
 
         // maskPublisher = this->create_publisher<riptide_msgs2::msg::ImageArray>("yolov8Detections", 10);
-        imDetPublisher = this->create_publisher<sensor_msgs::msg::Image>("yolov8Detections", 10);
+        imDetPublisher = this->create_publisher<sensor_msgs::msg::Image>("yolov8Detections", rclcpp::SystemDefaultsQoS());
         imageSubscriber = this->create_subscription<sensor_msgs::msg::Image>("zed/zed_node/left/image_rect_color", qos, std::bind(&zedYolo::imageCallback, this, std::placeholders::_1));
+
+        RCLCPP_INFO(get_logger(), "sub topic: %s", imageSubscriber->get_topic_name());
 
         this->declare_parameter("model_path", rclcpp::ParameterValue("weights/yolov8n-seg.trt"));
         this->declare_parameter("conf_threshold", rclcpp::ParameterValue(0.8));
@@ -34,6 +36,9 @@ public:
 
         classNames = this->get_parameter("class_names").as_string_array();
 
+        // for (std::string name : classNames) {
+        //     RCLCPP_INFO(get_logger(), "Name: %s", name.c_str());
+        // }
         detector = std::make_shared<YoloV8Detector>(filename, confThreshold, iouThreshold);
 
         if (classNames.size() != detector->numClasses())
@@ -49,9 +54,23 @@ public:
         std::uniform_int_distribution<int> green(0, 255);
         std::uniform_int_distribution<int> red(0, 255);
 
+        std::vector<int> blueVec, greenVec, redVec;
+
         for (int i = 0; i < classNames.size(); i++)
         {
-            colors.push_back(cv::Scalar(blue(blueGenerator), green(greenGenerator), red(redGenerator)));
+            blueVec.push_back(blue(blueGenerator));
+            greenVec.push_back(green(greenGenerator));
+            redVec.push_back(red(redGenerator));
+        }
+
+        std::default_random_engine rng;
+        std::shuffle(std::begin(blueVec), std::end(blueVec), rng);
+        std::shuffle(std::begin(greenVec), std::end(greenVec), rng);
+        std::shuffle(std::begin(redVec), std::end(redVec), rng);
+
+        for (int i = 0; i < classNames.size(); i++)
+        {
+            colors.push_back(cv::Scalar(blueVec[i], greenVec[i], redVec[i]));
         }
 
         RCLCPP_INFO(get_logger(), "Initialized yolov8 detector");
@@ -72,19 +91,27 @@ private:
     double iouThreshold;
 
     cv_bridge::CvImage imgBridge;
-    sensor_msgs::msg::Image imgMsg;
 
     void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg)
     {
         cv::Mat inputIm = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8)->image;
-        cv::Mat outputIm;
+        cv::Mat outputIm(inputIm.size(), inputIm.type());
+        RCLCPP_INFO(get_logger(), "Created output image");
         inputIm.copyTo(outputIm);
+        RCLCPP_INFO(get_logger(), "copied to output image");
         std::vector<Detection> detections = detector->runDetection(inputIm);
+        RCLCPP_INFO(get_logger(), "Detected image");
 
         for (Detection detection : detections)
         {
-            cv::rectangle(outputIm, detection.bbox(), cv::Scalar(255, 0, 0));
-            // cv::Mat segMask = detection.mask();
+            std::string label = classNames[detection.classId()];
+            label += ": " + std::to_string(detection.confidence()).substr(0, 4);
+            cv::rectangle(outputIm, detection.bbox(), colors[detection.classId()], 5);
+            cv::rectangle(outputIm, cv::Rect(detection.bbox().x, detection.bbox().y, label.size() * 11, 30), colors[detection.classId()], -1);
+            cv::putText(outputIm, label, cv::Point(detection.bbox().x + 10, detection.bbox().y + 20), cv::FONT_HERSHEY_PLAIN, 1, cv::Scalar(255, 255, 255), 1, 8);
+            cv::Mat segMask = detection.mask();
+            segMask.setTo(colors[detection.classId()], segMask == cv::Scalar(255, 255, 255));
+            cv::addWeighted(outputIm, 1., segMask, 0.5, 0, outputIm);
             // cv::Mat mask = cv::Mat::zeros(segMask.size(), CV_8UC1);
             // mask(detection.bbox()).setTo(255);
 
@@ -95,10 +122,12 @@ private:
         }
 
         // RCLCPP_WARN(get_logger(), "Num Detections: %d", detections.size());
-        
+
         imgBridge = cv_bridge::CvImage(msg->header, sensor_msgs::image_encodings::BGR8, outputIm);
-        imgBridge.toImageMsg(imgMsg);
-        imDetPublisher->publish(imgMsg);
+
+        sensor_msgs::msg::Image::SharedPtr imgMsg(imgBridge.toImageMsg());
+        imDetPublisher->publish(*imgMsg.get());
+        RCLCPP_INFO(get_logger(), "finished callback");
     }
 };
 
