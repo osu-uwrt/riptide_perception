@@ -16,7 +16,7 @@ def generate_launch_description():
     params_path = os.path.join(yolov8_detector_dir, 'config', 'yolov8.yaml')
 
     weights_path = os.path.join(
-        yolov8_detector_dir, 'weights', 'yolov8n-seg.trt')
+        yolov8_detector_dir, 'weights', 'yolov8n-seg.onnx')
 
     ld.add_action(DeclareLaunchArgument(
         name="robot",

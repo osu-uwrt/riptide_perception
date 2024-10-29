@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
 project(yolov8_detector)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+# if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+#   add_compile_options(-Wall -Wextra -Wpedantic)
+# endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -43,7 +43,7 @@ endif()
 add_subdirectory(YoloV8Seg-TensorRT)
 
 # now make our executable
-add_executable(yolov8_detector src/markBeatNvidia.cpp)
+add_executable(yolov8_detector src/markBeatCole.cpp)
 target_include_directories(yolov8_detector PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
