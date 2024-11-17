@@ -53,9 +53,9 @@ class YOLONode(Node):
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = True # Whether or not to export .pt file to engine
+		self.export = False # Whether or not to export .pt file to engine
 		self.print_camera_info = False # Print the camera info recieved
-		self.frame_id = 'talos/zed_left_camera_optical_frame' 
+		self.frame_id = 'talos/ffc_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
@@ -86,10 +86,10 @@ class YOLONode(Node):
  
  
 		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left/image_rect_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.camera_info_callback, 1)
+		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.depth_info_callback, 1)
+		self.image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.image_callback, 10)
+		self.depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.depth_callback, 10)
  
 		# Creating publishers
 		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
