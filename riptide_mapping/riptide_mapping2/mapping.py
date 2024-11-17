@@ -187,7 +187,7 @@ class MappingNode(Node):
                 ledPulse = LedCommand()
                 ledPulse.target = LedCommand.TARGET_ALU
                 ledPulse.mode = LedCommand.SINGLETON_FLASH
-                ledPulse.red = 255
+                ledPulse.green = 255
                 self.led_pulse_pub.publish(ledPulse)
                 
                 update_success, _ = self.try_update_pose(result, detections.header, closest_object)
