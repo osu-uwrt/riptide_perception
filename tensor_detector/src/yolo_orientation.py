@@ -53,9 +53,9 @@ class YOLONode(Node):
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = True # Whether or not to export .pt file to engine
+		self.export = False # Whether or not to export .pt file to engine
 		self.print_camera_info = False # Print the camera info recieved
-		self.frame_id = 'talos/zed_left_camera_optical_frame' 
+		self.frame_id = 'talos/ffc_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
@@ -86,10 +86,10 @@ class YOLONode(Node):
  
  
 		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/zed/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/zed/zed_node/left/image_rect_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/zed/zed_node/depth/depth_registered', self.depth_callback, 10)
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.camera_info_callback, 1)
+		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.depth_info_callback, 1)
+		self.image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.image_callback, 10)
+		self.depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.depth_callback, 10)
  
 		# Creating publishers
 		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
@@ -132,7 +132,7 @@ class YOLONode(Node):
 		self.smallest_hole = None
 		self.latest_buoy = None
 		self.plane_normal = None
- 
+    
 		self.map_min_area = 50 #130 
  
 	def initialize_yolo(self, yolo_model_path):
@@ -150,7 +150,7 @@ class YOLONode(Node):
 			# Update the model path to use the .engine file
 			# Note: This will create a new .engine file if it didn't exist before
 			self.initialize_yolo(engine_model_path)  # Recursive call with the new .engine path
- 
+		
 	def is_inside_bbox(self, inner_bbox, outer_bbox):
 		inner_x_min, inner_y_min, inner_x_max, inner_y_max = inner_bbox
 		outer_x_min, outer_y_min, outer_x_max, outer_y_max = outer_bbox
@@ -253,7 +253,7 @@ class YOLONode(Node):
 		if len(self.mapping_holes) == 4:
 			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 			self.find_smallest_and_largest_holes()
- 
+
 			if self.smallest_hole is not None:
 				class_id = self.smallest_hole.cls[0]
 				conf = self.smallest_hole.conf[0]
@@ -262,7 +262,7 @@ class YOLONode(Node):
 					detections.detections.append(detection)
 			else:
 				self.get_logger().warning("No smallest hole found.")
- 
+
 			if self.largest_hole is not None:
 				class_id = self.largest_hole.cls[0]
 				conf = self.largest_hole.conf[0]
@@ -271,8 +271,7 @@ class YOLONode(Node):
 					detections.detections.append(detection)
 			else:
 				self.get_logger().warning("No largest hole found.")
- 
- 
+
 		if self.temp_markers:
 			self.publish_markers(self.temp_markers)
 			self.temp_markers = []  # Clear the list for the next frame
@@ -323,7 +322,7 @@ class YOLONode(Node):
 		if self.plane_normal is None or self.mapping_map_centroid is None:
 			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole sizes.")
 			return
- 
+
 		hole_sizes = []
 		for hole in self.mapping_holes:
 			x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
@@ -336,10 +335,9 @@ class YOLONode(Node):
 			corners_3d = []
 			for (u, v) in corners_2d:
 				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([u, v, 1.0])
- 
 				n = self.plane_normal
 				p0 = self.mapping_map_centroid
- 
+
 				numerator = np.dot(n, p0)
 				denominator = np.dot(n, d)
 				if denominator == 0:
@@ -351,7 +349,7 @@ class YOLONode(Node):
 					continue
 				point_3d = t * d
 				corners_3d.append(point_3d)
- 
+
 			if len(corners_3d) == 4:
 				width_vector = corners_3d[1] - corners_3d[0]
 				height_vector = corners_3d[3] - corners_3d[0]
@@ -363,7 +361,7 @@ class YOLONode(Node):
 			else:
 				self.get_logger().warning(f"Not enough valid corners for hole. Expected 4, got {len(corners_3d)}")
 				continue
- 
+
 		if not hole_sizes:
 			self.get_logger().warning("No valid hole sizes computed.")
 			return
@@ -377,7 +375,7 @@ class YOLONode(Node):
 		#self.get_logger().info(f"Smallest hole size: {hole_sizes[0][1]}")
 		#self.get_logger().info(f"Largest hole size: {hole_sizes[-1][1]}")
  
- 
+
  
 	def cleanup_old_holes(self, age_threshold=2.0):
 		# Get the current time as a builtin_interfaces.msg.Time object
@@ -423,7 +421,7 @@ class YOLONode(Node):
 			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
 				#hole_quat = self.mapping_map_quat
 				#hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
- 
+
 				# if self.mapping_map_centroid[2] > 5:
 				# 	return None
 				if self.plane_normal is None:
@@ -440,14 +438,14 @@ class YOLONode(Node):
 				denominator = np.dot(n, d)
 				if denominator == 0:
 					return None  # Avoid division by zero
- 
+
 				t = numerator / denominator
 				hole_position = t * d
- 
+
 				# Update centroid and orientation
 				hole_centroid = hole_position
 				hole_quat = self.mapping_map_quat
- 
+
 				if hole_scale == "smallest":
 					class_name = "torpedo_small_hole"
 				elif hole_scale == "largest":
@@ -612,9 +610,7 @@ class YOLONode(Node):
  
 				if normal[2] > 0:
 					normal = -normal
- 
- 
- 
+
 				self.plane_normal = normal
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
  

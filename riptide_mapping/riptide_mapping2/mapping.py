@@ -11,7 +11,7 @@ from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pos
 from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
 from riptide_msgs2.srv import MappingTarget
-from riptide_msgs2.msg import MappingTargetInfo
+from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
@@ -111,7 +111,7 @@ class MappingNode(Node):
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback)
-        self.led_pulse_pub = self.create_publisher(Int8, "led/pulse", qos_profile_system_default)
+        self.led_pulse_pub = self.create_publisher(LedCommand, "command/led", qos_profile_system_default)
         
         self.last_pub_time = Time()
         self.publish_pose()
@@ -184,7 +184,11 @@ class MappingNode(Node):
                     self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                     continue
                 
-                self.led_pulse_pub.publish(Int8())
+                ledPulse = LedCommand()
+                ledPulse.target = LedCommand.TARGET_ALU
+                ledPulse.mode = LedCommand.SINGLETON_FLASH
+                ledPulse.green = 255
+                self.led_pulse_pub.publish(ledPulse)
                 
                 update_success, _ = self.try_update_pose(result, detections.header, closest_object)
                 if not update_success:
