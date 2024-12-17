@@ -16,6 +16,7 @@ import time
 import os
 import yaml
 import math
+import random
  
 class YOLONode(Node):
 	def __init__(self):
@@ -55,7 +56,8 @@ class YOLONode(Node):
 		self.use_incoming_timestamp = True
 		self.export = False # Whether or not to export .pt file to engine
 		self.print_camera_info = False # Print the camera info recieved
-		self.frame_id = 'talos/ffc_left_camera_optical_frame' 
+		self.ffc_frame_id = 'talos/ffc_left_camera_optical_frame' 
+		self.dfc_frame_id = 'talos/dfc_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
@@ -83,13 +85,19 @@ class YOLONode(Node):
 			'mapping_smallest_hole': (1.0, 0.0, 0.0),
 			'gate_hot': (1.0, 1.0, 1.0)
 		}
+  
+		self.dfc = True
  
  
 		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.depth_callback, 10)
+		self.ffc_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.ffc_camera_info_callback, 1)
+		self.dfc_info_subscription = self.create_subscription(CameraInfo, '/talos/dfc/zed_node/left/camera_info', self.dfc_camera_info_callback, 1)
+		self.ffc_depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.ffc_depth_info_callback, 1)
+		self.dfc_depth_info_subscription = self.create_subscription(CameraInfo, '/talos/dfc/zed_node/depth/camera_info', self.dfc_depth_info_callback, 1)
+		self.ffc_image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.ffc_image_callback, 10)
+		self.dfc_image_subscription = self.create_subscription(Image, '/talos/dfc/zed_node/left/image_rect_color', self.dfc_image_callback, 10)
+		self.ffc_depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.ffc_depth_callback, 10)
+		self.dfc_depth_subscription = self.create_subscription(Image, '/talos/dfc/zed_node/depth/depth_registered', self.dfc_depth_callback, 10)
  
 		# Creating publishers
 		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
@@ -105,21 +113,20 @@ class YOLONode(Node):
  
  
 		# Init global vars
-		self.depth_image = None
-		self.camera_info_gathered = False
-		self.depth_info_gathered = False
-		self.gray_image = None
-		self.mask = None
+		self.ffc_depth_image = None
+		self.dfc_depth_image = None
+		self.ffc_camera_info_gathered = False
+		self.dfc_camera_info_gathered = False
+		self.ffc_depth_info_gathered = False
+		self.dfc_depth_info_gathered = False
+		self.ffc_gray_image = None
+		self.ffc_mask = None
 		self.accumulated_points = []
 		self.detection_id_counter = 0
 		self.centroid_history = {}
 		self.orientation_history = {}
 		self.temp_markers = []
 		self.last_publish_time = time.time()
-		self.open_torpedo_centroid = None
-		self.open_torpedo_quat = None
-		self.closed_torpedo_centroid = None
-		self.closed_torpedo_quat = None
 		self.holes = []
 		self.latest_bbox_class_7 = None
 		self.latest_bbox_class_8 = None
@@ -131,7 +138,7 @@ class YOLONode(Node):
 		self.largest_hole = None
 		self.smallest_hole = None
 		self.latest_buoy = None
-		self.plane_normal = None
+		self.mapping_map_plane_normal = None
     
 		self.map_min_area = 50 #130 
  
@@ -159,138 +166,223 @@ class YOLONode(Node):
 				inner_y_min >= outer_y_min and inner_y_max <= outer_y_max)
  
  
-	def camera_info_callback(self, msg):
-		if not self.camera_info_gathered:
+	def ffc_camera_info_callback(self, msg):
+		if not self.ffc_camera_info_gathered:
 			if self.print_camera_info:
 				self.get_logger().info(f"Camera info: {msg}")
  
 			self.intrinsic_matrix = np.array(msg.k).reshape((3, 3))
-			self.fx = msg.k[0]
-			self.cx = msg.k[2]
-			self.fy = msg.k[4]
-			self.cy = msg.k[5]
+			self.ffc_fx = msg.k[0]
+			self.ffc_cx = msg.k[2]
+			self.ffc_fy = msg.k[4]
+			self.ffc_cy = msg.k[5]
  
-			self.distortion_matrix = np.array(msg.d)
+			self.ffc_distortion_matrix = np.array(msg.d)
  
-			self.camera_info_gathered = True
-		# self.zed_info_subscription.destroy()
+			self.ffc_camera_info_gathered = True
+   
+	def dfc_camera_info_callback(self, msg):
+		if not self.dfc_camera_info_gathered:
+			if self.print_camera_info:
+				self.get_logger().info(f"Camera info: {msg}")
+
+			self.intrinsic_matrix = np.array(msg.k).reshape((3, 3))
+			self.dfc_fx = msg.k[0]
+			self.dfc_cx = msg.k[2]
+			self.dfc_fy = msg.k[4]
+			self.dfc_cy = msg.k[5]
+
+			self.dfc_distortion_matrix = np.array(msg.d)
+
+			self.dfc_camera_info_gathered = True
  
-	def depth_info_callback(self, msg):
-		if not self.depth_info_gathered:
-			self.depth_intrinsic_matrix = np.array(msg.k).reshape((3, 3))
-			self.depth_distortion_matrix = np.array(msg.d)
-			self.depth_info_gathered = True
-		# self.depth_info_subscription.destroy()
+	def ffc_depth_info_callback(self, msg):
+		if not self.ffc_depth_info_gathered:
+			self.ffc_depth_intrinsic_matrix = np.array(msg.k).reshape((3, 3))
+			self.ffc_depth_distortion_matrix = np.array(msg.d)
+			self.ffc_depth_info_gathered = True
+  
+	def dfc_depth_info_callback(self, msg):
+		if not self.dfc_depth_info_gathered:
+			self.dfc_depth_intrinsic_matrix = np.array(msg.k).reshape((3, 3))
+			self.dfc_depth_distortion_matrix = np.array(msg.d)
+			self.dfc_depth_info_gathered = True
  
-	def depth_callback(self, msg):
-		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+	def ffc_depth_callback(self, msg):
+		self.ffc_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+
+	def dfc_depth_callback(self, msg):
+		self.dfc_depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+  
  
-	def image_callback(self, msg: Image):
- 
-		if self.log_processing_time:
-			self.detection_time = time.time()
- 
-		if self.depth_image is None or not self.camera_info_gathered:
-			self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
-			return
- 
-		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-		if cv_image is None:
-			return
-		results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
- 
-		detections = Detection3DArray()
-		detections.header.frame_id = self.frame_id
-		self.detection_timestamp = msg.header.stamp
-		if self.use_incoming_timestamp:
-			detections.header.stamp = msg.header.stamp
-		else:
-			detections.header.stamp = self.get_clock().now().to_msg()
- 
-		if self.mask is None or self.mask.shape[:2] != cv_image.shape[:2]:
-			self.mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
- 
-		# Reset mapping holes each image
-		self.mapping_holes = []
-		self.largest_hole = None
-		self.smallest_hole = None
- 
-		for result in results:
-			for box in result.boxes.cpu().numpy():
-				if box.conf[0] <= self.conf:
-					continue
-				class_id = box.cls[0]
- 
-				if class_id in self.class_id_map:
-					conf = box.conf[0]
-					#self.get_logger().info(f"class id: {class_id}")
-					# If its a hole, store it, otherwise make the detection message
-					if class_id == 2:
+	def ffc_image_callback(self, msg: Image):
+		if not self.dfc:
+			if self.log_processing_time:
+				self.detection_time = time.time()
+	
+			if self.ffc_depth_image is None or not self.ffc_camera_info_gathered:
+				self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
+				return
+	
+			cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+			self.ffc_gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+			if cv_image is None:
+				return
+			results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
+	
+			detections = Detection3DArray()
+			detections.header.frame_id = self.ffc_frame_id
+			self.detection_timestamp = msg.header.stamp
+			if self.use_incoming_timestamp:
+				detections.header.stamp = msg.header.stamp
+			else:
+				detections.header.stamp = self.get_clock().now().to_msg()
+	
+			if self.ffc_mask is None or self.ffc_mask.shape[:2] != cv_image.shape[:2]:
+				self.ffc_mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
+	
+			# Reset mapping holes each image
+			self.mapping_holes = []
+			self.largest_hole = None
+			self.smallest_hole = None
+	
+			for result in results:
+				for box in result.boxes.cpu().numpy():
+					if box.conf[0] <= self.conf:
+						continue
+					class_id = box.cls[0]
+	
+					if class_id in self.class_id_map:
+						conf = box.conf[0]
 						#self.get_logger().info(f"class id: {class_id}")
-						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-						if self.use_incoming_timestamp:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+						# If its a hole, store it, otherwise make the detection message
+						if class_id == 2:
+							#self.get_logger().info(f"class id: {class_id}")
+							x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+							if self.use_incoming_timestamp:
+								self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+							else:
+								self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
+							self.mapping_holes.append(box)
+							#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 						else:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
-						self.mapping_holes.append(box)
-						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-					else:
+							detection = self.create_detection3d_message(box, cv_image, conf)
+	
+							if detection:
+								detections.detections.append(detection)
+	
+						self.ffc_mask.fill(0)
+						for contour in result.masks.xy:
+							contour = np.array(contour, dtype=np.int32)
+							cv2.fillPoly(self.ffc_mask, [contour], 255)
+						mask_msg = self.bridge.cv2_to_imgmsg(self.ffc_mask,encoding="mono8")
+						#self.mask_publisher.publish(mask_msg)
+	
+			# Create detection3d for the holes if there are 4
+			if len(self.mapping_holes) == 4:
+				#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
+				self.find_smallest_and_largest_holes()
+
+				if self.smallest_hole is not None:
+					class_id = self.smallest_hole.cls[0]
+					conf = self.smallest_hole.conf[0]
+					detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
+					if detection:
+						detections.detections.append(detection)
+				else:
+					self.get_logger().warning("No smallest hole found.")
+
+				if self.largest_hole is not None:
+					class_id = self.largest_hole.cls[0]
+					conf = self.largest_hole.conf[0]
+					detection = self.create_detection3d_message(self.largest_hole, cv_image, conf, "largest")
+					if detection:
+						detections.detections.append(detection)
+				else:
+					self.get_logger().warning("No largest hole found.")
+
+			if self.temp_markers:
+				self.publish_markers(self.temp_markers)
+				self.temp_markers = []  # Clear the list for the next frame
+	
+			annotated_frame = results[0].plot()
+			annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+			self.publish_accumulated_point_cloud()
+			self.publisher.publish(annotated_msg)
+			self.torpedo_seen = False
+			self.cleanup_old_holes(age_threshold=2.0)
+			if self.log_processing_time:
+				self.detection_time = time.time() - self.detection_time
+				self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
+				self.get_logger().info(f"FPS: {1/self.detection_time}")
+			# self.get_logger().info(f"detections: {detections}")
+			self.detection_publisher.publish(detections)
+			self.detection_id_counter = 0
+  
+	def dfc_image_callback(self, msg: Image):
+		if self.dfc:
+			if self.log_processing_time:
+				self.detection_time = time.time()
+	
+			if self.dfc_depth_image is None or not self.dfc_camera_info_gathered:
+				self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
+				return
+	
+			cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+			self.dfc_gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+			if cv_image is None:
+				return
+			results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
+	
+			detections = Detection3DArray()
+			detections.header.frame_id = self.dfc_frame_id
+			self.detection_timestamp = msg.header.stamp
+			if self.use_incoming_timestamp:
+				detections.header.stamp = msg.header.stamp
+			else:
+				detections.header.stamp = self.get_clock().now().to_msg()
+	
+			if self.dfc_mask is None or self.dfc_mask.shape[:2] != cv_image.shape[:2]:
+				self.dfc_mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
+	
+			# Reset mapping holes each image
+			self.mapping_holes = []
+			self.largest_hole = None
+			self.smallest_hole = None
+	
+			for result in results:
+				for box in result.boxes.cpu().numpy():
+					if box.conf[0] <= self.conf:
+						continue
+					class_id = box.cls[0]
+	
+					if class_id in self.class_id_map:
+						conf = box.conf[0]
 						detection = self.create_detection3d_message(box, cv_image, conf)
- 
+
 						if detection:
 							detections.detections.append(detection)
- 
-					self.mask.fill(0)
-					for contour in result.masks.xy:
-						contour = np.array(contour, dtype=np.int32)
-						cv2.fillPoly(self.mask, [contour], 255)
-					mask_msg = self.bridge.cv2_to_imgmsg(self.mask,encoding="mono8")
-					#self.mask_publisher.publish(mask_msg)
- 
- 
-		# Create detection3d for the holes if there are 4
-		if len(self.mapping_holes) == 4:
-			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-			self.find_smallest_and_largest_holes()
+	
+						self.dfc_mask.fill(0)
+						for contour in result.masks.xy:
+							contour = np.array(contour, dtype=np.int32)
+							cv2.fillPoly(self.dfc_mask, [contour], 255)
 
-			if self.smallest_hole is not None:
-				class_id = self.smallest_hole.cls[0]
-				conf = self.smallest_hole.conf[0]
-				detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
-				if detection:
-					detections.detections.append(detection)
-			else:
-				self.get_logger().warning("No smallest hole found.")
-
-			if self.largest_hole is not None:
-				class_id = self.largest_hole.cls[0]
-				conf = self.largest_hole.conf[0]
-				detection = self.create_detection3d_message(self.largest_hole, cv_image, conf, "largest")
-				if detection:
-					detections.detections.append(detection)
-			else:
-				self.get_logger().warning("No largest hole found.")
-
-		if self.temp_markers:
-			self.publish_markers(self.temp_markers)
-			self.temp_markers = []  # Clear the list for the next frame
- 
-		annotated_frame = results[0].plot()
-		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
-		self.publish_accumulated_point_cloud()
-		self.publisher.publish(annotated_msg)
-		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
-		# 	detections.detections.append(self.spoof_torpedo())
-		self.torpedo_seen = False
-		self.cleanup_old_holes(age_threshold=2.0)
-		if self.log_processing_time:
-			self.detection_time = time.time() - self.detection_time
-			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
-			self.get_logger().info(f"FPS: {1/self.detection_time}")
-		# self.get_logger().info(f"detections: {detections}")
-		self.detection_publisher.publish(detections)
-		self.detection_id_counter = 0
+			if self.temp_markers:
+				self.publish_markers(self.temp_markers)
+				self.temp_markers = []  # Clear the list for the next frame
+	
+			annotated_frame = results[0].plot()
+			annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+			self.publish_accumulated_point_cloud()
+			self.publisher.publish(annotated_msg)
+			if self.log_processing_time:
+				self.detection_time = time.time() - self.detection_time
+				self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
+				self.get_logger().info(f"FPS: {1/self.detection_time}")
+			# self.get_logger().info(f"detections: {detections}")
+			self.detection_publisher.publish(detections)
+			self.detection_id_counter = 0
  
 	def get_hole_size(self, hole):
 		x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
@@ -298,28 +390,10 @@ class YOLONode(Node):
 		hole_height = y_max - y_min
 		hole_size = hole_height*hole_width
 		return hole_size
- 
-	# def find_smallest_and_largest_holes(self):
-	# 	hole_sizes = []
-	# 	for hole in self.mapping_holes:
-	# 		hole_size = self.get_hole_size(hole)
- 
-	# 		if self.largest_hole is None:
-	# 			self.largest_hole = hole
-	# 		else:
-	# 			largest_hole_size = self.get_hole_size(self.largest_hole)
-	# 			if hole_size > largest_hole_size:
-	# 				self.largest_hole = hole
- 
-	# 		if self.smallest_hole is None:
-	# 			self.smallest_hole = hole
-	# 		else:
-	# 			smallest_hole_size = self.get_hole_size(self.smallest_hole)
-	# 			if hole_size < smallest_hole_size:
-	# 				self.smallest_hole = hole
+
  
 	def find_smallest_and_largest_holes(self):
-		if self.plane_normal is None or self.mapping_map_centroid is None:
+		if self.mapping_map_plane_normal is None or self.mapping_map_centroid is None:
 			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole sizes.")
 			return
 
@@ -335,7 +409,7 @@ class YOLONode(Node):
 			corners_3d = []
 			for (u, v) in corners_2d:
 				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([u, v, 1.0])
-				n = self.plane_normal
+				n = self.mapping_map_plane_normal
 				p0 = self.mapping_map_centroid
 
 				numerator = np.dot(n, p0)
@@ -395,276 +469,306 @@ class YOLONode(Node):
 		bbox = (x_min, y_min, x_max, y_max)
 		bbox_width = x_max - x_min
 		bbox_height = y_max - y_min
- 
-		class_id = int(box.cls[0])
- 
+	
 		bbox_center_x = (x_min + x_max) / 2
 		bbox_center_y = (y_min + y_max) / 2
- 
+  
 		class_name = self.class_id_map.get(class_id, "Unknown")
-		#self.get_logger().info(f"class name: {class_name}")
-		if class_name == "mapping_map":
- 
-			map_width = x_max - x_min
-			map_height = y_max - y_min
-			map_area = max(map_width,map_height)
-			#self.get_logger().info(f"map max: {map_area}")
-			if map_area < self.map_min_area:
-				self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
-				return None
-			self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
-			#self.get_logger().info(f"publishing map")
-			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
- 
- 
-		elif class_name == "mapping_hole":
-			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
-				#hole_quat = self.mapping_map_quat
-				#hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
-
-				# if self.mapping_map_centroid[2] > 5:
-				# 	return None
-				if self.plane_normal is None:
+	
+		class_id = int(box.cls[0])
+		if not self.dfc:
+	
+			#self.get_logger().info(f"class name: {class_name}")
+			if class_name == "mapping_map":
+	
+				map_width = x_max - x_min
+				map_height = y_max - y_min
+				map_area = max(map_width,map_height)
+				#self.get_logger().info(f"map max: {map_area}")
+				if map_area < self.map_min_area:
+					self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
 					return None
-				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
-				d = d / np.linalg.norm(d)
- 
-				# Plane normal and point
-				n = self.plane_normal  # From SVD
-				p0 = self.mapping_map_centroid  # Centroid of the plane
- 
-				# Compute t
-				numerator = np.dot(n, p0)
-				denominator = np.dot(n, d)
-				if denominator == 0:
-					return None  # Avoid division by zero
+				self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
+				#self.get_logger().info(f"publishing map")
+				self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
+	
+	
+			elif class_name == "mapping_hole":
+				if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
+					#hole_quat = self.mapping_map_quat
+					#hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
 
-				t = numerator / denominator
-				hole_position = t * d
+					# if self.mapping_map_centroid[2] > 5:
+					# 	return None
+					if self.mapping_map_plane_normal is None:
+						return None
+					d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
+					d = d / np.linalg.norm(d)
+	
+					# Plane normal and point
+					n = self.mapping_map_plane_normal  # From SVD
+					p0 = self.mapping_map_centroid  # Centroid of the plane
+	
+					# Compute t
+					numerator = np.dot(n, p0)
+					denominator = np.dot(n, d)
+					if denominator == 0:
+						return None  # Avoid division by zero
 
-				# Update centroid and orientation
-				hole_centroid = hole_position
-				hole_quat = self.mapping_map_quat
+					t = numerator / denominator
+					hole_position = t * d
 
-				if hole_scale == "smallest":
-					class_name = "torpedo_small_hole"
-				elif hole_scale == "largest":
-					class_name = "torpedo_large_hole"
-				else:
+					# Update centroid and orientation
+					hole_centroid = hole_position
+					hole_quat = self.mapping_map_quat
+
+					if hole_scale == "smallest":
+						class_name = "torpedo_small_hole"
+					elif hole_scale == "largest":
+						class_name = "torpedo_large_hole"
+					else:
+						return None
+	
+					self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
+	
+					# Create Detection3D message
+					detection = Detection3D()
+					detection.header.frame_id = self.ffc_frame_id
+					if self.use_incoming_timestamp:
+						detection.header.stamp = self.detection_timestamp
+					else:
+						detection.header.stamp = self.get_clock().now().to_msg()
+					detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
+					return detection
+	
+			# Calculate the shrink size based on the class_detect_shrink percentage
+			shrink_x = (x_max - x_min) * self.class_detect_shrink  
+			shrink_y = (y_max - y_min) * self.class_detect_shrink  
+	
+			# Adjust the bounding box coordinates to exclude the edges
+			x_min = int(x_min + shrink_x)
+			x_max = int(x_max - shrink_x)
+			y_min = int(y_min + shrink_y)
+			y_max = int(y_max - shrink_y)
+	
+			# Extract the region of interest based on the bounding box
+			mask_roi = self.ffc_mask[y_min:y_max, x_min:x_max]
+			cropped_gray_image = self.ffc_gray_image[y_min:y_max, x_min:x_max]
+			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
+	
+			if class_name == "mapping_map":
+				# Prepare the ROI mask, excluding the holes
+				mask_roi = self.ffc_mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
+	
+				# Dynamic padding calculation based on bounding box size
+				padding_x = int((x_max - x_min) * 0.1)  # 10% of the bounding box width
+				padding_y = int((y_max - y_min) * 0.1)  # 10% of the bounding box height
+				#self.get_logger().info(f"holes for exclusion count: {len(self.holes)}")
+	
+				for hole_bbox, _ in self.holes:
+					hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+					adjusted_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
+					adjusted_hole_y_min = max(hole_y_min - y_min - padding_y, 0)
+					adjusted_hole_x_max = min(hole_x_max - x_min + padding_x, mask_roi.shape[1])
+					adjusted_hole_y_max = min(hole_y_max - y_min + padding_y, mask_roi.shape[0])
+	
+					# Set the hole region in mask_roi to 0 to exclude it from feature detection
+					mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
+	
+				# Apply morphological operations to refine the exclusion zones
+				kernel = np.ones((5, 5), np.uint8)
+				mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
+				mask_roi = cv2.erode(mask_roi, kernel, iterations=1)
+	
+				# Continue with feature detection using the adjusted mask_roi
+				masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
+			elif class_name == "buoy":
+				# Sample the depth value at the center of the bounding box
+				depth_value = self.dfc_depth_image[int(bbox_center_y), int(bbox_center_x)]
+				# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
+				# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
+				# self.get_logger().info(f"depth: {depth_value}")
+				if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
+					self.get_logger().info("rejecting buoy")
 					return None
- 
- 
- 
-				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
- 
-				# Create Detection3D message
-				detection = Detection3D()
-				detection.header.frame_id = self.frame_id
-				if self.use_incoming_timestamp:
-					detection.header.stamp = self.detection_timestamp
-				else:
-					detection.header.stamp = self.get_clock().now().to_msg()
-				detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
-				return detection
- 
-		elif class_name == "torpedo_open":
-			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
-		elif class_name == "torpedo_closed":
-			self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
-		elif class_name == "torpedo_hole":
-			if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
-				class_name = "torpedo_open_hole"
-				hole_quat = self.open_torpedo_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
-			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
-				class_name = "torpedo_closed_hole"
-				hole_quat = self.closed_torpedo_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
-			else:
-				return None
- 
-			if self.use_incoming_timestamp:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-			else:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
- 
- 
-			self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
- 
-			# Create Detection3D message
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
-			return detection
- 
- 
-		# Calculate the shrink size based on the class_detect_shrink percentage
-		shrink_x = (x_max - x_min) * self.class_detect_shrink  
-		shrink_y = (y_max - y_min) * self.class_detect_shrink  
- 
-		# Adjust the bounding box coordinates to exclude the edges
-		x_min = int(x_min + shrink_x)
-		x_max = int(x_max - shrink_x)
-		y_min = int(y_min + shrink_y)
-		y_max = int(y_max - shrink_y)
- 
-		# Extract the region of interest based on the bounding box
-		mask_roi = self.mask[y_min:y_max, x_min:x_max]
-		cropped_gray_image = self.gray_image[y_min:y_max, x_min:x_max]
-		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
- 
-		if class_name == "mapping_map":
-			# Prepare the ROI mask, excluding the holes
-			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
- 
-			# Dynamic padding calculation based on bounding box size
-			padding_x = int((x_max - x_min) * 0.1)  # 10% of the bounding box width
-			padding_y = int((y_max - y_min) * 0.1)  # 10% of the bounding box height
-			#self.get_logger().info(f"holes for exclusion count: {len(self.holes)}")
- 
-			for hole_bbox, _ in self.holes:
-				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
-				adjusted_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
-				adjusted_hole_y_min = max(hole_y_min - y_min - padding_y, 0)
-				adjusted_hole_x_max = min(hole_x_max - x_min + padding_x, mask_roi.shape[1])
-				adjusted_hole_y_max = min(hole_y_max - y_min + padding_y, mask_roi.shape[0])
- 
-				# Set the hole region in mask_roi to 0 to exclude it from feature detection
-				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
- 
-			# Apply morphological operations to refine the exclusion zones
-			kernel = np.ones((5, 5), np.uint8)
-			mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
-			mask_roi = cv2.erode(mask_roi, kernel, iterations=1)
- 
-			# Continue with feature detection using the adjusted mask_roi
-			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-		elif class_name == "buoy":
-			# Sample the depth value at the center of the bounding box
-			depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-			# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
-			# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
-			# self.get_logger().info(f"depth: {depth_value}")
-			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
-				self.get_logger().info("rejecting buoy")
-				return None
-			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
-			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
- 
-			# Create Detection3D message
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
- 
-			# Set the pose
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
-			return detection
-		elif class_name in ["torpedo_open", "torpedo_closed"]:
-			# Prepare the ROI mask, excluding the holes
-			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
- 
-			# Padding for exclusion zone
-			padding = 10
- 
-			for hole_bbox, _ in self.holes:
-				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
-				# You might need to adjust the coordinates based on the ROI's position
-				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
-				adjusted_hole_x_min = max(hole_x_min - x_min - padding, 0)
-				adjusted_hole_y_min = max(hole_y_min - y_min - padding, 0)
-				adjusted_hole_x_max = min(hole_x_max - x_min + padding, mask_roi.shape[1])
-				adjusted_hole_y_max = min(hole_y_max - y_min + padding, mask_roi.shape[0])
- 
-				# Set the hole region in mask_roi to 0 to exclude it from feature detection
-				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
- 
-			# Continue with feature detection using the adjusted mask_roi
-			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
- 
-		# Detect features within the object's bounding box
-		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
- 
-		if good_features is not None:
-			good_features[:, 0, 0] += x_min  # Adjust X coordinates
-			good_features[:, 0, 1] += y_min  # Adjust Y coordinates
- 
-			# Convert features to a list of (x, y) points
-			feature_points = [pt[0] for pt in good_features]
- 
-			# Get 3D points from feature points
-			points_3d = self.get_3d_points(feature_points, cv_image)
- 
-			if points_3d is not None and len(points_3d) >= self.min_points:
-				normal, _, centroid = self.fit_plane_to_points(points_3d)
- 
-				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
- 
-				if normal[2] > 0:
-					normal = -normal
-
-				self.plane_normal = normal
-				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
- 
- 
- 
-				if class_name == "torpedo_open":  
-					self.open_torpedo_centroid = centroid
-					self.open_torpedo_quat = quat
-				elif class_name == "torpedo_closed":
-					self.closed_torpedo_centroid = centroid
-					self.closed_torpedo_quat = quat
-				elif class_name == "mapping_map":
-					self.mapping_map_centroid = centroid
-					self.mapping_map_quat = quat
-					class_name = "torpedo"
- 
- 
-				# When calling publish_marker, pass these dimensions along with other required information
+				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
+				quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
 				self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
- 
+	
 				# Create Detection3D message
 				detection = Detection3D()
-				detection.header.frame_id = self.frame_id
+				detection.header.frame_id = self.ffc_frame_id
 				if self.use_incoming_timestamp:
 					detection.header.stamp = self.detection_timestamp
 				else:
 					detection.header.stamp = self.get_clock().now().to_msg()
- 
+	
 				# Set the pose
 				detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
+	
 				return detection
- 
-		if self.latest_buoy is not None and class_name == "buoy":
-			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
-			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
- 
-			# Set the pose
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
-			return detection
- 
+			elif class_name in ["torpedo_open", "torpedo_closed"]:
+				# Prepare the ROI mask, excluding the holes
+				mask_roi = self.ffc_mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
+	
+				# Padding for exclusion zone
+				padding = 10
+	
+				for hole_bbox, _ in self.holes:
+					# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
+					# You might need to adjust the coordinates based on the ROI's position
+					hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+					adjusted_hole_x_min = max(hole_x_min - x_min - padding, 0)
+					adjusted_hole_y_min = max(hole_y_min - y_min - padding, 0)
+					adjusted_hole_x_max = min(hole_x_max - x_min + padding, mask_roi.shape[1])
+					adjusted_hole_y_max = min(hole_y_max - y_min + padding, mask_roi.shape[0])
+	
+					# Set the hole region in mask_roi to 0 to exclude it from feature detection
+					mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
+	
+				# Continue with feature detection using the adjusted mask_roi
+				masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
+	
+			# Detect features within the object's bounding box
+			good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
+	
+			if good_features is not None:
+				good_features[:, 0, 0] += x_min  # Adjust X coordinates
+				good_features[:, 0, 1] += y_min  # Adjust Y coordinates
+	
+				# Convert features to a list of (x, y) points
+				feature_points = [pt[0] for pt in good_features]
+	
+				# Get 3D points from feature points
+				points_3d = self.get_3d_points(feature_points, cv_image)
+	
+				if points_3d is not None and len(points_3d) >= self.min_points:
+					normal, _, centroid = self.fit_plane_to_points(points_3d)
+	
+					centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
+	
+					if normal[2] > 0:
+						normal = -normal
+
+					self.mapping_map_plane_normal = normal
+					quat, _ = self.calculate_quaternion_and_euler_angles(normal)
+	
+					if class_name == "mapping_map":
+						self.mapping_map_centroid = centroid
+						self.mapping_map_quat = quat
+						class_name = "torpedo"
+	
+	
+					# When calling publish_marker, pass these dimensions along with other required information
+					self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+	
+					# Create Detection3D message
+					detection = Detection3D()
+					detection.header.frame_id = self.ffc_frame_id
+					if self.use_incoming_timestamp:
+						detection.header.stamp = self.detection_timestamp
+					else:
+						detection.header.stamp = self.get_clock().now().to_msg()
+	
+					# Set the pose
+					detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+	
+					return detection
+	
+			if self.latest_buoy is not None and class_name == "buoy":
+				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
+				quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
+				self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+				detection = Detection3D()
+				detection.header.frame_id = self.ffc_frame_id
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
+	
+				# Set the pose
+				detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+	
+				return detection
+
+		else:
+			if class_name == "bin_temperature":
+      	
+				# Calculate the shrink size based on the class_detect_shrink percentage
+				shrink_x = (x_max - x_min) * self.class_detect_shrink  
+				shrink_y = (y_max - y_min) * self.class_detect_shrink  
+		
+				# Adjust the bounding box coordinates to exclude the edges
+				x_min = int(x_min + shrink_x)
+				x_max = int(x_max - shrink_x)
+				y_min = int(y_min + shrink_y)
+				y_max = int(y_max - shrink_y)
+		
+				# Extract the region of interest based on the bounding box and red
+				redMask = self.red_mask(cv_image[y_min:y_max, x_min:x_max], self.dfc_mask[y_min:y_max, x_min:x_max])
+				mask_roi = self.dfc_mask[y_min:y_max, x_min:x_max]
+				cropped_gray_image = self.dfc_gray_image[y_min:y_max, x_min:x_max]
+				masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
+				extra_masked_gray_image = cv2.bitwise_and(masked_gray_image, masked_gray_image, mask=redMask)
+    
+				contours = cv2.findContours(extra_masked_gray_image)
+				if len(contours) > 0:
+					largestContour, maxArea = 0
+					for contour in contours:
+						if cv2.contourArea(contour) > maxArea:
+							largestContour = contour
+					sampled = random.sample(largestContour, min(100, len(largestContour)))
+					points_3d = self.get_3d_points(sampled, cv_image)
+				if points_3d is not None and len(points_3d) >= self.min_points:
+					normal, _, centroid = self.fit_plane_to_points(points_3d)
+					centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
+					# Create Detection3D message
+					detection = Detection3D()
+					detection.header.frame_id = self.ffc_frame_id
+					if self.use_incoming_timestamp:
+						detection.header.stamp = self.detection_timestamp
+					else:
+						detection.header.stamp = self.get_clock().now().to_msg()
+	
+					# Set the pose
+					quat = [0, 0, 0, 1]
+					class_name = "bin_target"
+					detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+	
+					return detection
+					
+						
+				else:
+					return None
+    
+    
+     
 		return None
+
+	def red_mask(self, image, mask):
+		hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+  
+		lower = cv2.inRange(hsv, (0, 0, 0), (10, 255, 255))
+		upper = cv2.inRange(hsv, (160, 0, 0), (180, 255, 255))
+
+		redMask = cv2.bitwise_or(lower, upper)
+  
+		return cv2.bitwise_and(redMask, mask)
  
 	def calculate_centroid(self, center_x, center_y, z):
-		center_3d_x = (center_x - self.cx) * z / self.fx
-		center_3d_y = (center_y - self.cy) * z / self.fy
+		fx, fy, cx, cy = 0
+		if self.dfc:
+			fx = self.dfc_fx
+			fy = self.dfc_fy
+			cx = self.dfc_cx
+			cy = self.dfc_cy
+		else:
+			fx = self.ffc_fx
+			fy = self.ffc_fy
+			cx = self.ffc_cx
+			cy = self.ffc_cy
+		center_3d_x = (center_x - cx) * z / fx
+		center_3d_y = (center_y - cy) * z / fy
 		return [center_3d_x, center_3d_y, z]
  
 	def create_object_hypothesis_with_pose(self, class_name, centroid, quat, conf):
@@ -691,7 +795,11 @@ class YOLONode(Node):
  
 			# Prepare the PointCloud message
 			cloud = PointCloud()
-			cloud.header.frame_id = self.frame_id
+			if self.dfc:
+				cloud.header.frame_id = self.dfc_frame_id
+			else:
+				cloud.header.frame_id = self.ffc_frame_id
+				
 			if self.use_incoming_timestamp:
 				cloud.header.stamp = self.detection_timestamp
 			else:
@@ -710,11 +818,23 @@ class YOLONode(Node):
  
 	def overlay_points_on_image(self, image, points):
 		# Draw circles on the image for each point
+		fx, fy, cx, cy = 0
+		if self.dfc:
+			fx = self.dfc_fx
+			fy = self.dfc_fy
+			cx = self.dfc_cx
+			cy = self.dfc_cy
+		else:
+			fx = self.ffc_fx
+			fy = self.ffc_fy
+			cx = self.ffc_cx
+			cy = self.ffc_cy
+			
 		for point in points:
 			try:
 				# Transform the 3D point back to 2D
-				x2d = int(point[0] * self.fx / point[2] + self.cx)
-				y2d = int(point[1] * self.fy / point[2] + self.cy)
+				x2d = int(point[0] * fx / point[2] + cx)
+				y2d = int(point[1] * fy / point[2] + cy)
  
 				# Draw the circle on the image
 				cv2.circle(image, (x2d, y2d), radius=3, color=(0, 255, 0), thickness=-1)
@@ -724,20 +844,31 @@ class YOLONode(Node):
 	def get_3d_points(self, feature_points, cv_image):
 		points_3d = []
  
- 
+		maxX, maxY = 0
+		usedMask, usedDepth = []
+		if (self.dfc):
+			maxX = self.ffc_depth_image.shape[1]
+			maxY = self.ffc_depth_image.shape[0]
+			usedMask = self.ffc_mask
+			usedDepth = self.ffc_depth_image
+		else:
+			maxX = self.dfc_depth_image.shape[1]
+			maxY = self.dfc_depth_image.shape[0]
+			usedMask = self.dfc_mask
+			usedDepth = self.dfc_depth_image
 		for x, y in feature_points:
 			xi = int(x)
 			yi = int(y)
  
 			# Make sure the point is on the image
-			if yi >= self.depth_image.shape[0] or xi >= self.depth_image.shape[1]:
+			if yi >= maxY or xi >= maxX:
 				continue
  
 			# Make sure the point is on the mask
-			if self.mask[yi, xi] != 255:
+			if usedMask[yi, xi] != 255:
 				continue
  
-			z = self.depth_image[yi, xi]
+			z = usedDepth[yi, xi]
 			if np.isnan(z) or z == 0:
 				continue
  
@@ -749,7 +880,7 @@ class YOLONode(Node):
  
 		# Prepare PointCloud message
 		cloud = PointCloud()
-		cloud.header.frame_id = self.frame_id  # Adjust the frame ID as necessary
+		cloud.header.frame_id = self.ffc_frame_id  # Adjust the frame ID as necessary
  
 		if self.use_incoming_timestamp:
 			cloud.header.stamp = self.detection_timestamp
@@ -859,7 +990,10 @@ class YOLONode(Node):
 	def publish_marker(self, quat, centroid, class_name, bbox_width, bbox_height):
 		# Create a plane marker
 		plane_marker = Marker()
-		plane_marker.header.frame_id = self.frame_id
+		if self.dfc:
+			plane_marker.header.frame_id = self.dfc_frame_id
+		else:
+			plane_marker.header.frame_id = self.ffc_frame_id
 		if self.use_incoming_timestamp:
 			plane_marker.header.stamp = self.detection_timestamp
 		else:
@@ -900,7 +1034,10 @@ class YOLONode(Node):
  
 		# Create an arrow marker
 		arrow_marker = Marker()
-		arrow_marker.header.frame_id = self.frame_id
+		if self.dfc:
+			arrow_marker.header.frame_id = self.dfc_frame_id
+		else:
+			arrow_marker.header.frame_id = self.ffc_frame_id
 		if self.use_incoming_timestamp:
 			arrow_marker.header.stamp = self.detection_timestamp
 		else:
