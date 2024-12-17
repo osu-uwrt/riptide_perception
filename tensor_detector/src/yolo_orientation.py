@@ -121,6 +121,7 @@ class YOLONode(Node):
 		self.dfc_depth_info_gathered = False
 		self.ffc_gray_image = None
 		self.ffc_mask = None
+		self.dfc_mask = None
 		self.accumulated_points = []
 		self.detection_id_counter = 0
 		self.centroid_history = {}
@@ -473,9 +474,9 @@ class YOLONode(Node):
 		bbox_center_x = (x_min + x_max) / 2
 		bbox_center_y = (y_min + y_max) / 2
   
+		class_id = int(box.cls[0])
 		class_name = self.class_id_map.get(class_id, "Unknown")
 	
-		class_id = int(box.cls[0])
 		if not self.dfc:
 	
 			#self.get_logger().info(f"class name: {class_name}")
@@ -692,7 +693,7 @@ class YOLONode(Node):
 				return detection
 
 		else:
-			if class_name == "bin_temperature":
+			if class_name == "buoy":
       	
 				# Calculate the shrink size based on the class_detect_shrink percentage
 				shrink_x = (x_max - x_min) * self.class_detect_shrink  
@@ -711,9 +712,9 @@ class YOLONode(Node):
 				masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 				extra_masked_gray_image = cv2.bitwise_and(masked_gray_image, masked_gray_image, mask=redMask)
     
-				contours = cv2.findContours(extra_masked_gray_image)
+				contours = cv2.findContours(extra_masked_gray_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 				if len(contours) > 0:
-					largestContour, maxArea = 0
+					largestContour, maxArea = 0, 0
 					for contour in contours:
 						if cv2.contourArea(contour) > maxArea:
 							largestContour = contour
@@ -818,7 +819,7 @@ class YOLONode(Node):
  
 	def overlay_points_on_image(self, image, points):
 		# Draw circles on the image for each point
-		fx, fy, cx, cy = 0
+		fx, fy, cx, cy = 0, 0, 0, 0
 		if self.dfc:
 			fx = self.dfc_fx
 			fy = self.dfc_fy

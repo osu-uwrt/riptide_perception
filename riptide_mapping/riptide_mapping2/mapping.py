@@ -60,10 +60,13 @@ class MappingNode(Node):
             "torpedo": dict(),
             "torpedo_large_hole": dict(),
             "torpedo_small_hole": dict(),
-            "bin": dict(),
             "table": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict()
+        }
+        
+        self.downwards_objects = {
+            "bin_target": dict(),
         }
         
         self.outstanding_detections: list[OutstandingDetectionInfo] = []
@@ -175,7 +178,8 @@ class MappingNode(Node):
         for detection in detections.detections:
             for result in detection.results:
 
-                if not result.hypothesis.class_id in self.objects.keys():
+                if not result.hypothesis.class_id in self.objects.keys() \
+                        and not result.hypothesis.class_id in self.downwards_objects.keys():
                     self.get_logger().warning(f"Unknown class id {result.hypothesis.class_id}")
                     continue #already did print, just continue here
 
@@ -235,7 +239,7 @@ class MappingNode(Node):
             )
         except TransformException as ex:
             # self.get_logger().error(f"When processing {result.hypothesis.class_id}: Can't look up transform from {detection_header.frame_id} to {parent}: {ex}")
-            return False, str(ex)
+            return False, str(ex)            
 
         # If the current object isnt the closest object and its parent is map we
         # aren't going to track its location in favor of offsetting the entire map
@@ -243,6 +247,13 @@ class MappingNode(Node):
         update_orientation = True
 
         trans_pose = do_transform_pose_stamped(pose, transform)
+        
+        if result.hypothesis.class_id in self.downwards_objects.keys() and parent == "map":
+            self.get_logger().info(f"Overriding orientation of {result.hypothesis.class_id}")
+            trans_pose.pose.orientation.x = 0
+            trans_pose.pose.orientation.y = -0.707
+            trans_pose.pose.orientation.z = 0
+            trans_pose.pose.orientation.w = 0.707
         
         object_location: Location = self.objects[child]["location"]
         object_location.add_pose(trans_pose.pose, update_position, update_orientation)

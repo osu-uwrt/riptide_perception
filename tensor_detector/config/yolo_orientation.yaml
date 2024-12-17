@@ -10,5 +10,5 @@
       5: 'bin_temperature',
       6: 'bin'
     }"
-    threshold: 0.5
-    iou: 0.9
+    threshold: 0.3
+    iou: 0.7

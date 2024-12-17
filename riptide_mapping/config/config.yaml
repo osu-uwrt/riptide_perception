@@ -85,7 +85,7 @@
           y: 0.0
           z: -1.2
           yaw: 0.0
-      bin:
+      bin_target:
         parent: map
         covar:
           x: 0.001
