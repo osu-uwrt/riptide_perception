@@ -62,13 +62,14 @@ class MappingNode(Node):
             "torpedo_small_hole": dict(),
             "table": dict(),
             "prequal_gate": dict(),
-            "prequal_pole": dict()
+            "prequal_pole": dict(),
+            "bin_target": dict()
         }
         
         self.downwards_objects = {
             "bin_target": dict(),
         }
-        
+                
         self.outstanding_detections: list[OutstandingDetectionInfo] = []
 
         # Manually declare all the parameters from yaml config bc ros2 is sick
@@ -250,10 +251,10 @@ class MappingNode(Node):
         
         if result.hypothesis.class_id in self.downwards_objects.keys() and parent == "map":
             self.get_logger().info(f"Overriding orientation of {result.hypothesis.class_id}")
-            trans_pose.pose.orientation.x = 0
-            trans_pose.pose.orientation.y = -0.707
-            trans_pose.pose.orientation.z = 0
-            trans_pose.pose.orientation.w = 0.707
+            trans_pose.pose.orientation.x = 0.0
+            trans_pose.pose.orientation.y = 0.0
+            trans_pose.pose.orientation.z = 0.0
+            trans_pose.pose.orientation.w = 1.0
         
         object_location: Location = self.objects[child]["location"]
         object_location.add_pose(trans_pose.pose, update_position, update_orientation)

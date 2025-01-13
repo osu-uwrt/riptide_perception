@@ -93,9 +93,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 11.57
-          y: 12.12
-          z: -1.75
+          x: 2.0
+          y: 0.0
+          z: -0.8
           yaw: 180.0
       table:
         parent: map
@@ -141,9 +141,9 @@
     # relative position filter parameters
     angle_cutoff: 15.0
     distance_limit: 10.0
-    confidence_cutoff: 0.7
+    confidence_cutoff: 0.2
 
     # Size of buffer for location tracking
-    buffer_size: 100
+    buffer_size: 50
     quantile: [0.01, 0.99]
     minimum_distance: 1.0
