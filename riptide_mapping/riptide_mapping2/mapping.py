@@ -250,7 +250,6 @@ class MappingNode(Node):
         trans_pose = do_transform_pose_stamped(pose, transform)
         
         if result.hypothesis.class_id in self.downwards_objects.keys() and parent == "map":
-            self.get_logger().info(f"Overriding orientation of {result.hypothesis.class_id}")
             trans_pose.pose.orientation.x = 0.0
             trans_pose.pose.orientation.y = 0.0
             trans_pose.pose.orientation.z = 0.0

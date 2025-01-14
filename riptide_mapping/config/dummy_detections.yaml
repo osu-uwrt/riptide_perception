@@ -58,7 +58,7 @@
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      bin:
+      bin_target:
         pose: [1.5, 3.5, -1.5, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
@@ -76,13 +76,13 @@
         max_dist: 4.0
     
     #POOL SIMULATION SETTINGS
-    simulate_pool: false #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
+    simulate_pool: true #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
     
     #the following settings are only used when simulate_pool is TRUE
-    forward_camera_frame: <robot>/zed_base_link #if <robot> is present in name, it will be populated with the robot name
+    forward_camera_frame: <robot>/base_link #if <robot> is present in name, it will be populated with the robot name
     forward_camera_hfov: 120 #degrees. used to determine if robot is actually looking at the object.
     forward_camera_vfov: 68 #degrees. used just like the hfov but not horizontal
     
-    downward_camera_frame: <robot>/downwards_camera/left_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_frame: <robot>/dummy_dfc_link #if <robot> is present in name, it will be populated with the robot name
     downward_camera_hfov: 60
     downward_camera_vfov: 40
