@@ -1,9 +1,8 @@
 /**/yolo_orientation:
   ros__parameters:
-    yolo_model: "bin_model.pt"
+    yolo_model: "just_bin_temp.pt"
     class_id_map: "{
-      0: 'bin', 
-      1: 'bin_temperature'
+      0: 'bin_temperature'
     }"
-    threshold: 0.3
+    threshold: 0.8
     iou: 0.7
