@@ -93,9 +93,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.0
-          y: 2.0
-          z: -0.8
+          x: 0.0
+          y: 0.0
+          z: -2.5
           yaw: 180.0
       table:
         parent: map

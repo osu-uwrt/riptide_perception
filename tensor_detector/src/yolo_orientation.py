@@ -62,14 +62,15 @@ class YOLONode(Node):
 		self.history_size = 10 # Window size for rolling average smoothing
 		self.default_normal = np.array([0.0, 0.0, 1.0]) # Default normal for quaternion calculation
 		self.class_id_map = {
-					0: 'buoy', 
-					1: 'mapping_map', 
-					2: 'mapping_hole', 
-					3: 'gate_hot',
-					4: 'gate_cold',
-					5: 'bin',
-     				6: 'bin_temperature'
-					}
+		 			0: 'bin_temperature'
+		} 
+		# 			1: 'mapping_map', 
+		# 			2: 'mapping_hole', 
+		# 			3: 'gate_hot',
+		# 			4: 'gate_cold',
+		# 			5: 'bin',
+     	# 			6: 'bin_temperature'
+		# 			}
 		# Update internal class_id_map
 		self.class_id_map.update({
             21: "mapping_largest_hole",
@@ -591,10 +592,12 @@ class YOLONode(Node):
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
  
+		#self.get_logger().info(f"class det3d: {class_name}")
 		# Detect features within the object's bounding box
 		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
  
 		if good_features is not None:
+			#self.get_logger().info(f"good features: {class_name}")
 			good_features[:, 0, 0] += x_min  # Adjust X coordinates
 			good_features[:, 0, 1] += y_min  # Adjust Y coordinates
  
@@ -603,7 +606,7 @@ class YOLONode(Node):
  
 			# Get 3D points from feature points
 			points_3d = self.get_3d_points(feature_points, cv_image)
- 
+	
 			if points_3d is not None and len(points_3d) >= self.min_points:
 				normal, _, centroid = self.fit_plane_to_points(points_3d)
  
@@ -647,6 +650,8 @@ class YOLONode(Node):
  
 				return detection
  
+		# else:
+		# 	self.get_logger().info(f"wtf: {class_name}")
 		# if self.latest_buoy is not None and class_name == "buoy":
 		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
 		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
@@ -765,7 +770,7 @@ class YOLONode(Node):
 		# Filter outlier points
 		points_3d = self.radius_outlier_removal(points_3d, min_neighbors=min(10,int(len(points_3d)*0.8)))
 		points_3d = self.statistical_outlier_removal(points_3d, k=min(10,int(len(points_3d) * 0.8)))
- 
+		# self.get_logger().info(f"points3d: {len(points_3d)}")
 		if points_3d is not None:
 			self.accumulated_points.extend(points_3d)  # Add the new points to the accumulated list
  
@@ -862,6 +867,7 @@ class YOLONode(Node):
 	def publish_marker(self, quat, centroid, class_name, bbox_width, bbox_height):
 		# Create a plane marker
 		plane_marker = Marker()
+		# self.get_logger().info(f"class pub: {class_name}")
 		plane_marker.header.frame_id = self.frame_id
 		if self.use_incoming_timestamp:
 			plane_marker.header.stamp = self.detection_timestamp

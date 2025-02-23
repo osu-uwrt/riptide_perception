@@ -59,7 +59,7 @@
         min_dist: 0.5
         max_dist: 3.0
       bin_target:
-        pose: [1.5, 3.5, -1.5, 0.0, 0.0, 0.0]
+        pose: [0, 0, -2.75, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
