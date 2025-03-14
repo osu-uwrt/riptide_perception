@@ -62,7 +62,7 @@ class YOLONode(Node):
 		self.history_size = 10 # Window size for rolling average smoothing
 		self.default_normal = np.array([0.0, 0.0, 1.0]) # Default normal for quaternion calculation
 		self.class_id_map = {
-		 			0: 'bin_temperature'
+		 			0: 'bin_target'
 		} 
 		# 			1: 'mapping_map', 
 		# 			2: 'mapping_hole', 

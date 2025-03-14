@@ -95,7 +95,7 @@
         pose:
           x: 0.0
           y: 0.0
-          z: -2.5
+          z: -2.1
           yaw: 180.0
       table:
         parent: map
@@ -144,6 +144,6 @@
     confidence_cutoff: 0.2
 
     # Size of buffer for location tracking
-    buffer_size: 50
+    buffer_size: 110
     quantile: [0.01, 0.99]
     minimum_distance: 1.0
