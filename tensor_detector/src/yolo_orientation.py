@@ -55,22 +55,21 @@ class YOLONode(Node):
 		self.use_incoming_timestamp = True
 		self.export = False # Whether or not to export .pt file to engine
 		self.print_camera_info = False # Print the camera info recieved
-		self.frame_id = 'talos/dfc_left_camera_optical_frame' 
+		self.frame_id = 'talos/ffc_left_camera_optical_frame' 
 		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5 # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
 		self.history_size = 10 # Window size for rolling average smoothing
 		self.default_normal = np.array([0.0, 0.0, 1.0]) # Default normal for quaternion calculation
 		self.class_id_map = {
-		 			0: 'bin_target'
-		} 
-		# 			1: 'mapping_map', 
-		# 			2: 'mapping_hole', 
-		# 			3: 'gate_hot',
-		# 			4: 'gate_cold',
-		# 			5: 'bin',
-     	# 			6: 'bin_temperature'
-		# 			}
+		 			0: 'bin_target',
+					1: 'mapping_map', 
+					2: 'mapping_hole', 
+					3: 'gate_hot',
+					4: 'gate_cold',
+					5: 'bin',
+     				6: 'bin_temperature'
+					}
 		# Update internal class_id_map
 		self.class_id_map.update({
             21: "mapping_largest_hole",
@@ -87,10 +86,10 @@ class YOLONode(Node):
  
  
 		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/dfc/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/dfc/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/dfc/zed_node/left/image_rect_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/dfc/zed_node/depth/depth_registered', self.depth_callback, 10)
+		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.camera_info_callback, 1)
+		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.depth_info_callback, 1)
+		self.image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.image_callback, 10)
+		self.depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.depth_callback, 10)
  
 		# Creating publishers
 		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
