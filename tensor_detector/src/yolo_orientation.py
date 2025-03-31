@@ -16,94 +16,63 @@ import time
 import os
 import yaml
 import math
+from rclpy.parameter import Parameter
+from rcl_interfaces.msg import SetParametersResult
  
 class YOLONode(Node):
 	def __init__(self):
 		super().__init__('yolo_orientation')
 		self.declare_parameters(
-            namespace='',
-            parameters=[
-                ('yolo_model', ''),
-                ('class_id_map', ''),
-                ('threshold', 0.9),
-                ('iou', 0.9),
-            ]
-        )
- 
-		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
- 
-	    # Load parameters
-		yolo_model = self.get_parameter('yolo_model').get_parameter_value().string_value
-		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
- 
- 
-		self.get_logger().info(f"Model path: {yolo_model_path}") 
- 
- 
-		class_id_map_str = self.get_parameter('class_id_map').get_parameter_value().string_value
-		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
- 
-		self.get_logger().info(f"Class id map info: {self.class_id_map}") 
- 
-		self.conf = self.get_parameter('threshold').get_parameter_value().double_value
-		self.iou = self.get_parameter('iou').get_parameter_value().double_value
- 
+			namespace='',
+			parameters=[
+				('active_camera', 'ffc'),  # Which camera is currently active (ffc or dfc)
+				('ffc_model', ''),
+				('dfc_model', ''),
+				('ffc_class_id_map', ''),
+				('dfc_class_id_map', ''),
+				('ffc_threshold', 0.9),
+				('dfc_threshold', 0.9),
+				('ffc_iou', 0.9),
+				('dfc_iou', 0.9),
+			]
+		)
+
+		# Set up parameter callback
+		self.add_on_set_parameters_callback(self.parameters_callback)
+
 		##########################
 		# USER DEFINED PARAMS    #
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = False # Whether or not to export .pt file to engine
-		self.print_camera_info = False # Print the camera info recieved
-		self.frame_id = 'talos/ffc_left_camera_optical_frame' 
-		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
-		self.min_points = 5 # Minimum number of points for SVD
+		self.export = False  # Whether or not to export .pt file to engine
+		self.print_camera_info = False  # Print the camera info recieved
+		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
+		self.min_points = 5  # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
-		self.history_size = 10 # Window size for rolling average smoothing
-		self.default_normal = np.array([0.0, 0.0, 1.0]) # Default normal for quaternion calculation
-		self.class_id_map = {
-		 			0: 'bin_target',
-					1: 'mapping_map', 
-					2: 'mapping_hole', 
-					3: 'gate_hot',
-					4: 'gate_cold',
-					5: 'bin_target',
-     				6: 'bin_temperature'
-					}
-		# Update internal class_id_map
-		self.class_id_map.update({
-            21: "mapping_largest_hole",
-            22: "mapping_smallest_hole"
-        })  # Internal mappings
-		self.color_map = { # Color map for classes published to markers
-			'buoy': (1.0, 0.0, 0.0),  
-			'mapping_map': (0.0, 1.0, 0.0),  
+		self.history_size = 10  # Window size for rolling average smoothing
+		self.default_normal = np.array([0.0, 0.0, 1.0])  # Default normal for quaternion calculation
+		self.map_min_area = 50  # 130
+
+		# Color map for classes published to markers
+		self.color_map = {
+			'bin_target': (1.0, 0.0, 0.0),
+			'mapping_map': (0.0, 1.0, 0.0),
 			'mapping_hole': (0.0, 0.0, 1.0),
 			'mapping_largest_hole': (0.0, 0.0, 1.0),
 			'mapping_smallest_hole': (1.0, 0.0, 0.0),
 			'gate_hot': (1.0, 1.0, 1.0)
 		}
- 
- 
-		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.depth_callback, 10)
- 
+
 		# Creating publishers
-		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
 		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
 		self.publisher = self.create_publisher(Image, 'yolo', 10)
 		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
-		#self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
 		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
- 
-		# CV and Yolo init
+
+		# CV and bridge init
 		self.bridge = CvBridge()
-		self.initialize_yolo(yolo_model_path)
- 
- 
+
 		# Init global vars
 		self.depth_image = None
 		self.camera_info_gathered = False
@@ -132,9 +101,110 @@ class YOLONode(Node):
 		self.smallest_hole = None
 		self.latest_buoy = None
 		self.plane_normal = None
-    
-		self.map_min_area = 50 #130 
- 
+
+		# Set up the camera based on the active_camera parameter
+		self.setup_camera()
+
+	def parameters_callback(self, params):
+		for param in params:
+			if param.name == 'active_camera' and param.value != self.active_camera:
+				self.get_logger().info(f"Switching from {self.active_camera} to {param.value}")
+				# Update active_camera before setup
+				self.active_camera = param.value
+				self.setup_camera()
+		return SetParametersResult(successful=True)
+
+	def setup_camera(self):
+		# Get the active camera
+		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
+
+		# Set the camera prefix
+		self.camera_prefix = self.active_camera
+
+		# Set frame ID
+		self.frame_id = f'talos/{self.camera_prefix}/left_camera_optical_frame'
+
+		# Get camera-specific parameters
+		yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
+		class_id_map_str = self.get_parameter(f'{self.active_camera}_class_id_map').get_parameter_value().string_value
+		self.conf = self.get_parameter(f'{self.active_camera}_threshold').get_parameter_value().double_value
+		self.iou = self.get_parameter(f'{self.active_camera}_iou').get_parameter_value().double_value
+
+		# Load class ID map
+		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
+
+		# Add default class ID map if none provided
+		if not self.class_id_map:
+			if self.active_camera == 'ffc':
+				self.class_id_map = {
+					0: 'bin_target',
+					1: 'mapping_map', 
+					2: 'mapping_hole', 
+					3: 'gate_hot',
+					4: 'gate_cold',
+					5: 'bin_temperature',
+					6: 'bin'
+				}
+			else:  # dfc
+				self.class_id_map = {
+					0: 'bin_target'
+				}
+
+		# Update internal class_id_map
+		self.class_id_map.update({
+			21: "mapping_largest_hole",
+			22: "mapping_smallest_hole"
+		})
+
+		self.get_logger().info(f"Class id map info: {self.class_id_map}")
+
+		# Load model
+		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
+		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
+		self.get_logger().info(f"Loading model path: {yolo_model_path}")
+		self.initialize_yolo(yolo_model_path)
+
+		# Reset camera-related variables
+		self.depth_image = None
+		self.camera_info_gathered = False
+		self.depth_info_gathered = False
+
+		# Unsubscribe from old topics if subscriptions exist
+		if hasattr(self, 'zed_info_subscription'):
+			self.destroy_subscription(self.zed_info_subscription)
+		if hasattr(self, 'depth_info_subscription'):
+			self.destroy_subscription(self.depth_info_subscription)
+		if hasattr(self, 'image_subscription'):
+			self.destroy_subscription(self.image_subscription)
+		if hasattr(self, 'depth_subscription'):
+			self.destroy_subscription(self.depth_subscription)
+
+		# Create new subscriptions
+		self.zed_info_subscription = self.create_subscription(
+			CameraInfo, 
+			f'/talos/{self.camera_prefix}/zed_node/left/camera_info', 
+			self.camera_info_callback, 
+			1
+		)
+		self.depth_info_subscription = self.create_subscription(
+			CameraInfo, 
+			f'/talos/{self.camera_prefix}/zed_node/depth/camera_info', 
+			self.depth_info_callback, 
+			1
+		)
+		self.image_subscription = self.create_subscription(
+			Image, 
+			f'/talos/{self.camera_prefix}/zed_node/left/image_rect_color', 
+			self.image_callback, 
+			10
+		)
+		self.depth_subscription = self.create_subscription(
+			Image, 
+			f'/talos/{self.camera_prefix}/zed_node/depth/depth_registered', 
+			self.depth_callback, 
+			10
+		)
+
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
 		engine_model_path = yolo_model_path.replace('.pt', '.engine')
