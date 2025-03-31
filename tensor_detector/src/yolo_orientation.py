@@ -101,6 +101,7 @@ class YOLONode(Node):
 		self.smallest_hole = None
 		self.latest_buoy = None
 		self.plane_normal = None
+		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
 		# Set up the camera based on the active_camera parameter
 		self.setup_camera()
@@ -115,9 +116,9 @@ class YOLONode(Node):
 		return SetParametersResult(successful=True)
 
 	def setup_camera(self):
-		# Get the active camera
-		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
-
+     
+		self.get_logger().info(f"Active camera: {self.active_camera}")
+  
 		# Set the camera prefix
 		self.camera_prefix = self.active_camera
 
@@ -130,11 +131,19 @@ class YOLONode(Node):
 		self.conf = self.get_parameter(f'{self.active_camera}_threshold').get_parameter_value().double_value
 		self.iou = self.get_parameter(f'{self.active_camera}_iou').get_parameter_value().double_value
 
+		self.get_logger().info(f"Yolo Model: {yolo_model}")
+		self.get_logger().info(f"Class id map str: {class_id_map_str}")
+		self.get_logger().info(f"Confidence Threshold: {self.conf}")
+		self.get_logger().info(f"IOU: {self.iou}")
+  
 		# Load class ID map
 		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
+  
+
 
 		# Add default class ID map if none provided
 		if not self.class_id_map:
+			self.get_logger().info(f"No class id map found, defaulting to:")
 			if self.active_camera == 'ffc':
 				self.class_id_map = {
 					0: 'bin_target',
@@ -149,14 +158,13 @@ class YOLONode(Node):
 				self.class_id_map = {
 					0: 'bin_target'
 				}
+		if self.active_camera == 'ffc':
+			# Update internal class_id_map
+			self.class_id_map.update({
+				21: "mapping_largest_hole",
+				22: "mapping_smallest_hole"
+			})
 
-		# Update internal class_id_map
-		self.class_id_map.update({
-			21: "mapping_largest_hole",
-			22: "mapping_smallest_hole"
-		})
-
-		self.get_logger().info(f"Class id map info: {self.class_id_map}")
 
 		# Load model
 		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
@@ -172,12 +180,16 @@ class YOLONode(Node):
 		# Unsubscribe from old topics if subscriptions exist
 		if hasattr(self, 'zed_info_subscription'):
 			self.destroy_subscription(self.zed_info_subscription)
+			self.get_logger().info(f"Destroying zed info subscription")
 		if hasattr(self, 'depth_info_subscription'):
 			self.destroy_subscription(self.depth_info_subscription)
+			self.get_logger().info(f"Destroying depth info subscription")
 		if hasattr(self, 'image_subscription'):
 			self.destroy_subscription(self.image_subscription)
+			self.get_logger().info(f"Destroying image subscription")
 		if hasattr(self, 'depth_subscription'):
 			self.destroy_subscription(self.depth_subscription)
+			self.get_logger().info(f"Destroying depth subscription")
 
 		# Create new subscriptions
 		self.zed_info_subscription = self.create_subscription(
@@ -186,24 +198,31 @@ class YOLONode(Node):
 			self.camera_info_callback, 
 			1
 		)
+		self.get_logger().info(f"Creating zed info subcription: /talos/{self.camera_prefix}/zed_node/left/camera_info")
+  
 		self.depth_info_subscription = self.create_subscription(
 			CameraInfo, 
 			f'/talos/{self.camera_prefix}/zed_node/depth/camera_info', 
 			self.depth_info_callback, 
 			1
 		)
+		self.get_logger().info(f"Creating depth info subcription: /talos/{self.camera_prefix}/zed_node/depth/camera_info")  
+
 		self.image_subscription = self.create_subscription(
 			Image, 
 			f'/talos/{self.camera_prefix}/zed_node/left/image_rect_color', 
 			self.image_callback, 
 			10
 		)
+		self.get_logger().info(f"Creating image subcription: /talos/{self.camera_prefix}/zed_node/left/image_rect_color")
+  
 		self.depth_subscription = self.create_subscription(
 			Image, 
 			f'/talos/{self.camera_prefix}/zed_node/depth/depth_registered', 
 			self.depth_callback, 
 			10
 		)
+		self.get_logger().info(f"Creating depth subcription: /talos/{self.camera_prefix}/zed_node/depth/depth_registered")
 
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
