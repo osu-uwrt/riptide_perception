@@ -1,5 +1,3 @@
-#! /usr/bin/env python3
- 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, PointCloud
@@ -16,16 +14,15 @@ import time
 import os
 import yaml
 import math
-from rclpy.parameter import Parameter
-from rcl_interfaces.msg import SetParametersResult
- 
+from std_srvs.srv import Trigger
+
 class YOLONode(Node):
 	def __init__(self):
 		super().__init__('yolo_orientation')
 		self.declare_parameters(
 			namespace='',
 			parameters=[
-				('active_camera', 'ffc'),  # Which camera is currently active (ffc or dfc)
+				('active_camera', 'ffc'),  # Default camera
 				('ffc_model', ''),
 				('dfc_model', ''),
 				('ffc_class_id_map', ''),
@@ -36,9 +33,6 @@ class YOLONode(Node):
 				('dfc_iou', 0.9),
 			]
 		)
-
-		# Set up parameter callback
-		self.add_on_set_parameters_callback(self.parameters_callback)
 
 		##########################
 		# USER DEFINED PARAMS    #
@@ -103,22 +97,30 @@ class YOLONode(Node):
 		self.plane_normal = None
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
+		# Create the service for camera switching
+		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
+		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
+
 		# Set up the camera based on the active_camera parameter
 		self.setup_camera()
 
-	def parameters_callback(self, params):
-		for param in params:
-			if param.name == 'active_camera' and param.value != self.active_camera:
-				self.get_logger().info(f"Switching from {self.active_camera} to {param.value}")
-				# Update active_camera before setup
-				self.active_camera = param.value
-				self.setup_camera()
-		return SetParametersResult(successful=True)
+	def switch_camera_callback(self, request, response):
+		# Toggle between 'ffc' and 'dfc'
+		new_camera = 'dfc' if self.active_camera == 'ffc' else 'ffc'
+
+		self.get_logger().info(f"Switching from {self.active_camera} to {new_camera}")
+		old_camera = self.active_camera
+		self.active_camera = new_camera
+		self.setup_camera()
+
+		response.success = True
+		response.message = f"Successfully switched from {old_camera} to {new_camera}"
+			
+		return response
 
 	def setup_camera(self):
-     
 		self.get_logger().info(f"Active camera: {self.active_camera}")
-  
+
 		# Set the camera prefix
 		self.camera_prefix = self.active_camera
 
@@ -135,11 +137,9 @@ class YOLONode(Node):
 		self.get_logger().info(f"Class id map str: {class_id_map_str}")
 		self.get_logger().info(f"Confidence Threshold: {self.conf}")
 		self.get_logger().info(f"IOU: {self.iou}")
-  
+
 		# Load class ID map
 		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
-  
-
 
 		# Add default class ID map if none provided
 		if not self.class_id_map:
@@ -165,7 +165,6 @@ class YOLONode(Node):
 				22: "mapping_smallest_hole"
 			})
 
-
 		# Load model
 		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
 		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
@@ -179,17 +178,21 @@ class YOLONode(Node):
 
 		# Unsubscribe from old topics if subscriptions exist
 		if hasattr(self, 'zed_info_subscription'):
+			topic = self.zed_info_subscription.topic_name
 			self.destroy_subscription(self.zed_info_subscription)
-			self.get_logger().info(f"Destroying zed info subscription")
+			self.get_logger().info(f"Destroying camera info subscription: {topic}")
 		if hasattr(self, 'depth_info_subscription'):
+			topic = self.zed_info_subscription.topic_name
 			self.destroy_subscription(self.depth_info_subscription)
-			self.get_logger().info(f"Destroying depth info subscription")
+			self.get_logger().info(f"Destroying depth info subscription: {topic}")
 		if hasattr(self, 'image_subscription'):
+			topic = self.zed_info_subscription.topic_name
 			self.destroy_subscription(self.image_subscription)
-			self.get_logger().info(f"Destroying image subscription")
+			self.get_logger().info(f"Destroying image subscription: {topic}")
 		if hasattr(self, 'depth_subscription'):
+			topic = self.zed_info_subscription.topic_name
 			self.destroy_subscription(self.depth_subscription)
-			self.get_logger().info(f"Destroying depth subscription")
+			self.get_logger().info(f"Destroying depth subscription: {topic}")
 
 		# Create new subscriptions
 		self.zed_info_subscription = self.create_subscription(
@@ -198,8 +201,8 @@ class YOLONode(Node):
 			self.camera_info_callback, 
 			1
 		)
-		self.get_logger().info(f"Creating zed info subcription: /talos/{self.camera_prefix}/zed_node/left/camera_info")
-  
+		self.get_logger().info(f"Creating camera info subcription: /talos/{self.camera_prefix}/zed_node/left/camera_info")
+
 		self.depth_info_subscription = self.create_subscription(
 			CameraInfo, 
 			f'/talos/{self.camera_prefix}/zed_node/depth/camera_info', 
@@ -215,7 +218,7 @@ class YOLONode(Node):
 			10
 		)
 		self.get_logger().info(f"Creating image subcription: /talos/{self.camera_prefix}/zed_node/left/image_rect_color")
-  
+
 		self.depth_subscription = self.create_subscription(
 			Image, 
 			f'/talos/{self.camera_prefix}/zed_node/depth/depth_registered', 
@@ -246,8 +249,10 @@ class YOLONode(Node):
  
 		return (inner_x_min >= outer_x_min and inner_x_max <= outer_x_max and
 				inner_y_min >= outer_y_min and inner_y_max <= outer_y_max)
- 
- 
+
+	def has_subscribers(self, publisher):
+		return publisher.get_subscription_count() > 0
+
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
 			if self.print_camera_info:
@@ -366,9 +371,13 @@ class YOLONode(Node):
 			self.temp_markers = []  # Clear the list for the next frame
  
 		annotated_frame = results[0].plot()
-		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+		
 		self.publish_accumulated_point_cloud()
-		self.publisher.publish(annotated_msg)
+
+		if self.has_subscribers(self.publisher):
+			annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+			self.publisher.publish(annotated_msg)
+		
 		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
 		# 	detections.detections.append(self.spoof_torpedo())
 		self.torpedo_seen = False
@@ -378,7 +387,8 @@ class YOLONode(Node):
 			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
 			self.get_logger().info(f"FPS: {1/self.detection_time}")
 		# self.get_logger().info(f"detections: {detections}")
-		self.detection_publisher.publish(detections)
+		if self.has_subscribers(self.detection_publisher):
+			self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
  
 	def get_hole_size(self, hole):
@@ -782,6 +792,9 @@ class YOLONode(Node):
 		return hypothesis_with_pose
  
 	def publish_accumulated_point_cloud(self):
+			if not self.has_subscribers(self.point_cloud_publisher):
+				return # Skip if no subscribers
+			
 			if not self.accumulated_points:
 				return  # Skip if there are no points
  
@@ -953,6 +966,10 @@ class YOLONode(Node):
 		return rotation
  
 	def publish_marker(self, quat, centroid, class_name, bbox_width, bbox_height):
+		
+		if not self.has_subscribers(self.marker_array_publisher):
+			return
+		
 		# Create a plane marker
 		plane_marker = Marker()
 		# self.get_logger().info(f"class pub: {class_name}")
@@ -1040,12 +1057,16 @@ class YOLONode(Node):
 		self.temp_markers.append(arrow_marker)
  
 	def publish_markers(self, markers):
+
+		if not self.has_subscribers(self.marker_array_publisher):
+			return
+		
 		current_time = time.time()
 		if current_time - self.last_publish_time > self.publish_interval:
 			marker_array = MarkerArray()
 			marker_array.markers = markers
-			self.marker_array_publisher.publish(marker_array)
 			self.last_publish_time = current_time
+			self.marker_array_publisher.publish(marker_array)
 			# Clear the markers after publishing
 			markers.clear()
  
