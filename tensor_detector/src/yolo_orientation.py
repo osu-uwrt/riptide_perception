@@ -67,7 +67,7 @@ class YOLONode(Node):
 					2: 'mapping_hole', 
 					3: 'gate_hot',
 					4: 'gate_cold',
-					5: 'bin',
+					5: 'bin_target',
      				6: 'bin_temperature'
 					}
 		# Update internal class_id_map
