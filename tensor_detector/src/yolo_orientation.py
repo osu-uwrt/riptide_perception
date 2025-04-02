@@ -1,5 +1,5 @@
-#! /usr/bin/env python3
- 
+#!/usr/bin/env python3
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, PointCloud
@@ -16,94 +16,55 @@ import time
 import os
 import yaml
 import math
- 
+from std_srvs.srv import Trigger
+
 class YOLONode(Node):
 	def __init__(self):
 		super().__init__('yolo_orientation')
 		self.declare_parameters(
-            namespace='',
-            parameters=[
-                ('yolo_model', ''),
-                ('class_id_map', ''),
-                ('threshold', 0.9),
-                ('iou', 0.9),
-            ]
-        )
- 
-		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
- 
-	    # Load parameters
-		yolo_model = self.get_parameter('yolo_model').get_parameter_value().string_value
-		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
- 
- 
-		self.get_logger().info(f"Model path: {yolo_model_path}") 
- 
- 
-		class_id_map_str = self.get_parameter('class_id_map').get_parameter_value().string_value
-		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
- 
-		self.get_logger().info(f"Class id map info: {self.class_id_map}") 
- 
-		self.conf = self.get_parameter('threshold').get_parameter_value().double_value
-		self.iou = self.get_parameter('iou').get_parameter_value().double_value
- 
+			namespace='',
+			parameters=[
+				('active_camera', 'ffc'),  # Default camera
+				('ffc_model', ''),
+				('dfc_model', ''),
+				('ffc_class_id_map', ''),
+				('dfc_class_id_map', ''),
+				('ffc_threshold', 0.9),
+				('dfc_threshold', 0.9),
+				('ffc_iou', 0.9),
+				('dfc_iou', 0.9),
+			]
+		)
+
 		##########################
 		# USER DEFINED PARAMS    #
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = False # Whether or not to export .pt file to engine
-		self.print_camera_info = False # Print the camera info recieved
-		self.frame_id = 'talos/ffc_left_camera_optical_frame' 
-		self.class_detect_shrink = 0.15 # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
-		self.min_points = 5 # Minimum number of points for SVD
+		self.export = False  # Whether or not to export .pt file to engine
+		self.print_camera_info = False  # Print the camera info recieved
+		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
+		self.min_points = 5  # Minimum number of points for SVD
 		self.publish_interval = 0.1  # 100 milliseconds
-		self.history_size = 10 # Window size for rolling average smoothing
-		self.default_normal = np.array([0.0, 0.0, 1.0]) # Default normal for quaternion calculation
-		self.class_id_map = {
-					0: 'buoy', 
-					1: 'mapping_map', 
-					2: 'mapping_hole', 
-					3: 'gate_hot',
-					4: 'gate_cold',
-					5: 'bin',
-     				6: 'bin_temperature'
-					}
-		# Update internal class_id_map
-		self.class_id_map.update({
-            21: "mapping_largest_hole",
-            22: "mapping_smallest_hole"
-        })  # Internal mappings
-		self.color_map = { # Color map for classes published to markers
-			'buoy': (1.0, 0.0, 0.0),  
-			'mapping_map': (0.0, 1.0, 0.0),  
+		self.history_size = 10  # Window size for rolling average smoothing
+		self.default_normal = np.array([0.0, 0.0, 1.0])  # Default normal for quaternion calculation
+		self.map_min_area = 50  # 130
+
+		# Color map for classes published to markers
+		self.color_map = {
+			'bin_target': (1.0, 0.0, 0.0),
+			'mapping_map': (0.0, 1.0, 0.0),
 			'mapping_hole': (0.0, 0.0, 1.0),
 			'mapping_largest_hole': (0.0, 0.0, 1.0),
 			'mapping_smallest_hole': (1.0, 0.0, 0.0),
 			'gate_hot': (1.0, 1.0, 1.0)
 		}
- 
- 
-		# Creating subscriptions
-		self.zed_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/left/camera_info', self.camera_info_callback, 1)
-		self.depth_info_subscription = self.create_subscription(CameraInfo, '/talos/ffc/zed_node/depth/camera_info', self.depth_info_callback, 1)
-		self.image_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/left/image_rect_color', self.image_callback, 10)
-		self.depth_subscription = self.create_subscription(Image, '/talos/ffc/zed_node/depth/depth_registered', self.depth_callback, 10)
- 
-		# Creating publishers
-		# self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 10)
-		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
-		self.publisher = self.create_publisher(Image, 'yolo', 10)
-		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
-		#self.mask_publisher = self.create_publisher(Image, 'yolo_mask', 10)
-		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
- 
-		# CV and Yolo init
+
+		self.create_publishers()
+
+		# CV and bridge init
 		self.bridge = CvBridge()
-		self.initialize_yolo(yolo_model_path)
- 
- 
+
 		# Init global vars
 		self.depth_image = None
 		self.camera_info_gathered = False
@@ -132,9 +93,191 @@ class YOLONode(Node):
 		self.smallest_hole = None
 		self.latest_buoy = None
 		self.plane_normal = None
-    
-		self.map_min_area = 50 #130 
- 
+		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
+
+		self.create_switch_service()
+
+		# Set up the camera based on the active_camera parameter
+		self.setup_camera()
+	
+	def create_publishers(self):
+		# Creating publishers
+		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
+		self.publisher = self.create_publisher(Image, 'yolo', 10)
+		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
+		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
+
+	def delayed_setup(self):
+		try:
+			self.setup_camera()
+		finally:
+			self.camera_switch_in_progress = False
+			self.delayed_timer.cancel()
+
+	def create_switch_service(self):
+		# Create the service for camera switching
+		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
+		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
+
+
+	def switch_camera_callback(self, request, response):
+		if getattr(self, 'camera_switch_in_progress', False):
+			response.success = False
+			response.message = "Camera switch already in progress."
+			return response
+
+		self.camera_switch_in_progress = True
+
+		new_camera = 'dfc' if self.active_camera == 'ffc' else 'ffc'
+		self.get_logger().info(f"Switching from {self.active_camera} to {new_camera}")
+		old_camera = self.active_camera
+		self.active_camera = new_camera
+
+		# Schedule reconfiguration after a short delay (e.g., 0.1 seconds)
+		self.delayed_timer = self.create_timer(0.1, self.delayed_setup)
+
+		response.success = True
+		response.message = f"Successfully switched from {old_camera} to {new_camera}"
+		return response
+
+	def setup_camera(self):
+		self.get_logger().info(f"Active camera: {self.active_camera}")
+
+		# Set the camera prefix
+		self.camera_prefix = self.active_camera
+
+		# Set frame ID
+		self.frame_id = f'talos/{self.camera_prefix}/left_camera_optical_frame'
+
+		# Get camera-specific parameters
+		yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
+		class_id_map_str = self.get_parameter(f'{self.active_camera}_class_id_map').get_parameter_value().string_value
+		self.conf = self.get_parameter(f'{self.active_camera}_threshold').get_parameter_value().double_value
+		self.iou = self.get_parameter(f'{self.active_camera}_iou').get_parameter_value().double_value
+
+		self.get_logger().info(f"Yolo Model: {yolo_model}")
+		self.get_logger().info(f"Class id map str: {class_id_map_str}")
+		self.get_logger().info(f"Confidence Threshold: {self.conf}")
+		self.get_logger().info(f"IOU: {self.iou}")
+
+		self.load_class_id_map(class_id_map_str)
+		self.load_model(yolo_model)
+		self.reset_collection_variables()
+		self.destroy_subscriptions()
+		self.create_subscriptions()
+
+	def load_class_id_map(self, class_id_map_str):
+		# Load class ID map
+		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
+
+		# Add default class ID map if none provided
+		if not self.class_id_map:
+			self.get_logger().info(f"No class id map found, defaulting to:")
+			if self.active_camera == 'ffc':
+				self.class_id_map = {
+					0: 'bin_target',
+					1: 'mapping_map', 
+					2: 'mapping_hole', 
+					3: 'gate_hot',
+					4: 'gate_cold',
+					5: 'bin_temperature',
+					6: 'bin'
+				}
+			else:  # dfc
+				self.class_id_map = {
+					0: 'bin_target'
+				}
+		else:
+			self.get_logger().info(f"Class id map found:")
+
+		if self.active_camera == 'ffc':
+			# Update internal class_id_map
+			self.class_id_map.update({
+				21: "mapping_largest_hole",
+				22: "mapping_smallest_hole"
+			})
+
+		self.get_logger().info(f"{self.class_id_map}")
+
+	def reset_collection_variables(self):
+		# Reset camera-related variables
+		self.depth_image = None
+		self.camera_info_gathered = False
+		self.depth_info_gathered = False
+
+	def destroy_subscriptions(self):
+		# Unsubscribe from old topics if subscriptions exist
+		if hasattr(self, 'zed_info_subscription'):
+			try:
+				topic = self.zed_info_subscription.topic_name
+			except Exception:
+				topic = "unknown"
+			self.destroy_subscription(self.zed_info_subscription)
+			self.get_logger().info(f"Destroying camera info subscription: {topic}")
+		if hasattr(self, 'depth_info_subscription'):
+			try:
+				topic = self.depth_info_subscription.topic_name
+			except Exception:
+				topic = "unknown"
+			self.destroy_subscription(self.depth_info_subscription)
+			self.get_logger().info(f"Destroying depth info subscription: {topic}")
+		if hasattr(self, 'image_subscription'):
+			try:
+				topic = self.image_subscription.topic_name
+			except Exception:
+				topic = "unknown"
+			self.destroy_subscription(self.image_subscription)
+			self.get_logger().info(f"Destroying image subscription: {topic}")
+		if hasattr(self, 'depth_subscription'):
+			try:
+				topic = self.depth_subscription.topic_name
+			except Exception:
+				topic = "unknown"
+			self.destroy_subscription(self.depth_subscription)
+			self.get_logger().info(f"Destroying depth subscription: {topic}")
+
+	def create_subscriptions(self):
+		# Create new subscriptions
+		self.zed_info_subscription = self.create_subscription(
+			CameraInfo, 
+			f'/talos/{self.camera_prefix}/zed_node/left/camera_info', 
+			self.camera_info_callback, 
+			1
+		)
+		self.get_logger().info(f"Creating camera info subcription: /talos/{self.camera_prefix}/zed_node/left/camera_info")
+
+		self.depth_info_subscription = self.create_subscription(
+			CameraInfo, 
+			f'/talos/{self.camera_prefix}/zed_node/depth/camera_info', 
+			self.depth_info_callback, 
+			1
+		)
+		self.get_logger().info(f"Creating depth info subcription: /talos/{self.camera_prefix}/zed_node/depth/camera_info")  
+
+		self.image_subscription = self.create_subscription(
+			Image, 
+			f'/talos/{self.camera_prefix}/zed_node/left/image_rect_color', 
+			self.image_callback, 
+			10
+		)
+		self.get_logger().info(f"Creating image subcription: /talos/{self.camera_prefix}/zed_node/left/image_rect_color")
+
+		self.depth_subscription = self.create_subscription(
+			Image, 
+			f'/talos/{self.camera_prefix}/zed_node/depth/depth_registered', 
+			self.depth_callback, 
+			10
+		)
+		self.get_logger().info(f"Creating depth subcription: /talos/{self.camera_prefix}/zed_node/depth/depth_registered")
+
+	def load_model(self, yolo_model):
+		# Load model
+		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
+		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
+		self.get_logger().info(f"Loading model path: {yolo_model_path}")
+		self.initialize_yolo(yolo_model_path)
+
+
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
 		engine_model_path = yolo_model_path.replace('.pt', '.engine')
@@ -157,8 +300,10 @@ class YOLONode(Node):
  
 		return (inner_x_min >= outer_x_min and inner_x_max <= outer_x_max and
 				inner_y_min >= outer_y_min and inner_y_max <= outer_y_max)
- 
- 
+
+	def has_subscribers(self, publisher):
+		return publisher.get_subscription_count() > 0
+
 	def camera_info_callback(self, msg):
 		if not self.camera_info_gathered:
 			if self.print_camera_info:
@@ -277,9 +422,13 @@ class YOLONode(Node):
 			self.temp_markers = []  # Clear the list for the next frame
  
 		annotated_frame = results[0].plot()
-		annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+		
 		self.publish_accumulated_point_cloud()
-		self.publisher.publish(annotated_msg)
+
+		if self.has_subscribers(self.publisher):
+			annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+			self.publisher.publish(annotated_msg)
+		
 		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
 		# 	detections.detections.append(self.spoof_torpedo())
 		self.torpedo_seen = False
@@ -289,7 +438,8 @@ class YOLONode(Node):
 			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
 			self.get_logger().info(f"FPS: {1/self.detection_time}")
 		# self.get_logger().info(f"detections: {detections}")
-		self.detection_publisher.publish(detections)
+		if self.has_subscribers(self.detection_publisher):
+			self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
  
 	def get_hole_size(self, hole):
@@ -453,8 +603,6 @@ class YOLONode(Node):
 				else:
 					return None
  
- 
- 
 				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
  
 				# Create Detection3D message
@@ -543,31 +691,32 @@ class YOLONode(Node):
  
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-		elif class_name == "buoy":
-			# Sample the depth value at the center of the bounding box
-			depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-			# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
-			# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
-			# self.get_logger().info(f"depth: {depth_value}")
-			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
-				self.get_logger().info("rejecting buoy")
-				return None
-			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
-			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+		# elif class_name == "buoy":
+		# 	# Sample the depth value at the center of the bounding box
+		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
+		# 	# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
+		# 	# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
+		# 	# self.get_logger().info(f"depth: {depth_value}")
+		# 	if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
+		# 		self.get_logger().info("rejecting buoy")
+		# 		return None
+		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
+		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
+		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
  
-			# Create Detection3D message
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
+		# 	# Create Detection3D message
+		# 	detection = Detection3D()
+		# 	detection.header.frame_id = self.frame_id
+		# 	if self.use_incoming_timestamp:
+		# 		detection.header.stamp = self.detection_timestamp
+		# 	else:
+		# 		detection.header.stamp = self.get_clock().now().to_msg()
  
-			# Set the pose
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+		# 	# Set the pose
+		# 	class_name = "bin_target"
+		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
  
-			return detection
+		# 	return detection
 		elif class_name in ["torpedo_open", "torpedo_closed"]:
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
@@ -590,10 +739,12 @@ class YOLONode(Node):
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
  
+		#self.get_logger().info(f"class det3d: {class_name}")
 		# Detect features within the object's bounding box
 		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
  
 		if good_features is not None:
+			#self.get_logger().info(f"good features: {class_name}")
 			good_features[:, 0, 0] += x_min  # Adjust X coordinates
 			good_features[:, 0, 1] += y_min  # Adjust Y coordinates
  
@@ -602,7 +753,7 @@ class YOLONode(Node):
  
 			# Get 3D points from feature points
 			points_3d = self.get_3d_points(feature_points, cv_image)
- 
+	
 			if points_3d is not None and len(points_3d) >= self.min_points:
 				normal, _, centroid = self.fit_plane_to_points(points_3d)
  
@@ -626,6 +777,8 @@ class YOLONode(Node):
 					self.mapping_map_centroid = centroid
 					self.mapping_map_quat = quat
 					class_name = "torpedo"
+				elif class_name == "buoy":
+					class_name = "bin_target"
  
  
 				# When calling publish_marker, pass these dimensions along with other required information
@@ -644,23 +797,25 @@ class YOLONode(Node):
  
 				return detection
  
-		if self.latest_buoy is not None and class_name == "buoy":
-			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
-			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
+		# else:
+		# 	self.get_logger().info(f"wtf: {class_name}")
+		# if self.latest_buoy is not None and class_name == "buoy":
+		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
+		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
+		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+		# 	detection = Detection3D()
+		# 	detection.header.frame_id = self.frame_id
+		# 	if self.use_incoming_timestamp:
+		# 		detection.header.stamp = self.detection_timestamp
+		# 	else:
+		# 		detection.header.stamp = self.get_clock().now().to_msg()
  
-			# Set the pose
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+		# 	# Set the pose
+		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
  
-			return detection
+		# 	return detection
  
-		return None
+		# return None
  
 	def calculate_centroid(self, center_x, center_y, z):
 		center_3d_x = (center_x - self.cx) * z / self.fx
@@ -686,6 +841,9 @@ class YOLONode(Node):
 		return hypothesis_with_pose
  
 	def publish_accumulated_point_cloud(self):
+			if not self.has_subscribers(self.point_cloud_publisher):
+				return # Skip if no subscribers
+			
 			if not self.accumulated_points:
 				return  # Skip if there are no points
  
@@ -762,7 +920,7 @@ class YOLONode(Node):
 		# Filter outlier points
 		points_3d = self.radius_outlier_removal(points_3d, min_neighbors=min(10,int(len(points_3d)*0.8)))
 		points_3d = self.statistical_outlier_removal(points_3d, k=min(10,int(len(points_3d) * 0.8)))
- 
+		# self.get_logger().info(f"points3d: {len(points_3d)}")
 		if points_3d is not None:
 			self.accumulated_points.extend(points_3d)  # Add the new points to the accumulated list
  
@@ -857,8 +1015,13 @@ class YOLONode(Node):
 		return rotation
  
 	def publish_marker(self, quat, centroid, class_name, bbox_width, bbox_height):
+		
+		if not self.has_subscribers(self.marker_array_publisher):
+			return
+		
 		# Create a plane marker
 		plane_marker = Marker()
+		# self.get_logger().info(f"class pub: {class_name}")
 		plane_marker.header.frame_id = self.frame_id
 		if self.use_incoming_timestamp:
 			plane_marker.header.stamp = self.detection_timestamp
@@ -943,17 +1106,20 @@ class YOLONode(Node):
 		self.temp_markers.append(arrow_marker)
  
 	def publish_markers(self, markers):
+
+		if not self.has_subscribers(self.marker_array_publisher):
+			return
+		
 		current_time = time.time()
 		if current_time - self.last_publish_time > self.publish_interval:
 			marker_array = MarkerArray()
 			marker_array.markers = markers
-			self.marker_array_publisher.publish(marker_array)
 			self.last_publish_time = current_time
+			self.marker_array_publisher.publish(marker_array)
 			# Clear the markers after publishing
 			markers.clear()
  
 	def get_color_for_class(self, class_name):
- 
 		return self.color_map.get(class_name, (1.0, 1.0, 1.0))  # Default to white
  
 def main(args=None):
