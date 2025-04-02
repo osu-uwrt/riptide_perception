@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, PointCloud
@@ -93,7 +95,7 @@ class YOLONode(Node):
 		self.plane_normal = None
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
-		self.create_service()
+		self.create_switch_service()
 
 		# Set up the camera based on the active_camera parameter
 		self.setup_camera()
@@ -105,24 +107,37 @@ class YOLONode(Node):
 		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
 		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
 
+	def delayed_setup(self):
+		try:
+			self.setup_camera()
+		finally:
+			self.camera_switch_in_progress = False
+			self.delayed_timer.cancel()
 
-	def create_service(self):
+	def create_switch_service(self):
 		# Create the service for camera switching
 		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
 		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
 
-	def switch_camera_callback(self, request, response):
-		# Toggle between 'ffc' and 'dfc'
-		new_camera = 'dfc' if self.active_camera == 'ffc' else 'ffc'
 
+	def switch_camera_callback(self, request, response):
+		if getattr(self, 'camera_switch_in_progress', False):
+			response.success = False
+			response.message = "Camera switch already in progress."
+			return response
+
+		self.camera_switch_in_progress = True
+
+		new_camera = 'dfc' if self.active_camera == 'ffc' else 'ffc'
 		self.get_logger().info(f"Switching from {self.active_camera} to {new_camera}")
 		old_camera = self.active_camera
 		self.active_camera = new_camera
-		self.setup_camera()
+
+		# Schedule reconfiguration after a short delay (e.g., 0.1 seconds)
+		self.delayed_timer = self.create_timer(0.1, self.delayed_setup)
 
 		response.success = True
 		response.message = f"Successfully switched from {old_camera} to {new_camera}"
-			
 		return response
 
 	def setup_camera(self):
@@ -193,22 +208,33 @@ class YOLONode(Node):
 	def destroy_subscriptions(self):
 		# Unsubscribe from old topics if subscriptions exist
 		if hasattr(self, 'zed_info_subscription'):
-			topic = self.zed_info_subscription.topic_name
+			try:
+				topic = self.zed_info_subscription.topic_name
+			except Exception:
+				topic = "unknown"
 			self.destroy_subscription(self.zed_info_subscription)
 			self.get_logger().info(f"Destroying camera info subscription: {topic}")
 		if hasattr(self, 'depth_info_subscription'):
-			topic = self.zed_info_subscription.topic_name
+			try:
+				topic = self.depth_info_subscription.topic_name
+			except Exception:
+				topic = "unknown"
 			self.destroy_subscription(self.depth_info_subscription)
 			self.get_logger().info(f"Destroying depth info subscription: {topic}")
 		if hasattr(self, 'image_subscription'):
-			topic = self.zed_info_subscription.topic_name
+			try:
+				topic = self.image_subscription.topic_name
+			except Exception:
+				topic = "unknown"
 			self.destroy_subscription(self.image_subscription)
 			self.get_logger().info(f"Destroying image subscription: {topic}")
 		if hasattr(self, 'depth_subscription'):
-			topic = self.zed_info_subscription.topic_name
+			try:
+				topic = self.depth_subscription.topic_name
+			except Exception:
+				topic = "unknown"
 			self.destroy_subscription(self.depth_subscription)
 			self.get_logger().info(f"Destroying depth subscription: {topic}")
-
 
 	def create_subscriptions(self):
 		# Create new subscriptions
