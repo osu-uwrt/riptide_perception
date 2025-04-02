@@ -37,6 +37,16 @@ def generate_launch_description():
             default_value = [LC('config'), '.yaml']
         ),
         
+        DeclareLaunchArgument(
+            "base_link_name",
+            default_value=[LC("robot"), "/base_link"]
+        ),
+        
+        DeclareLaunchArgument(
+            "dummy_dfc_link_name",
+            default_value=[LC("robot"), "/dummy_dfc_link"]
+        ),
+        
         GroupAction(actions=[
             PushRosNamespace(
                 LC("robot")
@@ -58,6 +68,19 @@ def generate_launch_description():
                 
                 arguments=[
                     "--ros-args", "--log-level", LC("log_level")
+                ]
+            ),
+            
+            
+            
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="dummy_dfc_link_publisher",
+                arguments=[
+                    "--frame-id", LC("base_link_name"),
+                    "--child-frame-id", LC('dummy_dfc_link_name'),
+                    "--pitch", "1.5707"
                 ]
             )
         ], scoped=True)

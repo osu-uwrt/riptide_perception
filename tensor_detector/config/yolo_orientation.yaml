@@ -1,7 +1,10 @@
 /**/yolo_orientation:
   ros__parameters:
-    yolo_model: "robosub_2024_v3.pt"
-    class_id_map: "{
+    active_camera: "ffc"  # Change to "dfc or ffc" to switch cameras
+    
+    # FFC configuration
+    ffc_model: "robosub_2024_v3.pt"
+    ffc_class_id_map: "{
       0: 'buoy', 
       1: 'mapping_map', 
       2: 'mapping_hole', 
@@ -10,5 +13,13 @@
       5: 'bin_temperature',
       6: 'bin'
     }"
-    threshold: 0.5
-    iou: 0.9
+    ffc_threshold: 0.9
+    ffc_iou: 0.9
+    
+    # DFC configuration
+    dfc_model: "just_bin_temp.pt"
+    dfc_class_id_map: "{
+      0: 'bin_target'
+    }"
+    dfc_threshold: 0.8
+    dfc_iou: 0.9

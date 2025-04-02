@@ -32,7 +32,7 @@ objects = [
     "torpedo",
     "torpedo_large_hole",
     "torpedo_small_hole",
-    "bin",
+    "bin_target",
     "table"
 ]
 
