@@ -58,11 +58,7 @@ class YOLONode(Node):
 			'gate_hot': (1.0, 1.0, 1.0)
 		}
 
-		# Creating publishers
-		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
-		self.publisher = self.create_publisher(Image, 'yolo', 10)
-		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
-		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
+		self.create_publishers()
 
 		# CV and bridge init
 		self.bridge = CvBridge()
@@ -97,12 +93,23 @@ class YOLONode(Node):
 		self.plane_normal = None
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
-		# Create the service for camera switching
-		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
-		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
+		self.create_service()
 
 		# Set up the camera based on the active_camera parameter
 		self.setup_camera()
+	
+	def create_publishers(self):
+		# Creating publishers
+		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
+		self.publisher = self.create_publisher(Image, 'yolo', 10)
+		self.point_cloud_publisher = self.create_publisher(PointCloud, 'point_cloud', 10)
+		self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
+
+
+	def create_service(self):
+		# Create the service for camera switching
+		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
+		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
 
 	def switch_camera_callback(self, request, response):
 		# Toggle between 'ffc' and 'dfc'
@@ -138,6 +145,13 @@ class YOLONode(Node):
 		self.get_logger().info(f"Confidence Threshold: {self.conf}")
 		self.get_logger().info(f"IOU: {self.iou}")
 
+		self.load_class_id_map(class_id_map_str)
+		self.load_model(yolo_model)
+		self.reset_collection_variables()
+		self.destroy_subscriptions()
+		self.create_subscriptions()
+
+	def load_class_id_map(self, class_id_map_str):
 		# Load class ID map
 		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
 
@@ -158,6 +172,9 @@ class YOLONode(Node):
 				self.class_id_map = {
 					0: 'bin_target'
 				}
+		else:
+			self.get_logger().info(f"Class id map found:")
+
 		if self.active_camera == 'ffc':
 			# Update internal class_id_map
 			self.class_id_map.update({
@@ -165,17 +182,15 @@ class YOLONode(Node):
 				22: "mapping_smallest_hole"
 			})
 
-		# Load model
-		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
-		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
-		self.get_logger().info(f"Loading model path: {yolo_model_path}")
-		self.initialize_yolo(yolo_model_path)
+		self.get_logger().info(f"{self.class_id_map}")
 
+	def reset_collection_variables(self):
 		# Reset camera-related variables
 		self.depth_image = None
 		self.camera_info_gathered = False
 		self.depth_info_gathered = False
 
+	def destroy_subscriptions(self):
 		# Unsubscribe from old topics if subscriptions exist
 		if hasattr(self, 'zed_info_subscription'):
 			topic = self.zed_info_subscription.topic_name
@@ -194,6 +209,8 @@ class YOLONode(Node):
 			self.destroy_subscription(self.depth_subscription)
 			self.get_logger().info(f"Destroying depth subscription: {topic}")
 
+
+	def create_subscriptions(self):
 		# Create new subscriptions
 		self.zed_info_subscription = self.create_subscription(
 			CameraInfo, 
@@ -226,6 +243,14 @@ class YOLONode(Node):
 			10
 		)
 		self.get_logger().info(f"Creating depth subcription: /talos/{self.camera_prefix}/zed_node/depth/depth_registered")
+
+	def load_model(self, yolo_model):
+		# Load model
+		tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
+		yolo_model_path = os.path.join(tensorrt_wrapper_dir, 'weights', yolo_model)
+		self.get_logger().info(f"Loading model path: {yolo_model_path}")
+		self.initialize_yolo(yolo_model_path)
+
 
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
@@ -551,8 +576,6 @@ class YOLONode(Node):
 					class_name = "torpedo_large_hole"
 				else:
 					return None
- 
- 
  
 				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
  
@@ -1071,7 +1094,6 @@ class YOLONode(Node):
 			markers.clear()
  
 	def get_color_for_class(self, class_name):
- 
 		return self.color_map.get(class_name, (1.0, 1.0, 1.0))  # Default to white
  
 def main(args=None):
