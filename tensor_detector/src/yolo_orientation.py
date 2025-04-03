@@ -155,7 +155,7 @@ class YOLONode(Node):
 		self.camera_prefix = self.active_camera
 
 		# Set frame ID
-		self.frame_id = f'talos/{self.camera_prefix}/left_camera_optical_frame'
+		self.frame_id = f'talos/{self.camera_prefix}_left_camera_optical_frame'
 
 		# Get camera-specific parameters
 		yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
@@ -983,6 +983,9 @@ class YOLONode(Node):
  
 	def fit_plane_to_points(self, points_3d):
 		try:
+			if len(points_3d) == 0:
+				self.get_logger().warning("No 3D points available for plane fitting.")
+				return None, None, None
 			centroid = np.mean(points_3d, axis=0)
 			u, s, vh = np.linalg.svd(points_3d - centroid)
 			normal = vh[-1]
