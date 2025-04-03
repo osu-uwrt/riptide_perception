@@ -16,7 +16,7 @@ import time
 import os
 import yaml
 import math
-from std_srvs.srv import Trigger
+from std_srvs.srv import SetBool
 
 class YOLONode(Node):
 	def __init__(self):
@@ -116,7 +116,7 @@ class YOLONode(Node):
 
 	def create_switch_service(self):
 		# Create the service for camera switching
-		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
+		self.srv = self.create_service(SetBool, 'set_camera_is_dfc', self.switch_camera_callback)
 		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
 
 
@@ -128,7 +128,15 @@ class YOLONode(Node):
 
 		self.camera_switch_in_progress = True
 
-		new_camera = 'dfc' if self.active_camera == 'ffc' else 'ffc'
+		new_camera = 'dfc' if request.data else 'ffc'
+		old_camera = self.active_camera
+	
+		if new_camera == old_camera:
+			response.success = True
+			response.message = f"Camera already set to {new_camera}, no change needed"
+			self.camera_switch_in_progress = False
+			return response
+
 		self.get_logger().info(f"Switching from {self.active_camera} to {new_camera}")
 		old_camera = self.active_camera
 		self.active_camera = new_camera
