@@ -13,7 +13,7 @@
       5: 'bin_temperature',
       6: 'bin'
     }"
-    ffc_threshold: 0.9
+    ffc_threshold: 0.8
     ffc_iou: 0.9
     
     # DFC configuration
