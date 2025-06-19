@@ -44,7 +44,7 @@ class YOLONode(Node):
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = False  # Whether or not to export .pt file to engine
+		self.export = True  # Whether or not to export .pt file to engine
 		self.print_camera_info = False  # Print the camera info recieved
 		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5  # Minimum number of points for SVD

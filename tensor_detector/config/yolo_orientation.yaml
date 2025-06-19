@@ -3,7 +3,7 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     # ---------- FFC configuration ----------
-    ffc_model: "robosub_2024_v3.pt"
+    ffc_model: "SSFB_Table_Augmented2.pt"
     ffc_class_id_map: "{
       0: 'Bin',
       1: 'Bin_saw',
