@@ -63,7 +63,9 @@ class MappingNode(Node):
             "table": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict(),
-            "bin_target": dict()
+            "bin_target": dict(),
+            "bin_pink": dict(),
+            "bin_yellow": dict()
         }
         
         self.downwards_objects = {
