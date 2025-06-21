@@ -1,13 +1,13 @@
+import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
 from launch_ros.actions import Node, PushRosNamespace
 from launch.substitutions import LaunchConfiguration as LC
-import os
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     tensorrt_wrapper_dir = get_package_share_directory("tensor_detector")
-    params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'yolo_orientation.yaml')
+    params_path = os.path.join(tensorrt_wrapper_dir, 'config', 'yolo_detection.yaml')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -21,10 +21,12 @@ def generate_launch_description():
             
             Node(
                 package='tensor_detector',
-                executable='yolo_orientation.py',
-                name='yolo_orientation',
+                executable='yolo_detection.py',
+                name='yolo_detection',
                 output='screen',
-                parameters=[params_path]
+                parameters=[
+                    params_path,
+                    {"robot_namespace": LC("robot")}]
             )
         ], scoped=True)
     ])

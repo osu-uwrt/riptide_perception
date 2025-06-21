@@ -1,0 +1,73 @@
+/**/yolo_detection:
+  ros__parameters: 
+    # ---------- Camera selection ----------
+    active_camera: "ffc"  # Change to "dfc" or "ffc" to switch initial camera
+
+    # ---------- FFC configuration ----------
+    ffc_model: "SSFB_Table_Augmented2.pt"
+    ffc_class_id_map: |
+      {
+        0: 'Bin',
+        1: 'Bin_saw',
+        2: 'Bin_shark',
+        3: 'Torpdo_shark_top',
+        4: 'Torpedo_saw_top',
+        5: 'bin_pink',
+        6: 'bin_yellow',
+        7: 'bottle_pink',
+        8: 'bottle_yellow',
+        9: 'gate_saw',
+        10: 'gate_shark',
+        11: 'spoon_pink',
+        12: 'spoon_yellow',
+        13: 'torpedo_hole'
+      }
+    ffc_threshold: 0.85
+    ffc_iou: 0.9
+
+    # ---------- DFC configuration ----------
+    dfc_model: "just_bin_temp.pt"
+    dfc_class_id_map: |
+      {
+        0: 'Bin',
+        1: 'Bin_saw',
+        2: 'Bin_shark',
+        3: 'Torpdo_shark_top',
+        4: 'Torpedo_saw_top',
+        5: 'bin_pink',
+        6: 'bin_yellow',
+        7: 'bottle_pink',
+        8: 'bottle_yellow',
+        9: 'gate_saw',
+        10: 'gate_shark',
+        11: 'spoon_pink',
+        12: 'spoon_yellow',
+        13: 'torpedo_hole'
+      }
+    dfc_threshold: 0.8
+    dfc_iou: 0.9
+
+    # ---------- Processing options ----------
+    log_processing_time: false
+    use_incoming_timestamp: true
+    export_to_tensorrt: false
+    enable_annotated_output: true
+
+    # ---------- Topic names ----------
+    annotated_image_topic: "yolo_annotated"
+    detections_topic: "yolo_detections"
+    camera_switch_service: "set_camera_is_dfc"
+
+    # ---------- Camera topic patterns ----------
+    # Use {robot} and {camera} as placeholders
+    camera_info_topic_pattern: "/{robot}/{camera}/zed_node/left/camera_info"
+    image_topic_pattern: "/{robot}/{camera}/zed_node/left/image_rect_color"
+    frame_id_pattern: "{robot}/{camera}_left_camera_optical_frame"
+
+    # ---------- Queue sizes ----------
+    camera_info_queue_size: 1
+    image_queue_size: 10
+    publisher_queue_size: 10
+
+    # ---------- Camera switch timing ----------
+    camera_switch_delay: 0.1
