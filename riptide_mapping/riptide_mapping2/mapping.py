@@ -70,6 +70,8 @@ class MappingNode(Node):
         
         self.downwards_objects = {
             "bin_target": dict(),
+            "bin_pink": dict(),
+            "bin_yellow": dict()
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []
