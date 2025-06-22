@@ -24,31 +24,63 @@ class YOLONode(Node):
 		self.declare_parameters(
 			namespace='',
 			parameters=[
-				('active_camera', 'ffc'),  # Default camera
-				('ffc_model', ''),
-				('dfc_model', ''),
-				('ffc_class_id_map', ''),
-				('dfc_class_id_map', ''),
-				('ffc_threshold', 0.9),
-				('dfc_threshold', 0.9),
-				('ffc_iou', 0.9),
-				('dfc_iou', 0.9),
-			]
+                # Robot configuration
+                ('robot_namespace', 'talos'),
+                
+                # Camera selection and models
+                ('active_camera', 'ffc'),
+                ('ffc_model', ''),
+                ('dfc_model', ''),
+                ('ffc_class_id_map', ''),
+                ('dfc_class_id_map', ''),
+                ('ffc_threshold', 0.9),
+                ('dfc_threshold', 0.9),
+                ('ffc_iou', 0.9),
+                ('dfc_iou', 0.9),
+                
+                # Processing options
+                ('log_processing_time', False),
+                ('use_incoming_timestamp', True),
+                ('export_to_tensorrt', False),
+                ('enable_annotated_output', True),
+                
+                # Topic names
+                ('annotated_image_topic', 'yolo_annotated'),
+                ('detections_topic', 'yolo_detections'),
+                ('camera_switch_service', 'set_camera_is_dfc'),
+                
+                # Camera topic patterns (use {robot} and {camera} as placeholders)
+                ('camera_info_topic_pattern', '/{robot}/{camera}/zed_node/left/camera_info'),
+				('depth_info_topic_pattern', '/{robot}/{camera}/zed_node/depth/camera_info'),
+                ('image_topic_pattern', '/{robot}/{camera}/zed_node/left/image_rect_color'),
+				('depth_topic_pattern', '/{robot}/{camera}/zed_node/depth/depth_registered'),
+                ('frame_id_pattern', '{robot}/{camera}_left_camera_optical_frame'),
+                
+                # Queue sizes
+                ('camera_info_queue_size', 1),
+				('depth_info_queue_size', 1),
+                ('image_queue_size', 10),
+				('depth_queue_size', 10),
+                ('publisher_queue_size', 10),
+                
+                # Camera switch timing
+                ('camera_switch_delay', 0.1),
+                
+                # Detection and processing parameters
+                ('print_camera_info', False),
+                ('class_detect_shrink', 0.15),
+                ('min_points', 5),
+                ('publish_interval', 0.1),
+                ('history_size', 10),
+                ('default_normal_x', 0.0),
+                ('default_normal_y', 0.0),
+                ('default_normal_z', 1.0),
+                ('map_min_area', 50),
+            ]
 		)
 
-		##########################
-		# USER DEFINED PARAMS    #
-		##########################
-		self.log_processing_time = False
-		self.use_incoming_timestamp = True
-		self.export = False  # Whether or not to export .pt file to engine
-		self.print_camera_info = False  # Print the camera info recieved
-		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
-		self.min_points = 5  # Minimum number of points for SVD
-		self.publish_interval = 0.1  # 100 milliseconds
-		self.history_size = 10  # Window size for rolling average smoothing
-		self.default_normal = np.array([0.0, 0.0, 1.0])  # Default normal for quaternion calculation
-		self.map_min_area = 50  # 130
+		# Load all parameters
+		self.load_parameters()
 
 		# Color map for classes published to markers
 		self.color_map = {
@@ -93,13 +125,63 @@ class YOLONode(Node):
 		self.smallest_hole = None
 		self.latest_buoy = None
 		self.plane_normal = None
-		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
 		self.create_switch_service()
 
 		# Set up the camera based on the active_camera parameter
 		self.setup_camera()
 	
+	def load_parameters(self):
+		"""Load all parameters from ROS parameter server"""
+		# Robot configuration
+		self.robot_namespace = self.get_parameter('robot_namespace').get_parameter_value().string_value
+		
+		# Camera configuration
+		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
+		
+		# Processing options
+		self.log_processing_time = self.get_parameter('log_processing_time').get_parameter_value().bool_value
+		self.use_incoming_timestamp = self.get_parameter('use_incoming_timestamp').get_parameter_value().bool_value
+		self.export = self.get_parameter('export_to_tensorrt').get_parameter_value().bool_value
+		self.enable_annotated_output = self.get_parameter('enable_annotated_output').get_parameter_value().bool_value
+		
+		# Topic names
+		self.annotated_topic = self.get_parameter('annotated_image_topic').get_parameter_value().string_value
+		self.detections_topic = self.get_parameter('detections_topic').get_parameter_value().string_value
+		self.camera_switch_service_name = self.get_parameter('camera_switch_service').get_parameter_value().string_value
+		
+		# Topic patterns
+		self.camera_info_topic_pattern = self.get_parameter('camera_info_topic_pattern').get_parameter_value().string_value
+		self.depth_info_topic_pattern = self.get_parameter('depth_info_topic_pattern').get_parameter_value().string_value
+		self.image_topic_pattern = self.get_parameter('image_topic_pattern').get_parameter_value().string_value
+		self.depth_topic_pattern = self.get_parameter('depth_topic_pattern').get_parameter_value().string_value
+		self.frame_id_pattern = self.get_parameter('frame_id_pattern').get_parameter_value().string_value
+		
+		# Queue sizes
+		self.camera_info_queue_size = self.get_parameter('camera_info_queue_size').get_parameter_value().integer_value
+		self.depth_info_queue_size = self.get_parameter('depth_info_queue_size').get_parameter_value().integer_value
+		self.image_queue_size = self.get_parameter('image_queue_size').get_parameter_value().integer_value
+		self.depth_queue_size = self.get_parameter('depth_queue_size').get_parameter_value().integer_value
+		self.publisher_queue_size = self.get_parameter('publisher_queue_size').get_parameter_value().integer_value
+		
+		# Timing
+		self.camera_switch_delay = self.get_parameter('camera_switch_delay').get_parameter_value().double_value
+		
+		# Detection and processing parameters
+		self.print_camera_info = self.get_parameter('print_camera_info').get_parameter_value().bool_value
+		self.class_detect_shrink = self.get_parameter('class_detect_shrink').get_parameter_value().double_value
+		self.min_points = self.get_parameter('min_points').get_parameter_value().integer_value
+		self.publish_interval = self.get_parameter('publish_interval').get_parameter_value().double_value
+		self.history_size = self.get_parameter('history_size').get_parameter_value().integer_value
+		
+		# Default normal vector
+		default_normal_x = self.get_parameter('default_normal_x').get_parameter_value().double_value
+		default_normal_y = self.get_parameter('default_normal_y').get_parameter_value().double_value
+		default_normal_z = self.get_parameter('default_normal_z').get_parameter_value().double_value
+		self.default_normal = np.array([default_normal_x, default_normal_y, default_normal_z])
+		
+		self.map_min_area = self.get_parameter('map_min_area').get_parameter_value().integer_value
+		
 	def create_publishers(self):
 		# Creating publishers
 		self.marker_array_publisher = self.create_publisher(MarkerArray, 'visualization_marker_array', 10)
@@ -134,7 +216,7 @@ class YOLONode(Node):
 		self.active_camera = new_camera
 
 		# Schedule reconfiguration after a short delay (e.g., 0.1 seconds)
-		self.delayed_timer = self.create_timer(0.1, self.delayed_setup)
+		self.delayed_timer = self.create_timer(self.camera_switch_delay, self.delayed_setup)
 
 		response.success = True
 		response.message = f"Successfully switched from {old_camera} to {new_camera}"
@@ -163,8 +245,7 @@ class YOLONode(Node):
 		self.load_class_id_map(class_id_map_str)
 		self.load_model(yolo_model)
 		self.reset_collection_variables()
-		self.destroy_subscriptions()
-		self.create_subscriptions()
+		self.reset_subscriptions()
 
 	def load_class_id_map(self, class_id_map_str):
 		# Load class ID map
@@ -205,70 +286,52 @@ class YOLONode(Node):
 		self.camera_info_gathered = False
 		self.depth_info_gathered = False
 
+	def reset_subscriptions(self):
+		self.destroy_subscriptions()
+		self.create_subscriptions()
+
 	def destroy_subscriptions(self):
-		# Unsubscribe from old topics if subscriptions exist
-		if hasattr(self, 'zed_info_subscription'):
+		"""Destroy all subscriptions"""
+		self.destroy_sub('zed_info_subscription', 'camera info')
+		self.destroy_sub('depth_info_subscription', 'depth info') 
+		self.destroy_sub('image_subscription', 'image')
+		self.destroy_sub('depth_subscription', 'depth')
+
+	def destroy_sub(self, subscription_attr, description):
+		"""Destroy subscription with logging"""
+		if hasattr(self, subscription_attr):
+			subscription = getattr(self, subscription_attr)
 			try:
-				topic = self.zed_info_subscription.topic_name
+				topic = subscription.topic_name
 			except Exception:
 				topic = "unknown"
-			self.destroy_subscription(self.zed_info_subscription)
-			self.get_logger().info(f"Destroying camera info subscription: {topic}")
-		if hasattr(self, 'depth_info_subscription'):
-			try:
-				topic = self.depth_info_subscription.topic_name
-			except Exception:
-				topic = "unknown"
-			self.destroy_subscription(self.depth_info_subscription)
-			self.get_logger().info(f"Destroying depth info subscription: {topic}")
-		if hasattr(self, 'image_subscription'):
-			try:
-				topic = self.image_subscription.topic_name
-			except Exception:
-				topic = "unknown"
-			self.destroy_subscription(self.image_subscription)
-			self.get_logger().info(f"Destroying image subscription: {topic}")
-		if hasattr(self, 'depth_subscription'):
-			try:
-				topic = self.depth_subscription.topic_name
-			except Exception:
-				topic = "unknown"
-			self.destroy_subscription(self.depth_subscription)
-			self.get_logger().info(f"Destroying depth subscription: {topic}")
+			self.destroy_subscription(subscription)
+			self.get_logger().info(f"Destroying {description} subscription: {topic}")
 
 	def create_subscriptions(self):
-		# Create new subscriptions
-		self.zed_info_subscription = self.create_subscription(
-			CameraInfo, 
-			f'/talos/{self.camera_prefix}/zed_node/left/camera_info', 
-			self.camera_info_callback, 
-			1
-		)
-		self.get_logger().info(f"Creating camera info subcription: /talos/{self.camera_prefix}/zed_node/left/camera_info")
+		"""Create new subscriptions"""
+		self.camera_info_subscription = self.create_sub(
+			self.camera_info_topic_pattern, CameraInfo, 
+			self.camera_info_callback, self.camera_info_queue_size)
+		
+		self.depth_info_subscription = self.create_sub(
+			self.depth_info_topic_pattern, CameraInfo,
+			self.depth_info_callback, self.depth_info_queue_size)
+		
+		self.image_subscription = self.create_sub(
+			self.image_topic_pattern, Image,
+			self.image_callback, self.image_queue_size)
+		
+		self.depth_subscription = self.create_sub(
+			self.depth_topic_pattern, Image,
+			self.depth_callback, self.depth_queue_size)
 
-		self.depth_info_subscription = self.create_subscription(
-			CameraInfo, 
-			f'/talos/{self.camera_prefix}/zed_node/depth/camera_info', 
-			self.depth_info_callback, 
-			1
-		)
-		self.get_logger().info(f"Creating depth info subcription: /talos/{self.camera_prefix}/zed_node/depth/camera_info")  
-
-		self.image_subscription = self.create_subscription(
-			Image, 
-			f'/talos/{self.camera_prefix}/zed_node/left/image_rect_color', 
-			self.image_callback, 
-			10
-		)
-		self.get_logger().info(f"Creating image subcription: /talos/{self.camera_prefix}/zed_node/left/image_rect_color")
-
-		self.depth_subscription = self.create_subscription(
-			Image, 
-			f'/talos/{self.camera_prefix}/zed_node/depth/depth_registered', 
-			self.depth_callback, 
-			10
-		)
-		self.get_logger().info(f"Creating depth subcription: /talos/{self.camera_prefix}/zed_node/depth/depth_registered")
+	def create_sub(self, topic_pattern, msg_type, callback, queue_size):
+		"""Create subscription with topic formatting and logging"""
+		topic = topic_pattern.format(robot=self.robot_namespace, camera=self.active_camera)
+		subscription = self.create_subscription(msg_type, topic, callback, queue_size)
+		self.get_logger().info(f"Subscribed to: {topic}")
+		return subscription
 
 	def load_model(self, yolo_model):
 		# Load model
