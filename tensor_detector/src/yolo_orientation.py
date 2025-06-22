@@ -462,16 +462,6 @@ class YOLONode(Node):
 			return self.handle_mapping_hole(box)
 		elif class_name == "mapping_map":
 			return self.handle_mapping_map(box, cv_image, result, conf)
-		elif class_name == "bin_target":
-			return self.handle_bin_target(box, cv_image, result, conf)
-		elif class_name == "gate_hot":
-			return self.handle_gate_hot(box, cv_image, result, conf)
-		elif class_name == "gate_cold":
-			return self.handle_gate_cold(box, cv_image, result, conf)
-		elif class_name == "bin_temperature":
-			return self.handle_bin_temperature(box, cv_image, result, conf)
-		elif class_name == "bin":
-			return self.handle_bin(box, cv_image, result, conf)
 		else:
 			return self.handle_generic_detection(box, cv_image, result, conf, class_name)
 
@@ -519,26 +509,6 @@ class YOLONode(Node):
 			self.mapping_map_quat = quat
 		
 		return detection
-
-	def handle_bin_target(self, box, cv_image, result, conf):
-		"""Handle bin target detections"""
-		return self.create_plane_detection(box, cv_image, result, conf, "bin_target")
-
-	def handle_gate_hot(self, box, cv_image, result, conf):
-		"""Handle gate hot detections"""
-		return self.create_plane_detection(box, cv_image, result, conf, "gate_hot")
-
-	def handle_gate_cold(self, box, cv_image, result, conf):
-		"""Handle gate cold detections"""
-		return self.create_plane_detection(box, cv_image, result, conf, "gate_cold")
-
-	def handle_bin_temperature(self, box, cv_image, result, conf):
-		"""Handle bin temperature detections"""
-		return self.create_plane_detection(box, cv_image, result, conf, "bin_temperature")
-
-	def handle_bin(self, box, cv_image, result, conf):
-		"""Handle generic bin detections"""
-		return self.create_plane_detection(box, cv_image, result, conf, "bin")
 
 	def handle_generic_detection(self, box, cv_image, result, conf, class_name):
 		"""Handle any other detection types"""
