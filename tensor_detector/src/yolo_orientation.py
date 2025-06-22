@@ -201,7 +201,6 @@ class YOLONode(Node):
 		self.srv = self.create_service(Trigger, 'switch_camera', self.switch_camera_callback)
 		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
 
-
 	def switch_camera_callback(self, request, response):
 		if getattr(self, 'camera_switch_in_progress', False):
 			response.success = False
@@ -229,7 +228,7 @@ class YOLONode(Node):
 		self.camera_prefix = self.active_camera
 
 		# Set frame ID
-		self.frame_id = f'talos/{self.camera_prefix}/left_camera_optical_frame'
+		self.frame_id = self.frame_id_pattern.format(robot=self.robot_namespace, camera=self.active_camera)
 
 		# Get camera-specific parameters
 		yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
@@ -244,9 +243,10 @@ class YOLONode(Node):
 
 		self.load_class_id_map(class_id_map_str)
 		self.load_model(yolo_model)
+		
 		self.reset_collection_variables()
 		self.reset_subscriptions()
-
+		
 	def load_class_id_map(self, class_id_map_str):
 		# Load class ID map
 		self.class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
@@ -340,7 +340,6 @@ class YOLONode(Node):
 		self.get_logger().info(f"Loading model path: {yolo_model_path}")
 		self.initialize_yolo(yolo_model_path)
 
-
 	def initialize_yolo(self, yolo_model_path):
 		# Check if the .engine version of the model exists
 		engine_model_path = yolo_model_path.replace('.pt', '.engine')
@@ -381,156 +380,396 @@ class YOLONode(Node):
 			self.distortion_matrix = np.array(msg.d)
  
 			self.camera_info_gathered = True
-		# self.zed_info_subscription.destroy()
  
 	def depth_info_callback(self, msg):
 		if not self.depth_info_gathered:
 			self.depth_intrinsic_matrix = np.array(msg.k).reshape((3, 3))
 			self.depth_distortion_matrix = np.array(msg.d)
 			self.depth_info_gathered = True
-		# self.depth_info_subscription.destroy()
  
 	def depth_callback(self, msg):
 		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
- 
+
 	def image_callback(self, msg: Image):
- 
+		"""Simplified image callback that delegates to class-specific handlers"""
+		
 		if self.log_processing_time:
 			self.detection_time = time.time()
- 
+
 		if self.depth_image is None or not self.camera_info_gathered:
 			self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
 			return
- 
+
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+		
 		if cv_image is None:
 			return
+		
 		results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
- 
+
+		# Initialize detection array
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
 		self.detection_timestamp = msg.header.stamp
+		
 		if self.use_incoming_timestamp:
 			detections.header.stamp = msg.header.stamp
 		else:
 			detections.header.stamp = self.get_clock().now().to_msg()
- 
+
+		# Initialize mask
 		if self.mask is None or self.mask.shape[:2] != cv_image.shape[:2]:
 			self.mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
- 
-		# Reset mapping holes each image
-		self.mapping_holes = []
-		self.largest_hole = None
-		self.smallest_hole = None
- 
+
+		# Reset mapping variables for each frame
+		self.reset_frame_variables()
+
+		# Process each detection
 		for result in results:
 			for box in result.boxes.cpu().numpy():
 				if box.conf[0] <= self.conf:
 					continue
+					
 				class_id = box.cls[0]
- 
-				if class_id in self.class_id_map:
-					conf = box.conf[0]
-					#self.get_logger().info(f"class id: {class_id}")
-					# If its a hole, store it, otherwise make the detection message
-					if class_id == 2:
-						#self.get_logger().info(f"class id: {class_id}")
-						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-						if self.use_incoming_timestamp:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-						else:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
-						self.mapping_holes.append(box)
-						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-					else:
-						detection = self.create_detection3d_message(box, cv_image, conf)
- 
-						if detection:
-							detections.detections.append(detection)
- 
-					self.mask.fill(0)
-					for contour in result.masks.xy:
-						contour = np.array(contour, dtype=np.int32)
-						cv2.fillPoly(self.mask, [contour], 255)
-					mask_msg = self.bridge.cv2_to_imgmsg(self.mask,encoding="mono8")
-					#self.mask_publisher.publish(mask_msg)
- 
- 
-		# Create detection3d for the holes if there are 4
-		if len(self.mapping_holes) == 4:
-			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-			self.find_smallest_and_largest_holes()
-
-			if self.smallest_hole is not None:
-				class_id = self.smallest_hole.cls[0]
-				conf = self.smallest_hole.conf[0]
-				detection = self.create_detection3d_message(self.smallest_hole, cv_image, conf, "smallest")
+				if class_id not in self.class_id_map:
+					continue
+					
+				detection = self.process_detection_by_class(box, cv_image, result)
 				if detection:
 					detections.detections.append(detection)
-			else:
-				self.get_logger().warning("No smallest hole found.")
 
-			if self.largest_hole is not None:
-				class_id = self.largest_hole.cls[0]
-				conf = self.largest_hole.conf[0]
-				detection = self.create_detection3d_message(self.largest_hole, cv_image, conf, "largest")
-				if detection:
-					detections.detections.append(detection)
-			else:
-				self.get_logger().warning("No largest hole found.")
+		# Handle special case for mapping holes
+		self.process_mapping_holes(detections, cv_image)
 
+		# Publish results
+		self.publish_frame_results(results, detections)
+
+	def reset_frame_variables(self):
+		"""Reset variables that need to be cleared each frame"""
+		self.mapping_holes = []
+		self.largest_hole = None
+		self.smallest_hole = None
+
+	def process_detection_by_class(self, box, cv_image, result):
+		"""Route detection processing to appropriate class handler"""
+		class_id = int(box.cls[0])
+		class_name = self.class_id_map.get(class_id, "Unknown")
+		conf = box.conf[0]
+		
+		# Route to specific handlers
+		if class_name == "mapping_hole":
+			return self.handle_mapping_hole(box)
+		elif class_name == "mapping_map":
+			return self.handle_mapping_map(box, cv_image, result, conf)
+		elif class_name == "bin_target":
+			return self.handle_bin_target(box, cv_image, result, conf)
+		elif class_name == "gate_hot":
+			return self.handle_gate_hot(box, cv_image, result, conf)
+		elif class_name == "gate_cold":
+			return self.handle_gate_cold(box, cv_image, result, conf)
+		elif class_name == "bin_temperature":
+			return self.handle_bin_temperature(box, cv_image, result, conf)
+		elif class_name == "bin":
+			return self.handle_bin(box, cv_image, result, conf)
+		else:
+			return self.handle_generic_detection(box, cv_image, result, conf, class_name)
+
+	def handle_mapping_hole(self, box):
+		"""Handle mapping hole detections (store for later processing)"""
+		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		
+		# Store hole for later processing
+		timestamp = self.detection_timestamp if self.use_incoming_timestamp else self.get_clock().now().to_msg()
+		self.holes.append(((x_min, y_min, x_max, y_max), timestamp))
+		self.mapping_holes.append(box)
+		
+		return None  # Will be processed later in process_mapping_holes
+
+	def handle_mapping_map(self, box, cv_image, result, conf):
+		"""Handle mapping map detections"""
+		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		
+		# Check minimum area requirement
+		map_width = x_max - x_min
+		map_height = y_max - y_min
+		map_area = max(map_width, map_height)
+		
+		if map_area < self.map_min_area:
+			self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
+			return None
+		
+		self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
+		self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
+		
+		# Process as plane detection with hole exclusion
+		detection = self.create_plane_detection(box, cv_image, result, conf, "torpedo", exclude_holes=True)
+		
+		if detection:
+			# Store mapping data for hole processing
+			centroid = [detection.results[0].pose.pose.position.x,
+					   detection.results[0].pose.pose.position.y, 
+					   detection.results[0].pose.pose.position.z]
+			quat = [detection.results[0].pose.pose.orientation.x,
+					detection.results[0].pose.pose.orientation.y,
+					detection.results[0].pose.pose.orientation.z,
+					detection.results[0].pose.pose.orientation.w]
+			
+			self.mapping_map_centroid = centroid
+			self.mapping_map_quat = quat
+		
+		return detection
+
+	def handle_bin_target(self, box, cv_image, result, conf):
+		"""Handle bin target detections"""
+		return self.create_plane_detection(box, cv_image, result, conf, "bin_target")
+
+	def handle_gate_hot(self, box, cv_image, result, conf):
+		"""Handle gate hot detections"""
+		return self.create_plane_detection(box, cv_image, result, conf, "gate_hot")
+
+	def handle_gate_cold(self, box, cv_image, result, conf):
+		"""Handle gate cold detections"""
+		return self.create_plane_detection(box, cv_image, result, conf, "gate_cold")
+
+	def handle_bin_temperature(self, box, cv_image, result, conf):
+		"""Handle bin temperature detections"""
+		return self.create_plane_detection(box, cv_image, result, conf, "bin_temperature")
+
+	def handle_bin(self, box, cv_image, result, conf):
+		"""Handle generic bin detections"""
+		return self.create_plane_detection(box, cv_image, result, conf, "bin")
+
+	def handle_generic_detection(self, box, cv_image, result, conf, class_name):
+		"""Handle any other detection types"""
+		return self.create_plane_detection(box, cv_image, result, conf, class_name)
+
+	def create_plane_detection(self, box, cv_image, result, conf, class_name, exclude_holes=False):
+		"""Create a detection using plane fitting from feature points"""
+		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		bbox_center_x = (x_min + x_max) / 2
+		bbox_center_y = (y_min + y_max) / 2
+		bbox_width = x_max - x_min
+		bbox_height = y_max - y_min
+		
+		# Apply shrinking to exclude edges
+		shrink_x = bbox_width * self.class_detect_shrink
+		shrink_y = bbox_height * self.class_detect_shrink
+		
+		x_min_shrunk = int(x_min + shrink_x)
+		x_max_shrunk = int(x_max - shrink_x)
+		y_min_shrunk = int(y_min + shrink_y)
+		y_max_shrunk = int(y_max - shrink_y)
+		
+		# Create mask for region of interest
+		mask_roi = self.create_detection_mask(x_min_shrunk, y_min_shrunk, x_max_shrunk, y_max_shrunk, exclude_holes, result)
+		
+		if mask_roi is None:
+			return None
+		
+		# Extract and mask the gray image region
+		cropped_gray_image = self.gray_image[y_min_shrunk:y_max_shrunk, x_min_shrunk:x_max_shrunk]
+		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
+		
+		# Detect features
+		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
+		
+		if good_features is None:
+			return None
+		
+		# Adjust feature coordinates to full image space
+		good_features[:, 0, 0] += x_min_shrunk
+		good_features[:, 0, 1] += y_min_shrunk
+		
+		feature_points = [pt[0] for pt in good_features]
+		
+		# Get 3D points and fit plane
+		points_3d = self.get_3d_points(feature_points, cv_image)
+		
+		if points_3d is None or len(points_3d) < self.min_points:
+			return None
+		
+		plane_result = self.fit_plane_to_points(points_3d)
+		if plane_result is None:
+			return None
+			
+		normal, _, centroid = plane_result
+		
+		# Calculate centroid using bbox center and plane centroid z
+		final_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
+		if final_centroid is None:
+			return None
+		
+		if normal[2] > 0:
+			normal = -normal
+		
+		self.plane_normal = normal
+		quat, _ = self.calculate_quaternion_and_euler_angles(normal)
+		
+		# Publish marker
+		self.publish_marker(quat, final_centroid, class_name, bbox_width, bbox_height)
+		
+		# Create detection message
+		return self.create_detection_message(class_name, final_centroid, quat, conf)
+
+	def create_detection_mask(self, x_min, y_min, x_max, y_max, exclude_holes=False, result=None):
+		"""Create a mask for the detection region, optionally excluding holes"""
+		if result and hasattr(result, 'masks') and result.masks is not None:
+			self.mask.fill(0)
+			for contour in result.masks.xy:
+				contour = np.array(contour, dtype=np.int32)
+				cv2.fillPoly(self.mask, [contour], 255)
+		
+		mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()
+		
+		if exclude_holes and self.holes:
+			# Calculate padding based on bounding box size
+			padding_x = int((x_max - x_min) * 0.1)
+			padding_y = int((y_max - y_min) * 0.1)
+			
+			for hole_bbox, _ in self.holes:
+				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+				
+				# Adjust hole coordinates relative to the ROI
+				adj_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
+				adj_hole_y_min = max(hole_y_min - y_min - padding_y, 0)
+				adj_hole_x_max = min(hole_x_max - x_min + padding_x, mask_roi.shape[1])
+				adj_hole_y_max = min(hole_y_max - y_min + padding_y, mask_roi.shape[0])
+				
+				# Exclude hole region from mask
+				mask_roi[adj_hole_y_min:adj_hole_y_max, adj_hole_x_min:adj_hole_x_max] = 0
+			
+			# Apply morphological operations to refine exclusion zones
+			kernel = np.ones((5, 5), np.uint8)
+			mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
+			mask_roi = cv2.erode(mask_roi, kernel, iterations=1)
+		
+		return mask_roi
+
+	def process_mapping_holes(self, detections, cv_image):
+		"""Process mapping holes after all detections are complete"""
+		if len(self.mapping_holes) != 4:
+			return
+		
+		self.find_smallest_and_largest_holes()
+		
+		# Create detections for smallest and largest holes
+		if self.smallest_hole is not None:
+			detection = self.create_hole_detection(self.smallest_hole, cv_image, "smallest")
+			if detection:
+				detections.detections.append(detection)
+		
+		if self.largest_hole is not None:
+			detection = self.create_hole_detection(self.largest_hole, cv_image, "largest")
+			if detection:
+				detections.detections.append(detection)
+
+	def create_hole_detection(self, hole_box, cv_image, hole_type):
+		"""Create a detection for a specific hole (smallest/largest)"""
+		if (self.plane_normal is None or self.mapping_map_centroid is None or 
+			self.mapping_map_quat is None or not hasattr(self, 'latest_bbox_class_1')):
+			return None
+		
+		x_min, y_min, x_max, y_max = map(int, hole_box.xyxy[0])
+		bbox = (x_min, y_min, x_max, y_max)
+		
+		# Check if hole is inside the mapping area
+		if not self.is_inside_bbox(bbox, self.latest_bbox_class_1):
+			return None
+		
+		bbox_center_x = (x_min + x_max) / 2
+		bbox_center_y = (y_min + y_max) / 2
+		bbox_width = x_max - x_min
+		bbox_height = y_max - y_min
+		
+		# Project hole center onto the mapping plane
+		d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
+		d = d / np.linalg.norm(d)
+		
+		n = self.plane_normal
+		p0 = self.mapping_map_centroid
+		
+		numerator = np.dot(n, p0)
+		denominator = np.dot(n, d)
+		
+		if denominator == 0:
+			return None
+		
+		t = numerator / denominator
+		hole_position = t * d
+		
+		# Determine class name based on hole type
+		class_name = f"torpedo_{'small' if hole_type == 'smallest' else 'large'}_hole"
+		
+		# Publish marker
+		self.publish_marker(self.mapping_map_quat, hole_position, class_name, bbox_width, bbox_height)
+		
+		# Create detection message
+		conf = hole_box.conf[0]
+		return self.create_detection_message(class_name, hole_position, self.mapping_map_quat, conf)
+
+	def create_detection_message(self, class_name, centroid, quat, conf):
+		"""Create a Detection3D message"""
+		detection = Detection3D()
+		detection.header.frame_id = self.frame_id
+		
+		if self.use_incoming_timestamp:
+			detection.header.stamp = self.detection_timestamp
+		else:
+			detection.header.stamp = self.get_clock().now().to_msg()
+		
+		detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+		return detection
+
+	def publish_frame_results(self, results, detections):
+		"""Publish all results for the current frame"""
+		# Publish markers
 		if self.temp_markers:
 			self.publish_markers(self.temp_markers)
-			self.temp_markers = []  # Clear the list for the next frame
- 
-		annotated_frame = results[0].plot()
+			self.temp_markers = []
 		
+		# Publish annotated image
+		annotated_frame = results[0].plot()
 		self.publish_accumulated_point_cloud()
-
+		
 		if self.has_subscribers(self.publisher):
 			annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 			self.publisher.publish(annotated_msg)
 		
-		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
-		# 	detections.detections.append(self.spoof_torpedo())
-		self.torpedo_seen = False
+		# Cleanup and timing
 		self.cleanup_old_holes(age_threshold=2.0)
+		
 		if self.log_processing_time:
 			self.detection_time = time.time() - self.detection_time
 			self.get_logger().info(f"Total time (ms): {self.detection_time * 1000}")
 			self.get_logger().info(f"FPS: {1/self.detection_time}")
-		# self.get_logger().info(f"detections: {detections}")
+		
+		# Publish detections
 		if self.has_subscribers(self.detection_publisher):
 			self.detection_publisher.publish(detections)
+		
 		self.detection_id_counter = 0
  
+	def cleanup_old_holes(self, age_threshold=2.0):
+		# Get the current time as a builtin_interfaces.msg.Time object
+		current_time = self.get_clock().now().to_msg()
+ 
+		# Filter out holes older than the specified age threshold
+		self.holes = [(bbox, timestamp) for bbox, timestamp in self.holes
+					if ((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9) < age_threshold]
+ 
+	def generate_unique_detection_id(self):
+			# Increment and return the counter to get a unique ID for each detection
+			self.detection_id_counter += 1
+			return self.detection_id_counter
+
 	def get_hole_size(self, hole):
 		x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
 		hole_width = x_max - x_min
 		hole_height = y_max - y_min
 		hole_size = hole_height*hole_width
 		return hole_size
- 
-	# def find_smallest_and_largest_holes(self):
-	# 	hole_sizes = []
-	# 	for hole in self.mapping_holes:
-	# 		hole_size = self.get_hole_size(hole)
- 
-	# 		if self.largest_hole is None:
-	# 			self.largest_hole = hole
-	# 		else:
-	# 			largest_hole_size = self.get_hole_size(self.largest_hole)
-	# 			if hole_size > largest_hole_size:
-	# 				self.largest_hole = hole
- 
-	# 		if self.smallest_hole is None:
-	# 			self.smallest_hole = hole
-	# 		else:
-	# 			smallest_hole_size = self.get_hole_size(self.smallest_hole)
-	# 			if hole_size < smallest_hole_size:
-	# 				self.smallest_hole = hole
- 
+
 	def find_smallest_and_largest_holes(self):
 		if self.plane_normal is None or self.mapping_map_centroid is None:
 			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole sizes.")
@@ -570,7 +809,6 @@ class YOLONode(Node):
 				height = np.linalg.norm(height_vector)
 				hole_size = width * height
 				hole_sizes.append((hole, hole_size))
-				#self.get_logger().info(f"Hole size computed: {hole_size}")
 			else:
 				self.get_logger().warning(f"Not enough valid corners for hole. Expected 4, got {len(corners_3d)}")
 				continue
@@ -585,304 +823,21 @@ class YOLONode(Node):
 		self.smallest_hole = hole_sizes[0][0]
 		self.largest_hole = hole_sizes[-1][0]
  
-		#self.get_logger().info(f"Smallest hole size: {hole_sizes[0][1]}")
-		#self.get_logger().info(f"Largest hole size: {hole_sizes[-1][1]}")
- 
-
- 
-	def cleanup_old_holes(self, age_threshold=2.0):
-		# Get the current time as a builtin_interfaces.msg.Time object
-		current_time = self.get_clock().now().to_msg()
- 
-		# Filter out holes older than the specified age threshold
-		self.holes = [(bbox, timestamp) for bbox, timestamp in self.holes
-					if ((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9) < age_threshold]
- 
-	def generate_unique_detection_id(self):
-			# Increment and return the counter to get a unique ID for each detection
-			self.detection_id_counter += 1
-			return self.detection_id_counter
- 
-	def create_detection3d_message(self, box, cv_image, conf, hole_scale=None):
-		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-		bbox = (x_min, y_min, x_max, y_max)
-		bbox_width = x_max - x_min
-		bbox_height = y_max - y_min
- 
-		class_id = int(box.cls[0])
- 
-		bbox_center_x = (x_min + x_max) / 2
-		bbox_center_y = (y_min + y_max) / 2
- 
-		class_name = self.class_id_map.get(class_id, "Unknown")
-		#self.get_logger().info(f"class name: {class_name}")
-		if class_name == "mapping_map":
- 
-			map_width = x_max - x_min
-			map_height = y_max - y_min
-			map_area = max(map_width,map_height)
-			#self.get_logger().info(f"map max: {map_area}")
-			if map_area < self.map_min_area:
-				self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
-				return None
-			self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
-			#self.get_logger().info(f"publishing map")
-			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
- 
- 
-		elif class_name == "mapping_hole":
-			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
-				#hole_quat = self.mapping_map_quat
-				#hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.mapping_map_centroid[2])
-
-				# if self.mapping_map_centroid[2] > 5:
-				# 	return None
-				if self.plane_normal is None:
-					return None
-				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
-				d = d / np.linalg.norm(d)
- 
-				# Plane normal and point
-				n = self.plane_normal  # From SVD
-				p0 = self.mapping_map_centroid  # Centroid of the plane
- 
-				# Compute t
-				numerator = np.dot(n, p0)
-				denominator = np.dot(n, d)
-				if denominator == 0:
-					return None  # Avoid division by zero
-
-				t = numerator / denominator
-				hole_position = t * d
-
-				# Update centroid and orientation
-				hole_centroid = hole_position
-				hole_quat = self.mapping_map_quat
-
-				if hole_scale == "smallest":
-					class_name = "torpedo_small_hole"
-				elif hole_scale == "largest":
-					class_name = "torpedo_large_hole"
-				else:
-					return None
- 
-				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
- 
-				# Create Detection3D message
-				detection = Detection3D()
-				detection.header.frame_id = self.frame_id
-				if self.use_incoming_timestamp:
-					detection.header.stamp = self.detection_timestamp
-				else:
-					detection.header.stamp = self.get_clock().now().to_msg()
-				detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
-				return detection
- 
-		elif class_name == "torpedo_open":
-			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
-		elif class_name == "torpedo_closed":
-			self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
-		elif class_name == "torpedo_hole":
-			if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
-				class_name = "torpedo_open_hole"
-				hole_quat = self.open_torpedo_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
-			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
-				class_name = "torpedo_closed_hole"
-				hole_quat = self.closed_torpedo_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
-			else:
-				return None
- 
-			if self.use_incoming_timestamp:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-			else:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
- 
- 
-			self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
- 
-			# Create Detection3D message
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
-			return detection
- 
- 
-		# Calculate the shrink size based on the class_detect_shrink percentage
-		shrink_x = (x_max - x_min) * self.class_detect_shrink  
-		shrink_y = (y_max - y_min) * self.class_detect_shrink  
- 
-		# Adjust the bounding box coordinates to exclude the edges
-		x_min = int(x_min + shrink_x)
-		x_max = int(x_max - shrink_x)
-		y_min = int(y_min + shrink_y)
-		y_max = int(y_max - shrink_y)
- 
-		# Extract the region of interest based on the bounding box
-		mask_roi = self.mask[y_min:y_max, x_min:x_max]
-		cropped_gray_image = self.gray_image[y_min:y_max, x_min:x_max]
-		masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
- 
-		if class_name == "mapping_map":
-			# Prepare the ROI mask, excluding the holes
-			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
- 
-			# Dynamic padding calculation based on bounding box size
-			padding_x = int((x_max - x_min) * 0.1)  # 10% of the bounding box width
-			padding_y = int((y_max - y_min) * 0.1)  # 10% of the bounding box height
-			#self.get_logger().info(f"holes for exclusion count: {len(self.holes)}")
- 
-			for hole_bbox, _ in self.holes:
-				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
-				adjusted_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
-				adjusted_hole_y_min = max(hole_y_min - y_min - padding_y, 0)
-				adjusted_hole_x_max = min(hole_x_max - x_min + padding_x, mask_roi.shape[1])
-				adjusted_hole_y_max = min(hole_y_max - y_min + padding_y, mask_roi.shape[0])
- 
-				# Set the hole region in mask_roi to 0 to exclude it from feature detection
-				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
- 
-			# Apply morphological operations to refine the exclusion zones
-			kernel = np.ones((5, 5), np.uint8)
-			mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
-			mask_roi = cv2.erode(mask_roi, kernel, iterations=1)
- 
-			# Continue with feature detection using the adjusted mask_roi
-			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-		# elif class_name == "buoy":
-		# 	# Sample the depth value at the center of the bounding box
-		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-		# 	# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
-		# 	# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
-		# 	# self.get_logger().info(f"depth: {depth_value}")
-		# 	if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
-		# 		self.get_logger().info("rejecting buoy")
-		# 		return None
-		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
-		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
- 
-		# 	# Create Detection3D message
-		# 	detection = Detection3D()
-		# 	detection.header.frame_id = self.frame_id
-		# 	if self.use_incoming_timestamp:
-		# 		detection.header.stamp = self.detection_timestamp
-		# 	else:
-		# 		detection.header.stamp = self.get_clock().now().to_msg()
- 
-		# 	# Set the pose
-		# 	class_name = "bin_target"
-		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
-		# 	return detection
-		elif class_name in ["torpedo_open", "torpedo_closed"]:
-			# Prepare the ROI mask, excluding the holes
-			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
- 
-			# Padding for exclusion zone
-			padding = 10
- 
-			for hole_bbox, _ in self.holes:
-				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
-				# You might need to adjust the coordinates based on the ROI's position
-				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
-				adjusted_hole_x_min = max(hole_x_min - x_min - padding, 0)
-				adjusted_hole_y_min = max(hole_y_min - y_min - padding, 0)
-				adjusted_hole_x_max = min(hole_x_max - x_min + padding, mask_roi.shape[1])
-				adjusted_hole_y_max = min(hole_y_max - y_min + padding, mask_roi.shape[0])
- 
-				# Set the hole region in mask_roi to 0 to exclude it from feature detection
-				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
- 
-			# Continue with feature detection using the adjusted mask_roi
-			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
- 
-		#self.get_logger().info(f"class det3d: {class_name}")
-		# Detect features within the object's bounding box
-		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
- 
-		if good_features is not None:
-			#self.get_logger().info(f"good features: {class_name}")
-			good_features[:, 0, 0] += x_min  # Adjust X coordinates
-			good_features[:, 0, 1] += y_min  # Adjust Y coordinates
- 
-			# Convert features to a list of (x, y) points
-			feature_points = [pt[0] for pt in good_features]
- 
-			# Get 3D points from feature points
-			points_3d = self.get_3d_points(feature_points, cv_image)
-	
-			if points_3d is not None and len(points_3d) >= self.min_points:
-				normal, _, centroid = self.fit_plane_to_points(points_3d)
- 
-				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
- 
-				if normal[2] > 0:
-					normal = -normal
-
-				self.plane_normal = normal
-				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
- 
- 
- 
-				if class_name == "torpedo_open":  
-					self.open_torpedo_centroid = centroid
-					self.open_torpedo_quat = quat
-				elif class_name == "torpedo_closed":
-					self.closed_torpedo_centroid = centroid
-					self.closed_torpedo_quat = quat
-				elif class_name == "mapping_map":
-					self.mapping_map_centroid = centroid
-					self.mapping_map_quat = quat
-					class_name = "torpedo"
-				elif class_name == "buoy":
-					class_name = "bin_target"
- 
- 
-				# When calling publish_marker, pass these dimensions along with other required information
-				self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
- 
-				# Create Detection3D message
-				detection = Detection3D()
-				detection.header.frame_id = self.frame_id
-				if self.use_incoming_timestamp:
-					detection.header.stamp = self.detection_timestamp
-				else:
-					detection.header.stamp = self.get_clock().now().to_msg()
- 
-				# Set the pose
-				detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
-				return detection
- 
-		# else:
-		# 	self.get_logger().info(f"wtf: {class_name}")
-		# if self.latest_buoy is not None and class_name == "buoy":
-		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
-		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
-		# 	detection = Detection3D()
-		# 	detection.header.frame_id = self.frame_id
-		# 	if self.use_incoming_timestamp:
-		# 		detection.header.stamp = self.detection_timestamp
-		# 	else:
-		# 		detection.header.stamp = self.get_clock().now().to_msg()
- 
-		# 	# Set the pose
-		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
-		# 	return detection
- 
-		# return None
- 
 	def calculate_centroid(self, center_x, center_y, z):
+		# Validate inputs
+		if z <= 0 or np.isnan(z) or np.isinf(z):
+			return None
+			
+		if np.isnan(center_x) or np.isnan(center_y) or np.isinf(center_x) or np.isinf(center_y):
+			return None
+			
 		center_3d_x = (center_x - self.cx) * z / self.fx
 		center_3d_y = (center_y - self.cy) * z / self.fy
+		
+		# Validate results
+		if np.isnan(center_3d_x) or np.isnan(center_3d_y) or np.isinf(center_3d_x) or np.isinf(center_3d_y):
+			return None
+			
 		return [center_3d_x, center_3d_y, z]
  
 	def create_object_hypothesis_with_pose(self, class_name, centroid, quat, conf):
@@ -933,119 +888,236 @@ class YOLONode(Node):
 		# Draw circles on the image for each point
 		for point in points:
 			try:
+				# Check for valid z value to avoid division by zero
+				if point[2] <= 0 or np.isnan(point[2]) or np.isinf(point[2]):
+					continue
+				
+				# Check for valid x and y values
+				if np.isnan(point[0]) or np.isnan(point[1]) or np.isinf(point[0]) or np.isinf(point[1]):
+					continue
+				
 				# Transform the 3D point back to 2D
 				x2d = int(point[0] * self.fx / point[2] + self.cx)
 				y2d = int(point[1] * self.fy / point[2] + self.cy)
- 
-				# Draw the circle on the image
-				cv2.circle(image, (x2d, y2d), radius=3, color=(0, 255, 0), thickness=-1)
-			except:
-				pass
+				
+				# Check if the projected point is within image bounds
+				if 0 <= x2d < image.shape[1] and 0 <= y2d < image.shape[0]:
+					cv2.circle(image, (x2d, y2d), radius=3, color=(0, 255, 0), thickness=-1)
+			except Exception as e:
+				# Log the specific error for debugging
+				self.get_logger().debug(f"Error overlaying point {point}: {e}")
+				continue
  
 	def get_3d_points(self, feature_points, cv_image):
 		points_3d = []
- 
- 
+
 		for x, y in feature_points:
 			xi = int(x)
 			yi = int(y)
- 
+
 			# Make sure the point is on the image
-			if yi >= self.depth_image.shape[0] or xi >= self.depth_image.shape[1]:
+			if yi >= self.depth_image.shape[0] or xi >= self.depth_image.shape[1] or yi < 0 or xi < 0:
 				continue
- 
+
 			# Make sure the point is on the mask
 			if self.mask[yi, xi] != 255:
 				continue
- 
+
 			z = self.depth_image[yi, xi]
-			if np.isnan(z) or z == 0:
+			
+			# Check for valid depth values
+			if np.isnan(z) or z <= 0 or np.isinf(z):
 				continue
- 
+
 			point_3d = self.calculate_centroid(xi, yi, z)
+			
+			# Validate the calculated 3D point
+			if any(np.isnan(coord) or np.isinf(coord) for coord in point_3d):
+				continue
+				
 			points_3d.append(point_3d)
- 
+
+		# Only proceed if we have valid points
+		if not points_3d:
+			return None
+
 		# Now, overlay points on the image
 		self.overlay_points_on_image(cv_image, points_3d)
- 
+
 		# Prepare PointCloud message
 		cloud = PointCloud()
 		cloud.header.frame_id = self.frame_id  # Adjust the frame ID as necessary
- 
+
 		if self.use_incoming_timestamp:
 			cloud.header.stamp = self.detection_timestamp
 		else:
 			cloud.header.stamp = self.get_clock().now().to_msg()
- 
+
 		# Convert points to a numpy array
 		points_3d = np.array(points_3d)
- 
+
+		# Validate points_3d array before filtering
+		if len(points_3d) == 0:
+			return None
+
 		# Filter outlier points
-		points_3d = self.radius_outlier_removal(points_3d, min_neighbors=min(10,int(len(points_3d)*0.8)))
-		points_3d = self.statistical_outlier_removal(points_3d, k=min(10,int(len(points_3d) * 0.8)))
-		# self.get_logger().info(f"points3d: {len(points_3d)}")
-		if points_3d is not None:
-			self.accumulated_points.extend(points_3d)  # Add the new points to the accumulated list
- 
-			# Optionally, limit the size of the accumulated points to prevent unbounded growth
-			max_points = 10000  # Example limit, adjust based on your needs
-			if len(self.accumulated_points) > max_points:
-				self.accumulated_points = self.accumulated_points[-max_points:]
- 
-			if len(points_3d) < self.min_points:
-				return None
- 
+		points_3d = self.radius_outlier_removal(points_3d, min_neighbors=min(10, int(len(points_3d) * 0.8)))
+		if points_3d is None or len(points_3d) == 0:
+			return None
+			
+		points_3d = self.statistical_outlier_removal(points_3d, k=min(10, int(len(points_3d) * 0.8)))
+		if points_3d is None or len(points_3d) == 0:
+			return None
+		
+		self.accumulated_points.extend(points_3d)  # Add the new points to the accumulated list
+
+		# Optionally, limit the size of the accumulated points to prevent unbounded growth
+		max_points = 10000  # Example limit, adjust based on your needs
+		if len(self.accumulated_points) > max_points:
+			self.accumulated_points = self.accumulated_points[-max_points:]
+
+		if len(points_3d) < self.min_points:
+			return None
+
 		return points_3d
  
 	def statistical_outlier_removal(self, points_3d, k=10, std_ratio=1.0):
 		"""
 		Remove statistical outliers from the point cloud.
- 
+
 		:param points_3d: Numpy array of 3D points
 		:param k: Number of nearest neighbors to use for mean distance calculation
 		:param std_ratio: Standard deviation ratio threshold
 		:return: Filtered array of 3D points
 		"""
+		if len(points_3d) == 0:
+			return points_3d
+			
+		# Validate input points
+		valid_points = []
+		for point in points_3d:
+			if not any(np.isnan(coord) or np.isinf(coord) for coord in point):
+				valid_points.append(point)
+		
+		if len(valid_points) == 0:
+			return np.array([])
+			
+		points_3d = np.array(valid_points)
+		
+		if len(points_3d) <= k:
+			return points_3d  # Not enough points for filtering
+			
 		mean_distances = np.zeros(len(points_3d))
 		for i, point in enumerate(points_3d):
-			distances = np.linalg.norm(points_3d - point, axis=1)
-			sorted_distances = np.sort(distances)
-			mean_distances[i] = np.mean(sorted_distances[1:k+1])
- 
-		mean_dist_global = np.mean(mean_distances)
-		std_dev = np.std(mean_distances)
- 
+			try:
+				distances = np.linalg.norm(points_3d - point, axis=1)
+				# Check for any invalid distances
+				valid_distances = distances[~(np.isnan(distances) | np.isinf(distances))]
+				if len(valid_distances) > k:
+					sorted_distances = np.sort(valid_distances)
+					mean_distances[i] = np.mean(sorted_distances[1:k+1])
+				else:
+					mean_distances[i] = 0  # Default value for insufficient valid neighbors
+			except Exception as e:
+				self.get_logger().debug(f"Error calculating distances for point {i}: {e}")
+				mean_distances[i] = 0
+
+		# Filter out invalid mean distances
+		valid_mean_distances = mean_distances[~(np.isnan(mean_distances) | np.isinf(mean_distances))]
+		if len(valid_mean_distances) == 0:
+			return points_3d  # Return original if no valid distances
+
+		mean_dist_global = np.mean(valid_mean_distances)
+		std_dev = np.std(valid_mean_distances)
+
+		if std_dev == 0:
+			return points_3d  # No variance, return all points
+
 		threshold = mean_dist_global + std_ratio * std_dev
-		filtered_indices = np.where(mean_distances < threshold)[0]
+		filtered_indices = np.where((mean_distances < threshold) & 
+								   (~np.isnan(mean_distances)) & 
+								   (~np.isinf(mean_distances)))[0]
+		
 		return points_3d[filtered_indices]
  
 	def radius_outlier_removal(self, points_3d, radius=1.0, min_neighbors=10):
 		"""
 		Remove radius outliers from the point cloud.
- 
+
 		:param points_3d: Numpy array of 3D points
 		:param radius: The radius within which to count neighbors
 		:param min_neighbors: Minimum number of neighbors within the radius for the point to be kept
 		:return: Filtered array of 3D points
 		"""
+		if len(points_3d) == 0:
+			return points_3d
+			
+		# Validate input points
+		valid_points = []
+		for point in points_3d:
+			if not any(np.isnan(coord) or np.isinf(coord) for coord in point):
+				valid_points.append(point)
+		
+		if len(valid_points) == 0:
+			return np.array([])
+			
+		points_3d = np.array(valid_points)
+		
 		filtered_indices = []
 		for i, point in enumerate(points_3d):
-			distances = np.linalg.norm(points_3d - point, axis=1)
-			if len(np.where(distances <= radius)[0]) > min_neighbors:
-				filtered_indices.append(i)
- 
-		return points_3d[filtered_indices]
+			try:
+				distances = np.linalg.norm(points_3d - point, axis=1)
+				# Check for valid distances
+				valid_distances = distances[~(np.isnan(distances) | np.isinf(distances))]
+				neighbor_count = len(np.where(valid_distances <= radius)[0])
+				if neighbor_count > min_neighbors:
+					filtered_indices.append(i)
+			except Exception as e:
+				self.get_logger().debug(f"Error calculating radius neighbors for point {i}: {e}")
+				continue
+
+		return points_3d[filtered_indices] if filtered_indices else np.array([])
  
 	def fit_plane_to_points(self, points_3d):
 		try:
-			centroid = np.mean(points_3d, axis=0)
-			u, s, vh = np.linalg.svd(points_3d - centroid)
+			# Validate input points
+			if len(points_3d) < 3:
+				return None
+				
+			# Filter out any invalid points
+			valid_points = []
+			for point in points_3d:
+				if not any(np.isnan(coord) or np.isinf(coord) for coord in point):
+					valid_points.append(point)
+			
+			if len(valid_points) < 3:
+				return None
+				
+			points_array = np.array(valid_points)
+			centroid = np.mean(points_array, axis=0)
+			
+			# Check if centroid is valid
+			if any(np.isnan(coord) or np.isinf(coord) for coord in centroid):
+				return None
+				
+			u, s, vh = np.linalg.svd(points_array - centroid)
 			normal = vh[-1]
-			normal = normal / np.linalg.norm(normal)
+			
+			# Validate normal vector
+			if any(np.isnan(coord) or np.isinf(coord) for coord in normal):
+				return None
+				
+			normal_magnitude = np.linalg.norm(normal)
+			if normal_magnitude == 0:
+				return None
+				
+			normal = normal / normal_magnitude
 			d = -np.dot(normal, centroid)
+			
 			return normal, d, centroid
-		except:
-			pass
+		except Exception as e:
+			self.get_logger().debug(f"Error fitting plane to points: {e}")
+			return None
  
 	def calculate_quaternion_and_euler_angles(self, normal):
  
@@ -1084,7 +1156,6 @@ class YOLONode(Node):
 		
 		# Create a plane marker
 		plane_marker = Marker()
-		# self.get_logger().info(f"class pub: {class_name}")
 		plane_marker.header.frame_id = self.frame_id
 		if self.use_incoming_timestamp:
 			plane_marker.header.stamp = self.detection_timestamp

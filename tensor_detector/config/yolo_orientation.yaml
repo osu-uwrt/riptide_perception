@@ -1,14 +1,15 @@
 /**/yolo_orientation:
   ros__parameters:
-    active_camera: "ffc"  # Change to "dfc or ffc" to switch cameras
+    # Camera selection and models
+    active_camera: "ffc" # Change to "dfc" or "ffc" to switch cameras
     
     # FFC configuration
     ffc_model: "robosub_2024_v3.pt"
     ffc_class_id_map: "{
-      0: 'buoy', 
-      1: 'mapping_map', 
-      2: 'mapping_hole', 
-      3: 'gate_hot', 
+      0: 'buoy',
+      1: 'mapping_map',
+      2: 'mapping_hole',
+      3: 'gate_hot',
       4: 'gate_cold',
       5: 'bin_temperature',
       6: 'bin'
@@ -23,3 +24,42 @@
     }"
     dfc_threshold: 0.8
     dfc_iou: 0.9
+    
+    # Processing options
+    log_processing_time: false
+    use_incoming_timestamp: true
+    export_to_tensorrt: false
+    enable_annotated_output: true
+    
+    # Topic names
+    annotated_image_topic: "yolo_annotated"
+    detections_topic: "yolo_detections"
+    camera_switch_service: "set_camera_is_dfc"
+    
+    # Camera topic patterns (use {robot} and {camera} as placeholders)
+    camera_info_topic_pattern: "/{robot}/{camera}/zed_node/left/camera_info"
+    depth_info_topic_pattern: "/{robot}/{camera}/zed_node/depth/camera_info"
+    image_topic_pattern: "/{robot}/{camera}/zed_node/left/image_rect_color"
+    depth_topic_pattern: "/{robot}/{camera}/zed_node/depth/depth_registered"
+    frame_id_pattern: "{robot}/{camera}_left_camera_optical_frame"
+    
+    # Queue sizes
+    camera_info_queue_size: 1
+    depth_info_queue_size: 1
+    image_queue_size: 10
+    depth_queue_size: 10
+    publisher_queue_size: 10
+    
+    # Camera switch timing
+    camera_switch_delay: 0.1
+    
+    # Detection and processing parameters
+    print_camera_info: false  # Print the camera info received
+    class_detect_shrink: 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
+    min_points: 5  # Minimum number of points for SVD
+    publish_interval: 0.1  # 100 milliseconds
+    history_size: 10  # Window size for rolling average smoothing
+    default_normal_x: 0.0  # Default normal for quaternion calculation
+    default_normal_y: 0.0
+    default_normal_z: 1.0
+    map_min_area: 50  # Minimum area threshold for map detection
