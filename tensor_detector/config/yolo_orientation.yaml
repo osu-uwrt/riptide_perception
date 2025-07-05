@@ -3,7 +3,7 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     # ---------- FFC configuration ----------
-    ffc_model: "SSFB_Table_Augmented2.pt"
+    ffc_model: "slalom_akron_mid.pt"
     ffc_class_id_map: "{
       0: 'Bin',
       1: 'Bin_saw',
@@ -16,11 +16,12 @@
       8: 'bottle_yellow',
       9: 'gate_saw',
       10: 'gate_shark',
-      11: 'spoon_pink',
-      12: 'spoon_yellow',
-      13: 'torpedo_hole'
+      11: 'slalom_red',
+      12: 'spoon_pink',
+      13: 'spoon_yellow',
+      14: 'torpedo_hole'
     }"
-    ffc_threshold: 0.85
+    ffc_threshold: 0.8
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------
