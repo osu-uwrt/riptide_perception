@@ -121,6 +121,30 @@
           y: -1.72
           z: -1.0
           yaw: 0.0
+      bin_pink:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.74
+          y: -1.72
+          z: -1.0
+          yaw: 0.0
+      bin_yellow:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.84
+          y: -1.72
+          z: -1.0
+          yaw: 0.0
       prequal_gate:
         parent: map
         covar:
@@ -156,6 +180,6 @@
     confidence_cutoff: 0.2
 
     # Size of buffer for location tracking
-    buffer_size: 110
+    buffer_size: 30
     quantile: [0.01, 0.99]
     minimum_distance: 1.0

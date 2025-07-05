@@ -33,15 +33,18 @@ class YOLONode(Node):
 				('dfc_threshold', 0.9),
 				('ffc_iou', 0.9),
 				('dfc_iou', 0.9),
+				('robot_namespace', 'talos')
 			]
 		)
+
+		self.robot_ns = self.get_parameter(f'robot_namespace').get_parameter_value().string_value
 
 		##########################
 		# USER DEFINED PARAMS    #
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = False  # Whether or not to export .pt file to engine
+		self.export = True  # Whether or not to export .pt file to engine
 		self.print_camera_info = False  # Print the camera info recieved
 		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5  # Minimum number of points for SVD
@@ -155,7 +158,7 @@ class YOLONode(Node):
 		self.camera_prefix = self.active_camera
 
 		# Set frame ID
-		self.frame_id = f'talos/{self.camera_prefix}_left_camera_optical_frame'
+		self.frame_id = f'{self.robot_ns}/{self.camera_prefix}_left_camera_optical_frame'
 
 		# Get camera-specific parameters
 		yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
@@ -248,35 +251,35 @@ class YOLONode(Node):
 		# Create new subscriptions
 		self.zed_info_subscription = self.create_subscription(
 			CameraInfo, 
-			f'/talos/{self.camera_prefix}/zed_node/left/camera_info', 
+			f'/{self.robot_ns}/{self.camera_prefix}/zed_node/left/camera_info', 
 			self.camera_info_callback, 
 			1
 		)
-		self.get_logger().info(f"Creating camera info subcription: /talos/{self.camera_prefix}/zed_node/left/camera_info")
+		self.get_logger().info(f"Creating camera info subcription: /{self.robot_ns}/{self.camera_prefix}/zed_node/left/camera_info")
 
 		self.depth_info_subscription = self.create_subscription(
 			CameraInfo, 
-			f'/talos/{self.camera_prefix}/zed_node/depth/camera_info', 
+			f'/{self.robot_ns}/{self.camera_prefix}/zed_node/depth/camera_info', 
 			self.depth_info_callback, 
 			1
 		)
-		self.get_logger().info(f"Creating depth info subcription: /talos/{self.camera_prefix}/zed_node/depth/camera_info")  
+		self.get_logger().info(f"Creating depth info subcription: /{self.robot_ns}/{self.camera_prefix}/zed_node/depth/camera_info")  
 
 		self.image_subscription = self.create_subscription(
 			Image, 
-			f'/talos/{self.camera_prefix}/zed_node/left/image_rect_color', 
+			f'/{self.robot_ns}/{self.camera_prefix}/zed_node/left/image_rect_color', 
 			self.image_callback, 
 			10
 		)
-		self.get_logger().info(f"Creating image subcription: /talos/{self.camera_prefix}/zed_node/left/image_rect_color")
+		self.get_logger().info(f"Creating image subcription: /{self.robot_ns}/{self.camera_prefix}/zed_node/left/image_rect_color")
 
 		self.depth_subscription = self.create_subscription(
 			Image, 
-			f'/talos/{self.camera_prefix}/zed_node/depth/depth_registered', 
+			f'/{self.robot_ns}/{self.camera_prefix}/zed_node/depth/depth_registered', 
 			self.depth_callback, 
 			10
 		)
-		self.get_logger().info(f"Creating depth subcription: /talos/{self.camera_prefix}/zed_node/depth/depth_registered")
+		self.get_logger().info(f"Creating depth subcription: /{self.robot_ns}/{self.camera_prefix}/zed_node/depth/depth_registered")
 
 	def load_model(self, yolo_model):
 		# Load model
