@@ -57,6 +57,8 @@ class MappingNode(Node):
             "gate_hot": dict(),
             "gate_cold": dict(),
             "slalom_front": dict(),
+            "slalom_middle": dict(),
+            "slalom_back": dict(),
             "buoy": dict(),
             "torpedo": dict(),
             "torpedo_large_hole": dict(),

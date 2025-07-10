@@ -34,6 +34,30 @@
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 4.0
+      slalom_front:
+        pose: [0.0, 0.0, -0.75, 0.0, 0.0, 0.0]
+        noise: 0.001
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 4.0
+      slalom_middle:
+        pose: [-2.0, 0.0, -0.75, 0.0, 0.0, 0.0]
+        noise: 0.001
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 4.0
+      slalom_back:
+        pose: [-4.0, 0.0, -0.75, 0.0, 0.0, 0.0]
+        noise: 0.001
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 4.0
       torpedo:
         pose: [5.0, 2.0, -1.0, 0.0, 0.0, 1.5707]
         noise: 0.05
