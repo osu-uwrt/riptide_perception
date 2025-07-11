@@ -26,14 +26,6 @@
         pub_invalid_orientation: false
         min_dist: 0.25
         max_dist: 3.0
-      buoy:
-        pose: [5.0, -3.0, -0.75, 0.0, 0.0, 3.1415]
-        noise: 0.001
-        score: 0.8
-        downward: false
-        pub_invalid_orientation: false
-        min_dist: 0.5
-        max_dist: 4.0
       slalom_front:
         pose: [0.0, 0.0, -0.75, 0.0, 0.0, 0.0]
         noise: 0.001

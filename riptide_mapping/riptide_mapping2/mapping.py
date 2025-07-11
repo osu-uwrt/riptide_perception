@@ -54,27 +54,32 @@ class MappingNode(Node):
 
         self.objects = {
             "gate": dict(),
-            "gate_hot": dict(),
-            "gate_cold": dict(),
+            "gate_reefshark": dict(),
+            "gate_sawfish": dict(),
             "slalom_front": dict(),
             "slalom_middle": dict(),
             "slalom_back": dict(),
-            "buoy": dict(),
             "torpedo": dict(),
-            "torpedo_large_hole": dict(),
-            "torpedo_small_hole": dict(),
+            "torpedo_shark_hole": dict(),
+            "torpedo_sawfish_hole": dict(),
+            "bin_target": dict(),
             "table": dict(),
+            "table_reefshark": dict(),
+            "table_sawfish": dict(),
+            "table_basket_pink": dict(),
+            "table_basket_yellow": dict(),
+            "table_spoon_pink": dict(),
+            "table_spoon_yellow": dict(),
+            "table_bottle_pink": dict(),
+            "table_bottle_yellow": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict(),
-            "bin_target": dict(),
-            "bin_pink": dict(),
-            "bin_yellow": dict()
         }
         
         self.downwards_objects = {
             "bin_target": dict(),
-            "bin_pink": dict(),
-            "bin_yellow": dict()
+            "table_basket_pink": dict(),
+            "table_basket_yellow": dict()
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []

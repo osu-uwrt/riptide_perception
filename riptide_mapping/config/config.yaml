@@ -13,7 +13,7 @@
           y: -0.0
           z: -0.25
           yaw: 180.0
-      gate_hot:
+      gate_reefshark:
         parent: map
         covar:
           x: 1.0
@@ -25,7 +25,7 @@
           y: -0.0
           z: -0.25
           yaw: 180.0
-      gate_cold:
+      gate_sawfish:
         parent: map
         covar:
           x: 1.0
@@ -73,18 +73,6 @@
           y: 0.0
           z: -1.0
           yaw: 0.0
-      buoy:
-        parent: map
-        covar:
-          x: 1.0
-          y: 1.0
-          z: 1.0
-          yaw: -90.0
-        pose:
-          x: 6.5
-          y: 0.0
-          z: -1.0
-          yaw: 180.0
       torpedo:
         parent: map
         covar:
@@ -97,7 +85,7 @@
           y: 0.0
           z: -1.5
           yaw: 0.0
-      torpedo_large_hole:
+      torpedo_shark_hole:
         parent: map
         covar:
           x: 0.5
@@ -109,7 +97,7 @@
           y: -0.0
           z: -1.5
           yaw: 0.0
-      torpedo_small_hole:
+      torpedo_sawfish_hole:
         parent: map
         covar:
           x: 0.001
@@ -133,18 +121,6 @@
           y: 2.0
           z: -2.1
           yaw: 0.0
-      # bin_target:
-      #   parent: map
-      #   covar:
-      #     x: 0.001
-      #     y: 0.001
-      #     z: 0.001
-      #     yaw: 0.001
-      #   pose:
-      #     x: 0.0
-      #     y: 0.0
-      #     z: -2.1
-      #     yaw: 0.0
       table:
         parent: map
         covar:
@@ -157,7 +133,7 @@
           y: -1.72
           z: -1.0
           yaw: 0.0
-      bin_pink:
+      table_reefshark:
         parent: map
         covar:
           x: 0.001
@@ -165,11 +141,35 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.74
+          x: 13.0
           y: -1.72
           z: -1.0
+          yaw: 180.0
+      table_sawfish:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 12.5
+          y: -1.72
+          z: -1.0
+          yaw: 0.0      
+      table_basket_pink:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.0
+          y: 0.0
+          z: 1.0
           yaw: 0.0
-      bin_yellow:
+      table_basket_yellow:
         parent: map
         covar:
           x: 0.001
@@ -177,9 +177,57 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.84
-          y: -1.72
-          z: -1.0
+          x: 0.5
+          y: 0.0
+          z: 1.0
+          yaw: 0.0
+      table_spoon_pink:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.0
+          y: 0.0
+          z: 1.0
+          yaw: 0.0
+      table_spoon_yellow:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.5
+          y: 0.0
+          z: 1.0
+          yaw: 0.0
+      table_bottle_pink:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 2.0
+          y: 0.0
+          z: 1.0
+          yaw: 0.0
+      table_bottle_yellow:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 2.5
+          y: 0.0
+          z: 1.0
           yaw: 0.0
       prequal_gate:
         parent: map
