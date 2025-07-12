@@ -14,29 +14,29 @@
           z: -0.25
           yaw: 180.0
       gate_hot:
-        parent: map
+        parent: gate_frame
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.0
-          y: -0.0
-          z: -0.25
-          yaw: 180.0
+          x: 0.0
+          y: 0.5
+          z: 0.0
+          yaw: 0.0
       gate_cold:
-        parent: map
+        parent: gate_frame
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.0
-          y: 0.0
-          z: -0.25
-          yaw: 180.0
+          x: 0.0
+          y: -0.5
+          z: 0.0
+          yaw: 0.0
       slalom_front:
         parent: map
         covar:
