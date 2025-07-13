@@ -4,7 +4,7 @@
 # Robot gaslighting script :)
 #
 
-from math import sqrt, atan, pi
+from math import sqrt, atan2, pi, acos
 
 import numpy as np
 import transforms3d as tf3d
@@ -17,7 +17,7 @@ from std_msgs.msg import Header
 from tf2_ros import Buffer, TransformException, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 from transforms3d.euler import euler2quat, quat2euler
-from transforms3d.quaternions import qmult, qinverse
+from transforms3d.quaternions import qmult, qinverse, rotate_vector
 from vision_msgs.msg import (Detection3D, Detection3DArray,
                              ObjectHypothesisWithPose)
 
@@ -35,7 +35,11 @@ objects = [
     "torpedo_large_hole",
     "torpedo_small_hole",
     "bin_target",
-    "table"
+    "table",
+    "table_basket_pink",
+    "table_basket_yellow",
+    "table_spoon_pink",
+    "table_bottle_yellow"
 ]
 
 config = {}
@@ -119,12 +123,12 @@ class DummyDetectionNode(Node):
                     objectPoseCameraFrame.position.z ** 2)
                         
         #object position relative to camera. Measured in angles to make it easier to eval fov
-        objectHAng = abs(atan(objectPoseCameraFrame.position.y / 
+        objectHAng = abs(atan2(objectPoseCameraFrame.position.y,
                             objectPoseCameraFrame.position.x) * 180 / pi)
         
-        objectVAng = abs(atan(objectPoseCameraFrame.position.z /
+        objectVAng = abs(atan2(objectPoseCameraFrame.position.z,
                             objectPoseCameraFrame.position.x) * 180 / pi)
-                
+
         #object rotation relative to camera (if camera is next to object it cant see it)
         #invert direction of object rotation in camera frame so angles are < 180
         transformQuat = [objectPoseCameraFrame.orientation.w, objectPoseCameraFrame.orientation.x,
@@ -132,14 +136,22 @@ class DummyDetectionNode(Node):
         
         reverseQuat = [0.707, 0, 0.707, 0] if downward else [0, 0, 0, 1] #quats aimed to align normal vectors with the camera x axis. ordered wxyz
         cameraDiffQuat = qmult(transformQuat, reverseQuat)
-        [_, cameraDiffP, cameraDiffY] = quat2euler(cameraDiffQuat)
 
-        absCameraDiffPDeg = abs(cameraDiffP * 180 / pi)
-        absCameraDiffYDeg = abs(cameraDiffY * 180 / pi)
-                
-        return objectDist < objectMaxDist and objectDist > objectMinDist and \
+        rotatedVector = rotate_vector([1, 0, 0], cameraDiffQuat)
+        cosang = np.dot([1, 0, 0], rotatedVector) / np.linalg.norm(rotatedVector)
+        camRotDiff = acos(cosang) * 180.0 / pi
+        
+        self.get_logger().debug(f"object dist: {objectDist} in [{objectMinDist}, {objectMaxDist}]")
+        self.get_logger().debug(f"object hang: {objectHAng} < {cameraHFov / 2}")
+        self.get_logger().debug(f"object vang: {objectVAng} < {cameraVfov / 2}")
+        self.get_logger().debug(f"rotation diff: {camRotDiff} < 94")
+        
+        isVisible =  objectDist < objectMaxDist and objectDist > objectMinDist and \
                 objectHAng < cameraHFov / 2 and objectVAng < cameraVfov / 2 and \
-                absCameraDiffPDeg < cameraVfov and absCameraDiffYDeg < cameraHFov
+                camRotDiff < 94 # this number was arbitrarily chosen for liltank testing
+        
+        self.get_logger().debug(f"Object is visible: {isVisible}\n")
+        return isVisible
     
     
     #takes objectPos as [x, y, z] and maxDist to determine whether or not the robot can see an object.
@@ -192,6 +204,8 @@ class DummyDetectionNode(Node):
             noise = self.get_parameter(f"detection_data.{objectName}.noise").value
             score = self.get_parameter(f"detection_data.{objectName}.score").value
             publishInvalid = self.get_parameter(f"detection_data.{objectName}.publish_invalid_orientation").value
+            
+            self.get_logger().debug(f"Object name: {objectName}")
             
             if poseArr is not None:
                 if not self.pool or self.isVisibleByRobot(objectName):
