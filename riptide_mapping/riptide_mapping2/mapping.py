@@ -69,8 +69,6 @@ class MappingNode(Node):
             "table_basket_pink": dict(),
             "table_basket_yellow": dict(),
             "table_spoon_pink": dict(),
-            "table_spoon_yellow": dict(),
-            "table_bottle_pink": dict(),
             "table_bottle_yellow": dict(),
             "prequal_gate": dict(),
             "prequal_pole": dict(),
