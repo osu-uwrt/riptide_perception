@@ -3,23 +3,15 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     # ---------- FFC configuration ----------
-    ffc_model: "slalom_akron_mid.pt"
+    ffc_model: "robosub_2024_v3.pt"
     ffc_class_id_map: "{
-      0: 'Bin',
-      1: 'Bin_saw',
-      2: 'Bin_shark',
-      3: 'Torpdo_shark_top',
-      4: 'Torpedo_saw_top',
-      5: 'bin_pink',
-      6: 'bin_yellow',
-      7: 'bottle_pink',
-      8: 'bottle_yellow',
-      9: 'gate_saw',
-      10: 'gate_shark',
-      11: 'slalom_red',
-      12: 'spoon_pink',
-      13: 'spoon_yellow',
-      14: 'torpedo_hole'
+      0: 'buoy', 
+      1: 'mapping_map', 
+      2: 'mapping_hole', 
+      3: 'gate_hot', 
+      4: 'gate_cold',
+      5: 'bin_temperature',
+      6: 'bin'
     }"
     ffc_threshold: 0.8
     ffc_iou: 0.9
