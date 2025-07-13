@@ -9,10 +9,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -2.0
-          y: 0.0
+          x: 4.0
+          y: -0.0
           z: -0.25
-          yaw: 0.0
+          yaw: 180.0
       gate_hot:
         parent: map
         covar:
@@ -21,10 +21,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -2.0
-          y: 0.0
+          x: 4.0
+          y: -0.0
           z: -0.25
-          yaw: 0.0
+          yaw: 180.0
       gate_cold:
         parent: map
         covar:
@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -2.0
+          x: 4.0
           y: 0.0
           z: -0.25
-          yaw: 0.0
+          yaw: 180.0
       buoy:
         parent: map
         covar:
@@ -45,8 +45,8 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: 11.52
-          y: -1.097
+          x: 6.5
+          y: 0.0
           z: -1.0
           yaw: 180.0
       torpedo:
@@ -59,7 +59,7 @@
         pose:
           x: -2.0
           y: 0.0
-          z: -1.2
+          z: -0.75
           yaw: 0.0
       torpedo_large_hole:
         parent: map
@@ -70,8 +70,8 @@
           yaw: 0.5
         pose:
           x: -2.0
-          y: 0.0
-          z: -1.2
+          y: -0.0
+          z: -0.75
           yaw: 0.0
       torpedo_small_hole:
         parent: map
@@ -82,8 +82,8 @@
           yaw: 0.001
         pose:
           x: -2.0
-          y: 0.0
-          z: -1.2
+          y: -0.0
+          z: -0.75
           yaw: 0.0
       bin_target:
         parent: map
@@ -93,10 +93,22 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.0
-          y: 0.0
+          x: -0.0
+          y: 2.0
           z: -2.1
-          yaw: 180.0
+          yaw: 0.0
+      # bin_target:
+      #   parent: map
+      #   covar:
+      #     x: 0.001
+      #     y: 0.001
+      #     z: 0.001
+      #     yaw: 0.001
+      #   pose:
+      #     x: 0.0
+      #     y: 0.0
+      #     z: -2.1
+      #     yaw: 0.0
       table:
         parent: map
         covar:
@@ -105,9 +117,33 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 18.74
-          y: 14.72
-          z: -1.1
+          x: 12.74
+          y: -1.72
+          z: -1.0
+          yaw: 0.0
+      bin_pink:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.74
+          y: -1.72
+          z: -1.0
+          yaw: 0.0
+      bin_yellow:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.84
+          y: -1.72
+          z: -1.0
           yaw: 0.0
       prequal_gate:
         parent: map
@@ -144,6 +180,6 @@
     confidence_cutoff: 0.2
 
     # Size of buffer for location tracking
-    buffer_size: 110
+    buffer_size: 30
     quantile: [0.01, 0.99]
     minimum_distance: 1.0

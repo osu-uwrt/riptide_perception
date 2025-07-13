@@ -24,7 +24,10 @@ def generate_launch_description():
                 executable='yolo_orientation.py',
                 name='yolo_orientation',
                 output='screen',
-                parameters=[params_path]
+                parameters=[
+                    params_path,
+                    {"robot_namespace": LC("robot")}
+                ]
             )
         ], scoped=True)
     ])
