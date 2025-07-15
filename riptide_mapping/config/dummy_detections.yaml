@@ -130,10 +130,12 @@
     
     #the following settings are only used when simulate_pool is TRUE
     forward_camera_frame: <robot>/base_link #if <robot> is present in name, it will be populated with the robot name
+    forward_camera_pub_frame: <robot>/base_link # this is the frame that the detections are published in
     forward_camera_hfov: 120 #degrees. used to determine if robot is actually looking at the object.
     forward_camera_vfov: 68 #degrees. used just like the hfov but not horizontal
     
     downward_camera_frame: <robot>/dummy_dfc_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_pub_frame: <robot>/base_link
     downward_camera_hfov: 60
     downward_camera_vfov: 40
 
@@ -143,11 +145,13 @@
     simulate_pool: true #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
     
     #the following settings are only used when simulate_pool is TRUE
-    forward_camera_frame: <robot>/base_link #if <robot> is present in name, it will be populated with the robot name
+    forward_camera_frame: simulator/<robot>/zed2i/left_optical #if <robot> is present in name, it will be populated with the robot name
+    forward_camera_pub_frame: <robot>/base_link # this is the frame that the detections are published in
     forward_camera_hfov: 60 #degrees. used to determine if robot is actually looking at the object.
     forward_camera_vfov: 120 #degrees. used just like the hfov but not horizontal
     
     downward_camera_frame: <robot>/dummy_dfc_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_pub_frame: <robot>/base_link
     downward_camera_hfov: 60
     downward_camera_vfov: 40
   
