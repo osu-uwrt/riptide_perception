@@ -287,8 +287,8 @@ class DummyDetectionNode(Node):
         if len(forwardsDetectArray.detections) > 0:
             self.pub.publish(forwardsDetectArray)
         
-        # if len(downwardsDetectArray.detections) > 0:
-        #     self.pub.publish(downwardsDetectArray)
+        if len(downwardsDetectArray.detections) > 0:
+            self.pub.publish(downwardsDetectArray)
         
         
 def main(args = None):
