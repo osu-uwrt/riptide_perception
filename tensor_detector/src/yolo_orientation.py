@@ -60,7 +60,10 @@ class YOLONode(Node):
 			'mapping_hole': (0.0, 0.0, 1.0),
 			'mapping_largest_hole': (0.0, 0.0, 1.0),
 			'mapping_smallest_hole': (1.0, 0.0, 0.0),
-			'gate_hot': (1.0, 1.0, 1.0)
+			'gate_hot': (1.0, 1.0, 1.0),
+			'slalom_close': (1.0, 0.0, 0.0), 
+			'slalom_middle': (1.0, 1.0, 0.0),
+			'slalom_far': (0.0, 1.0, 0.0) 
 		}
 
 		self.create_publishers()
@@ -96,6 +99,7 @@ class YOLONode(Node):
 		self.smallest_hole = None
 		self.latest_buoy = None
 		self.plane_normal = None
+		self.slalom_red_detections = [] 
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
 		self.create_switch_service()
@@ -341,6 +345,96 @@ class YOLONode(Node):
 	def depth_callback(self, msg):
 		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
  
+	def process_slalom_red_detections(self, detections_array):
+		"""
+		Process all slalom_red detections to determine closest, middle, and farthest
+		Only proceeds if 3 slaloms are found with proper spacing and aspect ratio
+		"""
+		if len(self.slalom_red_detections) == 3:
+			# First, validate aspect ratios (height/width >= 2.5)
+			valid_detections = []
+			for detection_data in self.slalom_red_detections:
+				height = detection_data['bbox_height']
+				width = detection_data['bbox_width']
+				aspect_ratio = height / width if width > 0 else 0
+				
+				if aspect_ratio >= 2.5:
+					valid_detections.append(detection_data)
+				else:
+					#self.get_logger().warn(f"Slalom rejected: aspect ratio {aspect_ratio:.2f} < 5.0")
+					return
+			
+			# Check if we still have 3 valid detections after aspect ratio filtering
+			if len(valid_detections) != 3:
+				#self.get_logger().warn(f"Only {len(valid_detections)}/3 slaloms meet aspect ratio requirement")
+				self.slalom_red_detections = []
+				return
+			
+			# Sort by distance (Z coordinate - depth)
+			sorted_detections = sorted(valid_detections, key=lambda x: x['centroid'][2])
+			
+			# Check minimum spacing between consecutive slaloms (at least 1m apart)
+			spacing_valid = True
+			for i in range(len(sorted_detections) - 1):
+				current_pos = sorted_detections[i]['centroid']
+				next_pos = sorted_detections[i + 1]['centroid']
+				
+				# Calculate 3D distance between centroids
+				distance = ((next_pos[0] - current_pos[0])**2 + 
+						(next_pos[1] - current_pos[1])**2 + 
+						(next_pos[2] - current_pos[2])**2)**0.5
+				
+				if distance < 1.0:  # 1 meter minimum spacing
+					#self.get_logger().warn(f"Slaloms too close: {distance:.2f}m < 1.0m between slalom {i} and {i+1}")
+					spacing_valid = False
+					break
+			
+			# Only proceed if spacing is valid
+			if not spacing_valid:
+				#self.get_logger().warn("Slalom spacing validation failed")
+				self.slalom_red_detections = []
+				return
+			
+			# All validations passed - proceed with classification
+			#self.get_logger().info("3 valid slaloms found with proper spacing and aspect ratio")
+			
+			# Assign new class names based on distance
+			class_names = ['slalom_close', 'slalom_middle', 'slalom_far']
+			for i, detection_data in enumerate(sorted_detections):
+				# Create new detection with updated class name
+				detection = Detection3D()
+				detection.header.frame_id = self.frame_id
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
+				
+				# Create object hypothesis with new class name
+				detection.results.append(self.create_object_hypothesis_with_pose(
+					class_names[i],
+					detection_data['centroid'],
+					detection_data['quat'],
+					detection_data['conf']
+				))
+				
+				# Publish marker with new class name
+				self.publish_marker(
+					detection_data['quat'],
+					detection_data['centroid'],
+					class_names[i],
+					detection_data['bbox_width'],
+					detection_data['bbox_height']
+				)
+				detections_array.detections.append(detection)
+			
+			# Clear the list for next frame
+			self.slalom_red_detections = []
+		else:
+			# Clear detections if we don't have exactly 3
+			# if len(self.slalom_red_detections) > 0:
+			# 	self.get_logger().debug(f"Found {len(self.slalom_red_detections)} slaloms, need exactly 3")
+			self.slalom_red_detections = []
+
 	def image_callback(self, msg: Image):
  
 		if self.log_processing_time:
@@ -369,6 +463,7 @@ class YOLONode(Node):
  
 		# Reset mapping holes each image
 		self.mapping_holes = []
+		self.slalom_red_detections = []
 		self.largest_hole = None
 		self.smallest_hole = None
  
@@ -391,6 +486,36 @@ class YOLONode(Node):
 							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 						self.mapping_holes.append(box)
 						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
+					elif class_id in self.class_id_map and self.class_id_map[class_id] == "slalom_red":
+						# Don't create detection immediately, store for later processing
+						detection_temp = self.create_detection3d_message(box, cv_image, conf)
+						if detection_temp and detection_temp.results:
+							# Extract the centroid and quaternion from the detection
+							result_temp= detection_temp.results[0]
+							centroid = [
+								result_temp.pose.pose.position.x,
+								result_temp.pose.pose.position.y, 
+								result_temp.pose.pose.position.z
+							]
+							quat = [
+								result_temp.pose.pose.orientation.x,
+								result_temp.pose.pose.orientation.y,
+								result_temp.pose.pose.orientation.z,
+								result_temp.pose.pose.orientation.w
+							]
+							
+							# Store detection data for sorting
+							x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+							bbox_width = x_max - x_min
+							bbox_height = y_max - y_min
+							
+							self.slalom_red_detections.append({
+								'centroid': centroid,
+								'quat': quat,
+								'conf': box.conf[0],
+								'bbox_width': bbox_width,
+								'bbox_height': bbox_height
+							})
 					else:
 						detection = self.create_detection3d_message(box, cv_image, conf)
  
@@ -428,9 +553,9 @@ class YOLONode(Node):
 			else:
 				self.get_logger().warning("No largest hole found.")
 
-		if self.temp_markers:
-			self.publish_markers(self.temp_markers)
-			self.temp_markers = []  # Clear the list for the next frame
+		
+		self.publish_markers(self.temp_markers)
+		self.temp_markers = []  # Clear the list for the next frame
  
 		annotated_frame = results[0].plot()
 		
@@ -440,6 +565,8 @@ class YOLONode(Node):
 			annotated_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
 			self.publisher.publish(annotated_msg)
 		
+		self.process_slalom_red_detections(detections)
+
 		# if not self.torpedo_seen and len(self.holes) > 1 and self.torpedo_centroid is not None and self.torpedo_quat is not None:
 		# 	detections.detections.append(self.spoof_torpedo())
 		self.torpedo_seen = False
@@ -878,17 +1005,39 @@ class YOLONode(Node):
 			self.accumulated_points.clear()
  
 	def overlay_points_on_image(self, image, points):
-		# Draw circles on the image for each point
+		"""Draw circles on the image for each point with safety checks"""
+		if len(points) == 0:
+			return
+		
 		for point in points:
 			try:
+				# Check for valid point structure
+				if len(point) < 3:
+					continue
+				
+				# Check for valid z-coordinate to avoid division by zero
+				if point[2] <= 0 or np.isnan(point[2]) or np.isinf(point[2]):
+					continue
+				
+				# Check for valid x and y coordinates
+				if np.isnan(point[0]) or np.isinf(point[0]) or np.isnan(point[1]) or np.isinf(point[1]):
+					continue
+				
 				# Transform the 3D point back to 2D
 				x2d = int(point[0] * self.fx / point[2] + self.cx)
 				y2d = int(point[1] * self.fy / point[2] + self.cy)
- 
-				# Draw the circle on the image
-				cv2.circle(image, (x2d, y2d), radius=3, color=(0, 255, 0), thickness=-1)
-			except:
-				pass
+				
+				# Check if the projected point is within image bounds
+				if (0 <= x2d < image.shape[1] and 0 <= y2d < image.shape[0]):
+					cv2.circle(image, (x2d, y2d), radius=3, color=(0, 255, 0), thickness=-1)
+					
+			except (ZeroDivisionError, OverflowError, ValueError):
+				# Silently continue on mathematical errors
+				continue
+			except Exception as e:
+				# Log unexpected errors but continue processing
+				self.get_logger().warning(f"Unexpected error in overlay_points_on_image: {e}")
+				continue
  
 	def get_3d_points(self, feature_points, cv_image):
 		points_3d = []
@@ -1029,34 +1178,35 @@ class YOLONode(Node):
 		return rotation
  
 	def publish_marker(self, quat, centroid, class_name, bbox_width, bbox_height):
-		
 		if not self.has_subscribers(self.marker_array_publisher):
 			return
 		
 		# Create a plane marker
 		plane_marker = Marker()
-		# self.get_logger().info(f"class pub: {class_name}")
 		plane_marker.header.frame_id = self.frame_id
 		if self.use_incoming_timestamp:
 			plane_marker.header.stamp = self.detection_timestamp
 		else:
 			plane_marker.header.stamp = self.get_clock().now().to_msg()
-		plane_marker.ns = "detection_markers"  # Namespace for all detection markers
-		plane_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
+		plane_marker.ns = "detection_markers"
+		plane_marker.id = self.generate_unique_detection_id()
 		plane_marker.type = Marker.CUBE
 		plane_marker.action = Marker.ADD
- 
-		# Set the position of the plane marker to be the centroid of the plane
+		
+		# Set marker lifetime (auto-delete after this duration)
+		plane_marker.lifetime.nanosec = int(self.publish_interval * 2.0 * 1e9)
+		
+		# Set the position of the plane marker
 		plane_marker.pose.position.x = centroid[0]
 		plane_marker.pose.position.y = centroid[1]
 		plane_marker.pose.position.z = centroid[2]
- 
+		
 		# Set the plane marker's orientation
 		plane_marker.pose.orientation.x = quat[0]
 		plane_marker.pose.orientation.y = quat[1]
 		plane_marker.pose.orientation.z = quat[2]
 		plane_marker.pose.orientation.w = quat[3]
- 
+		
 		# Set the scale of the plane marker based on the bounding box size
 		plane_marker.scale.x = float(bbox_width) / 150.0
 		plane_marker.scale.y = float(bbox_height) / 150.0
@@ -1064,17 +1214,17 @@ class YOLONode(Node):
 			plane_marker.scale.z = 0.01
 		else:
 			plane_marker.scale.z = 0.05
- 
+		
 		# Set the color and transparency (alpha) of the plane marker
 		color = self.get_color_for_class(class_name)
 		plane_marker.color.r = color[0]
 		plane_marker.color.g = color[1]
 		plane_marker.color.b = color[2]
-		plane_marker.color.a = 0.8  # Semi-transparent
- 
+		plane_marker.color.a = 0.8
+		
 		# Append the plane marker to publish all at once
 		self.temp_markers.append(plane_marker)
- 
+		
 		# Create an arrow marker
 		arrow_marker = Marker()
 		arrow_marker.header.frame_id = self.frame_id
@@ -1082,45 +1232,47 @@ class YOLONode(Node):
 			arrow_marker.header.stamp = self.detection_timestamp
 		else:
 			arrow_marker.header.stamp = self.get_clock().now().to_msg()
-		arrow_marker.ns = "orientation_markers"  # Namespace for all detection markers
-		arrow_marker.id = self.generate_unique_detection_id()  # Unique ID for each marker
+		arrow_marker.ns = "orientation_markers"
+		arrow_marker.id = self.generate_unique_detection_id()
 		arrow_marker.type = Marker.ARROW
 		arrow_marker.action = Marker.ADD
- 
-		# Set the position of the arrow marker to be the centroid of the plane
+		
+		# Set marker lifetime (auto-delete after this duration)
+		arrow_marker.lifetime.nanosec = int(self.publish_interval * 2.0 * 1e9)
+		
+		# Set the position of the arrow marker
 		arrow_marker.pose.position.x = centroid[0]
 		arrow_marker.pose.position.y = centroid[1]
 		arrow_marker.pose.position.z = centroid[2]
- 
-		# Create a rotation for -90 degrees around the y-axis (or another axis as needed)
+		
+		# Create a rotation for -90 degrees around the y-axis
 		additional_rotation = R.from_euler('y', -90, degrees=True).as_quat()
- 
+		
 		# Apply the additional rotation to the plane's quaternion
 		arrow_quat = R.from_quat(quat) * R.from_quat(additional_rotation)
 		arrow_quat = arrow_quat.as_quat()
- 
+		
 		# Set the arrow marker's orientation
 		arrow_marker.pose.orientation.x = arrow_quat[0]
 		arrow_marker.pose.orientation.y = arrow_quat[1]
 		arrow_marker.pose.orientation.z = arrow_quat[2]
 		arrow_marker.pose.orientation.w = arrow_quat[3]
- 
+		
 		# Set the scale for the arrow marker
 		arrow_marker.scale.x = 1.0  # Length of the arrow
 		arrow_marker.scale.y = 0.05  # Width of the arrow
 		arrow_marker.scale.z = 0.05  # Height of the arrow
- 
+		
 		# Set the color and transparency (alpha) of the arrow marker
 		arrow_marker.color.r = color[0]
 		arrow_marker.color.g = color[1]
 		arrow_marker.color.b = color[2]
-		arrow_marker.color.a = 0.8  # Semi-transparent
- 
+		arrow_marker.color.a = 0.8
+		
 		# Append the arrow marker to publish all at once
 		self.temp_markers.append(arrow_marker)
- 
-	def publish_markers(self, markers):
 
+	def publish_markers(self, markers):
 		if not self.has_subscribers(self.marker_array_publisher):
 			return
 		

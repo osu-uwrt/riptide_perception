@@ -95,7 +95,7 @@
         pose:
           x: -2.0
           y: 0.0
-          z: -1.5
+          z: -0.75
           yaw: 0.0
       torpedo_large_hole:
         parent: map
@@ -107,7 +107,7 @@
         pose:
           x: -2.0
           y: -0.0
-          z: -1.5
+          z: -0.75
           yaw: 0.0
       torpedo_small_hole:
         parent: map
@@ -119,7 +119,7 @@
         pose:
           x: -2.0
           y: -0.0
-          z: -1.5
+          z: -0.75
           yaw: 0.0
       bin_target:
         parent: map
