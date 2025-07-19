@@ -3,15 +3,31 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     # ---------- FFC configuration ----------
-    ffc_model: "robosub_2024_v3.pt"
+    # ffc_model: "robosub_2024_v3.pt"
+    # ffc_class_id_map: "{
+    #   0: 'buoy', 
+    #   1: 'mapping_map', 
+    #   2: 'mapping_hole', 
+    #   3: 'gate_hot', 
+    #   4: 'gate_cold',
+    #   5: 'bin_temperature',
+    #   6: 'bin'
+    # }"
+    ffc_model: "rs25.pt"
     ffc_class_id_map: "{
-      0: 'buoy', 
-      1: 'mapping_map', 
-      2: 'mapping_hole', 
-      3: 'gate_hot', 
-      4: 'gate_cold',
-      5: 'bin_temperature',
-      6: 'bin'
+      0: 'Bin',
+      1: 'Bin_saw',
+      2: 'Bin_shark',
+      3: 'Torpdo_shark_top',
+      4: 'Torpedo_saw_top',
+      5: 'bin_pink',
+      6: 'bin_yellow',
+      7: 'bottle_yellow',
+      8: 'gate_saw',
+      9: 'gate_shark',
+      10: 'slalom_red',
+      11: 'spoon_pink',
+      12: 'torpedo_hole'
     }"
     ffc_threshold: 0.8
     ffc_iou: 0.9
