@@ -284,8 +284,7 @@ class DummyDetectionNode(Node):
                     elif visibleDownwards:
                         downwardsDetectArray.detections.append(detection)
                     
-        if len(forwardsDetectArray.detections) > 0:
-            self.pub.publish(forwardsDetectArray)
+        self.pub.publish(forwardsDetectArray)
         
         if len(downwardsDetectArray.detections) > 0:
             self.pub.publish(downwardsDetectArray)
