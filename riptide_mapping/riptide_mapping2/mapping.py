@@ -187,29 +187,42 @@ class MappingNode(Node):
         
         closest_object = self.closest_object(detections)
         
+        # if no target object set, use closest
+        closest_or_target = closest_object if self.target_object == "" else self.target_object
+                
         # Send the Poses for each location to their Location class
         for detection in detections.detections:
-            for result in detection.results:
+            result_ids = [r.hypothesis.class_id for r in detection.results]
+            
+            try:
+                result_idx = result_ids.index(closest_or_target)
+            except ValueError:
+                continue
+                        
+            # if we reached here, then result is in the result list at result_idx    
+            result = detection.results[result_idx]
+                        
+            if not result.hypothesis.class_id in self.objects.keys() \
+                    and not result.hypothesis.class_id in self.downwards_objects.keys():
+                self.get_logger().warning(f"Unknown class id {result.hypothesis.class_id}")
+                continue #already did print, just continue here
 
-                if not result.hypothesis.class_id in self.objects.keys() \
-                        and not result.hypothesis.class_id in self.downwards_objects.keys():
-                    self.get_logger().warning(f"Unknown class id {result.hypothesis.class_id}")
-                    continue #already did print, just continue here
-
-                # Skip this detection if confidence is to low
-                if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
-                    self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
-                    continue
-                
-                ledPulse = LedCommand()
-                ledPulse.target = LedCommand.TARGET_ALU
-                ledPulse.mode = LedCommand.SINGLETON_FLASH
-                ledPulse.green = 255
-                self.led_pulse_pub.publish(ledPulse)
-                
-                update_success, _ = self.try_update_pose(result, detections.header, closest_object)
-                if not update_success:
-                    self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
+            # Skip this detection if confidence is too low
+            if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
+                self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
+                continue
+            
+            # Pulse LEDs to indicate a detection was received
+            ledPulse = LedCommand()
+            ledPulse.target = LedCommand.TARGET_ALU
+            ledPulse.mode = LedCommand.SINGLETON_FLASH
+            ledPulse.green = 255
+            self.led_pulse_pub.publish(ledPulse)
+            
+            # update pose of object in map
+            update_success, _ = self.try_update_pose(result, detections.header, closest_object)
+            if not update_success:
+                self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
             
         self.publish_pose()
     
@@ -228,9 +241,6 @@ class MappingNode(Node):
             if elapsed_seconds > STALE_TIME:
                 self.get_logger().error(f"Timing out result for detection for class {outstanding.det_result.hypothesis.class_id} because the tf2 lookup could " + \
                     f"not be completed. Result originated at time {outstanding.det_header.stamp}. Final TF lookup error: {error_msg}")
-
-                pass
-
                 
         self.outstanding_detections = oustanding_detections_remaining
     
@@ -251,7 +261,6 @@ class MappingNode(Node):
                 detection_header.stamp
             )
         except TransformException as ex:
-            # self.get_logger().error(f"When processing {result.hypothesis.class_id}: Can't look up transform from {detection_header.frame_id} to {parent}: {ex}")
             return False, str(ex)            
 
         # If the current object isnt the closest object and its parent is map we
@@ -270,7 +279,10 @@ class MappingNode(Node):
         object_location: Location = self.objects[child]["location"]
         object_location.add_pose(trans_pose.pose, update_position, update_orientation)
 
-        if child == self.target_object or (self.target_object == "" and child == closest_object):
+        # update the offset pose if necessary (target or otherwise closest object, parent is map)
+        if (child == self.target_object or (self.target_object == "" and child == closest_object)) \
+           and parent == "map":
+               
             offset_pose = Pose()
 
             offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
@@ -293,8 +305,8 @@ class MappingNode(Node):
                 if not result.hypothesis.class_id in self.objects.keys():
                     continue
                 
-                if detection.header.frame_id != "zed_left_camera_optical_frame" or self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value != "map":
-                    continue
+                # if detection.header.frame_id != "zed_left_camera_optical_frame" or self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value != "map":
+                #     continue
 
                 pose: Pose = result.pose.pose
                 dist = math.sqrt(pose.position.x**2 + pose.position.y**2 + pose.position.z**2)
@@ -340,8 +352,7 @@ class MappingNode(Node):
             pose.header.frame_id = parent
 
             # If the object is the target object the translational covariance will be in the offset object.
-            if object == self.target_object:
-                # offset_covar = offset_pose.covariance
+            if object == self.target_object and parent == "map":
                 offset_covar = self.offset.get_pose().covariance
 
                 pose.pose.covariance[0] = offset_covar[0]
@@ -366,9 +377,10 @@ class MappingNode(Node):
                 
                 # assign initial position because that offset is taken care of by map offset as long as this object is the 
                 # target object. DONT assign orientation because map offset doesn't cover that
+                # The actual offset transform is added to the array earlier in this function. We just need to pub init pose
                 init_pose: Pose = self.objects[object]["init_pose"]
 
-                #check init pose for nans
+                # check init pose for nans and infs
                 if not (math.isfinite(init_pose.position.x) or math.isfinite(init_pose.position.y) or math.isfinite(init_pose.position.z)):
                     frame_valid = False
 

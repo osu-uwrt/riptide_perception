@@ -14,6 +14,7 @@ from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Quaternion
 from rclpy.node import Node
 from std_msgs.msg import Header
+from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 from transforms3d.euler import euler2quat, quat2euler
@@ -65,6 +66,8 @@ class DummyDetectionNode(Node):
         self.tfBuffer    = Buffer()
         self.tfListener  = TransformListener(self.tfBuffer, self)
         self.pubs        = [ ]
+        self.srv = self.create_service(SetBool, 'set_camera_is_dfc', self.setActiveCameraCb)
+
         for object in objects:
             self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{object}", 10))
         
@@ -103,6 +106,14 @@ class DummyDetectionNode(Node):
                 self.timer.timer_period_ns = param.value * 1e9
                 
         return SetParametersResult(successful=True)
+
+
+    def setActiveCameraCb(self, request: SetBool.Request, response: SetBool.Response):
+        response.success = True
+        self.get_logger().info(f"Incoming request to set camera to {'dfc' if request.data else 'ffc'}")
+
+        return response
+
     
     
     def isVisibleByCamera(self, cameraName: str, objectPoseMap: Pose, objectMinDist: float, objectMaxDist: float, downward: bool):

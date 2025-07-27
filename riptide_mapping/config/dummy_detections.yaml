@@ -3,7 +3,7 @@
     timer_period: 0.05
     detection_data:
       gate:
-        pose: [2.0, 0.0, -0.25, 0.0, 0.0, 3.1415]
+        pose: [3.0, 0.0, -0.25, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
         downward: false
@@ -11,7 +11,7 @@
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
         max_dist: 4.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
       gate_hot:
-        pose: [2.0, 0.2, -0.5, 0.0, 0.0, 3.1415]
+        pose: [3.0, -0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
         downward: false
@@ -19,7 +19,7 @@
         min_dist: 0.25
         max_dist: 3.0
       gate_cold:
-        pose: [2.0, -0.1, -0.5, 0.0, 0.0, 3.1415]
+        pose: [3.0, 0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
         downward: false
@@ -27,29 +27,29 @@
         min_dist: 0.25
         max_dist: 3.0
       slalom_front:
-        pose: [0.0, 0.0, -0.75, 0.0, 0.0, 0.0]
-        noise: 0.001
+        pose: [-1.0, 5.0, -1.0, 0.0, 0.0, -1.5707]
+        noise: 0.1
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 4.0
+        max_dist: 12.0
       slalom_middle:
-        pose: [-2.0, 0.0, -0.75, 0.0, 0.0, 0.0]
-        noise: 0.001
+        pose: [2.0, 8.0, -1.0, 0.0, 0.0, -1.5707]
+        noise: 0.1
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 4.0
+        max_dist: 12.0
       slalom_back:
-        pose: [-4.0, 0.0, -0.75, 0.0, 0.0, 0.0]
-        noise: 0.001
+        pose: [-1.0, 11.0, -1.0, 0.0, 0.0, -1.5707]
+        noise: 0.1
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 4.0
+        max_dist: 12.0
       torpedo:
         pose: [5.0, 2.0, -1.0, 0.0, 0.0, 1.5707]
         noise: 0.05
