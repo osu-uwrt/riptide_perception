@@ -77,7 +77,9 @@ class MappingNode(Node):
         self.downwards_objects = {
             "bin_target": dict(),
             "table_basket_pink": dict(),
-            "table_basket_yellow": dict()
+            "table_basket_yellow": dict(),
+            "table_spoon_pink": dict(),
+            "table_bottle_yellow": dict()
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []

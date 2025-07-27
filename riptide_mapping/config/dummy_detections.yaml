@@ -91,7 +91,7 @@
         min_dist: 1.0
         max_dist: 4.0
       table_basket_pink:
-        pose: [1.0, 0.0, -1.5, 0.0, -1.5707, 0.0]
+        pose: [1.0, 0.0, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
         downward: false
@@ -99,7 +99,7 @@
         min_dist: 0.01
         max_dist: 4.0
       table_basket_yellow:
-        pose: [-1.0, 0.0, -1.5, 0.0, -1.5707, 0.0]
+        pose: [-1.0, 0.0, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
         downward: false
@@ -107,7 +107,7 @@
         min_dist: 0.01
         max_dist: 4.0
       table_spoon_pink:
-        pose: [0.2, 0.5, -1.5, 0.0, -1.5707, 0.0]
+        pose: [0.2, 0.5, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
         downward: false
@@ -115,7 +115,7 @@
         min_dist: 0.01
         max_dist: 4.0
       table_bottle_yellow:
-        pose: [-0.4, 0.3, -1.5, 0.0, -1.5707, 0.0]
+        pose: [-0.4, 0.3, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
         downward: false
