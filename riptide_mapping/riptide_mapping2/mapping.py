@@ -89,7 +89,7 @@ class MappingNode(Node):
             self.declare_parameters(
                 namespace="",
                 parameters=[
-                    ('init_data.{}.parent'.format(object), "map"),
+                    ('init_data.{}.parent'.format(object), "world"),
                     ('init_data.{}.pose.x'.format(object), 0.0),
                     ('init_data.{}.pose.y'.format(object), 0.0),
                     ('init_data.{}.pose.z'.format(object), 0.0),
@@ -270,7 +270,7 @@ class MappingNode(Node):
 
         trans_pose = do_transform_pose_stamped(pose, transform)
         
-        if result.hypothesis.class_id in self.downwards_objects.keys() and parent == "map":
+        if result.hypothesis.class_id in self.downwards_objects.keys(): # and parent == "map":
             trans_pose.pose.orientation.x = 0.0
             trans_pose.pose.orientation.y = 0.0
             trans_pose.pose.orientation.z = 0.0
