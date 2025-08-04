@@ -115,7 +115,7 @@
         min_dist: 0.01
         max_dist: 4.0
       table_bottle_yellow:
-        pose: [-0.3, -0.1, -2.0, 0.0, -1.5707, 0.0]
+        pose: [-0.2, -0.3, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
         downward: false

@@ -1,4 +1,28 @@
+#
+# riptide_mapping configuration file.
+#
+
+
+# BOTH-ROBOTS SETTTINGS
 /**/riptide_mapping2:
+  ros__parameters:
+    # Covariance filter parameters
+    cov_limit: 0.01 # Minimum value for the covariance matrix elements
+    k_value: 0.1 # Covariance step size (< 1.0) applied per detection
+    detection_cov_factor: 7.0
+
+    # relative position filter parameters
+    angle_cutoff: 15.0
+    distance_limit: 10.0
+    confidence_cutoff: 0.2
+
+    # location tracking settings NOTE: buffer size is a per-robot setting.
+    
+    quantile: [0.01, 0.99]
+    minimum_distance: 1.0
+
+# TALOS SETTINGS
+/talos/riptide_mapping2:
   ros__parameters:
     init_data:
       gate:
@@ -121,90 +145,9 @@
           y: 2.0
           z: -2.1
           yaw: 0.0
-      table:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 12.74
-          y: -1.72
-          z: -1.0
-          yaw: 0.0
-      table_reefshark:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 13.0
-          y: -1.72
-          z: -1.0
-          yaw: 180.0
-      table_sawfish:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 12.5
-          y: -1.72
-          z: -1.0
-          yaw: 0.0      
-      table_basket_pink:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.0
-          y: 0.0
-          z: 1.0
-          yaw: 0.0
-      table_basket_yellow:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.5
-          y: 0.0
-          z: 1.0
-          yaw: 0.0
-      table_spoon_pink:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 1.0
-          y: 0.0
-          z: 1.0
-          yaw: 0.0
-      table_bottle_yellow:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 2.5
-          y: 0.0
-          z: 1.0
-          yaw: 0.0
+      
+      # NOTE: table locations are per-robot settings. See the robot-specific params for those.
+      
       prequal_gate:
         parent: map
         covar:
@@ -229,17 +172,184 @@
           y: 0.0
           z: -1.5
           yaw: 180.0
-    # Covariance filter parameters
-    cov_limit: 0.01 # Minimum value for the covariance matrix elements
-    k_value: 0.1 # Covariance step size (< 1.0) applied per detection
-    detection_cov_factor: 7.0
+      # table locations
+      table:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 12.74
+          y: -1.72
+          z: -1.0
+          yaw: 0.0
+      table_reefshark:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.0
+          y: 0.0
+          z: 1.0
+          yaw: 180.0
+      table_sawfish:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -1.0
+          y: 0.0
+          z: 1.0
+          yaw: 180.0      
+      table_basket_pink:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.305
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      table_basket_yellow:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.305
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      table_spoon_pink:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.1
+          y: -0.036
+          z: 0.0
+          yaw: 0.0
+      table_bottle_yellow:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.25
+          y: 0.25
+          z: 0.0
+          yaw: 0.0
 
-    # relative position filter parameters
-    angle_cutoff: 15.0
-    distance_limit: 10.0
-    confidence_cutoff: 0.2
+    # location tracking settings
+    buffer_size: 100
 
-    # Size of buffer for location tracking
+# LILTANK SETTINGS
+/liltank/riptide_mapping2:
+  ros__parameters:
+    init_data:
+      # table locations
+      table:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.0
+          y: 0.0
+          z: -2.0
+          yaw: 0.0
+      table_reefshark:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 1.0
+          y: 0.0
+          z: 1.0
+          yaw: 180.0
+      table_sawfish:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -1.0
+          y: 0.0
+          z: 1.0
+          yaw: 180.0      
+      table_basket_pink:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.4
+          y: 0.0
+          z: 0.1
+          yaw: 0.0
+      table_basket_yellow:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.4
+          y: 0.0
+          z: 0.1
+          yaw: 0.0
+      table_spoon_pink:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.1
+          y: -0.036
+          z: 0.0
+          yaw: 0.0
+      table_bottle_yellow:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.25
+          y: 0.25
+          z: 0.0
+          yaw: 0.0
+    
+    # location tracking settings
     buffer_size: 30
-    quantile: [0.01, 0.99]
-    minimum_distance: 1.0
