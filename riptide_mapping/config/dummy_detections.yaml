@@ -10,7 +10,7 @@
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
         max_dist: 4.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      gate_hot:
+      gate_reefshark:
         pose: [3.0, -0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
@@ -18,7 +18,7 @@
         pub_invalid_orientation: false
         min_dist: 0.25
         max_dist: 3.0
-      gate_cold:
+      gate_sawfish:
         pose: [3.0, 0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
@@ -27,7 +27,7 @@
         min_dist: 0.25
         max_dist: 3.0
       slalom_front:
-        pose: [-1.0, 5.0, -1.0, 0.0, 0.0, -1.5707]
+        pose: [10.0, -2.0, -1.0, 0.0, 0.0, 0.0]
         noise: 0.1
         score: 0.8
         downward: false
@@ -35,7 +35,7 @@
         min_dist: 0.5
         max_dist: 12.0
       slalom_middle:
-        pose: [2.0, 8.0, -1.0, 0.0, 0.0, -1.5707]
+        pose: [8.0, -3.0, -1.0, 0.0, 0.0, 0.0]
         noise: 0.1
         score: 0.8
         downward: false
@@ -43,7 +43,7 @@
         min_dist: 0.5
         max_dist: 12.0
       slalom_back:
-        pose: [-1.0, 11.0, -1.0, 0.0, 0.0, -1.5707]
+        pose: [6.0, -2.0, -1.0, 0.0, 0.0, 0.0]
         noise: 0.1
         score: 0.8
         downward: false
@@ -51,23 +51,23 @@
         min_dist: 0.5
         max_dist: 12.0
       torpedo:
-        pose: [5.0, 2.0, -1.0, 0.0, 0.0, 1.5707]
-        noise: 0.05
+        pose: [10.0, 2.0, -1.0, 0.0, 0.0, 3.1415]
+        noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 3.5
-      torpedo_large_hole:
-        pose: [5.25, 1.75, -1.125, 0.0, 0.0, 1.5707]
+      torpedo_shark_hole:
+        pose: [10.0, 1.875, -1.125, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      torpedo_small_hole:
-        pose: [4.75, 2.25, -0.8, 0.0, 0.0, 1.5707]
+      torpedo_sawfish_hole:
+        pose: [10.0, 2.125, -0.875, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
         downward: false
@@ -75,7 +75,7 @@
         min_dist: 0.5
         max_dist: 3.0
       bin_target:
-        pose: [8.25, 1.5, -2.1, 0.0, 0.0, 0.0]
+        pose: [5.0, 2.5, -2.1, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
@@ -83,7 +83,7 @@
         min_dist: 0.5
         max_dist: 3.0
       table:
-        pose: [8.0, -8.0, -1.5, 0.0, 0.0, 0.0]
+        pose: [10.0, 4.0, -1.5, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
@@ -134,8 +134,8 @@
     forward_camera_hfov: 120 #degrees. used to determine if robot is actually looking at the object.
     forward_camera_vfov: 68 #degrees. used just like the hfov but not horizontal
     
-    downward_camera_frame: <robot>/dummy_dfc_link #if <robot> is present in name, it will be populated with the robot name
-    downward_camera_pub_frame: <robot>/base_link
+    downward_camera_frame: <robot>/dfc_camera_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_pub_frame: <robot>/dfc_camera_link
     downward_camera_hfov: 60
     downward_camera_vfov: 40
 

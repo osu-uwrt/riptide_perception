@@ -33,8 +33,8 @@ objects = [
     "slalom_middle",
     "slalom_back",
     "torpedo",
-    "torpedo_large_hole",
-    "torpedo_small_hole",
+    "torpedo_shark_hole",
+    "torpedo_sawfish_hole",
     "bin_target",
     "table",
     "table_basket_pink",
@@ -297,8 +297,8 @@ class DummyDetectionNode(Node):
                     
         self.pub.publish(forwardsDetectArray)
         
-        # if len(downwardsDetectArray.detections) > 0:
-        #     self.pub.publish(downwardsDetectArray)
+        if len(downwardsDetectArray.detections) > 0:
+            self.pub.publish(downwardsDetectArray)
         
         
 def main(args = None):

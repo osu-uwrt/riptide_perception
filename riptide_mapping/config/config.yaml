@@ -33,24 +33,12 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.0
+          x: 3.0
           y: -0.0
           z: -0.25
           yaw: 180.0
       gate_reefshark:
-        parent: map
-        covar:
-          x: 1.0
-          y: 1.0
-          z: 1.0
-          yaw: 50.0
-        pose:
-          x: 4.0
-          y: -0.0
-          z: -0.25
-          yaw: 180.0
-      gate_sawfish:
-        parent: map
+        parent: gate_frame
         covar:
           x: 1.0
           y: 1.0
@@ -58,7 +46,19 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: -0.5
+          y: 0.25
+          z: 0.0
+          yaw: 0.0
+      gate_sawfish:
+        parent: gate_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 50.0
+        pose:
+          x: 0.0
+          y: -0.25
           z: 0.0
           yaw: 0.0
       slalom_front:
@@ -69,10 +69,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -1.0
-          y: 5.0
+          x: 10.0
+          y: -2.0
           z: -1.0
-          yaw: -90.0
+          yaw: 0.0
       slalom_middle:
         parent: slalom_front_frame
         covar:
@@ -81,7 +81,7 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: -3.0
+          x: -2.0
           y: 0.0
           z: 0.0
           yaw: 0.0
@@ -93,7 +93,7 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -3.0
+          x: -2.0
           y: 0.0
           z: 0.0
           yaw: 0.0
@@ -105,33 +105,33 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: -2.0
-          y: 0.0
-          z: -0.75
-          yaw: 0.0
+          x: 10.0
+          y: 2.0
+          z: -1.0
+          yaw: 180.0
       torpedo_shark_hole:
-        parent: map
+        parent: torpedo_frame
         covar:
           x: 0.5
           y: 0.5
           z: 0.5
           yaw: 0.5
         pose:
-          x: -2.0
-          y: -0.0
-          z: -0.75
+          x: 0.0
+          y: 0.25
+          z: 0.25
           yaw: 0.0
       torpedo_sawfish_hole:
-        parent: map
+        parent: torpedo_frame
         covar:
           x: 0.001
           y: 0.001
           z: 0.001
           yaw: 0.001
         pose:
-          x: -2.0
-          y: -0.0
-          z: -0.75
+          x: 0.0
+          y: -0.25
+          z: -0.25
           yaw: 0.0
       bin_target:
         parent: map
@@ -141,37 +141,11 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: -0.0
-          y: 2.0
+          x: 5.0
+          y: 2.5
           z: -2.1
           yaw: 0.0
       
-      # NOTE: table locations are per-robot settings. See the robot-specific params for those.
-      
-      prequal_gate:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 4.0
-          y: 0.0
-          z: -1.5
-          yaw: 180.0
-      prequal_pole:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 14.0
-          y: 0.0
-          z: -1.5
-          yaw: 180.0
       # table locations
       table:
         parent: map
@@ -181,9 +155,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 12.74
-          y: -1.72
-          z: -1.0
+          x: 10.0
+          y: 4.0
+          z: -1.5
           yaw: 0.0
       table_reefshark:
         parent: table_frame
@@ -257,6 +231,31 @@
           y: 0.25
           z: 0.0
           yaw: 0.0
+
+      prequal_gate:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 4.0
+          y: 0.0
+          z: -1.5
+          yaw: 180.0
+      prequal_pole:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 14.0
+          y: 0.0
+          z: -1.5
+          yaw: 180.0
 
     # location tracking settings
     buffer_size: 100
