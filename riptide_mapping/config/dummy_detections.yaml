@@ -3,13 +3,13 @@
     timer_period: 0.05
     detection_data:
       gate:
-        pose: [3.0, 0.0, -0.25, 0.0, 0.0, 3.1415]
+        pose: [3.0, 0.0, -0.25, 0.0, 0.0, 0.1]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
-        max_dist: 4.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
+        max_dist: 4.5 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
       gate_reefshark:
         pose: [3.0, -0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
@@ -17,7 +17,7 @@
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.25
-        max_dist: 3.0
+        max_dist: 3.5
       gate_sawfish:
         pose: [3.0, 0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
@@ -25,7 +25,7 @@
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.25
-        max_dist: 3.0
+        max_dist: 3.5
       slalom_front:
         pose: [10.0, -2.0, -1.0, 0.0, 0.0, 0.0]
         noise: 0.1
@@ -33,7 +33,7 @@
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 12.0
+        max_dist: 3.0
       slalom_middle:
         pose: [8.0, -3.0, -1.0, 0.0, 0.0, 0.0]
         noise: 0.1
@@ -41,7 +41,7 @@
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 12.0
+        max_dist: 3.0
       slalom_back:
         pose: [6.0, -2.0, -1.0, 0.0, 0.0, 0.0]
         noise: 0.1
@@ -49,7 +49,7 @@
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 12.0
+        max_dist: 3.0
       torpedo:
         pose: [10.0, 2.0, -1.0, 0.0, 0.0, 3.1415]
         noise: 0.01
@@ -90,6 +90,22 @@
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 4.0
+      table_reefshark:
+        pose: [9.5, 4.0, -0.8, 0.0, 0.0, 0.0]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.12
+        max_dist: 3.0
+      table_sawfish:
+        pose: [10.5, 4.0, -0.8, 0.0, 0.0, 3.1415]
+        noise: 0.01
+        score: 0.8
+        downwward: false
+        pub_invalid_orientation: false
+        min_dist: 0.12
+        max_dist: 3.0
       table_basket_pink:
         pose: [0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05

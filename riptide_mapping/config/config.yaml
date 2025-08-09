@@ -36,7 +36,7 @@
           x: 3.0
           y: -0.0
           z: -0.25
-          yaw: 180.0
+          yaw: 3.0
       gate_reefshark:
         parent: gate_frame
         covar:
@@ -48,7 +48,7 @@
           x: 0.0
           y: 0.25
           z: 0.0
-          yaw: 0.0
+          yaw: 180.0
       gate_sawfish:
         parent: gate_frame
         covar:
@@ -60,7 +60,8 @@
           x: 0.0
           y: -0.25
           z: 0.0
-          yaw: 0.0
+          yaw: 180.0
+      
       slalom_front:
         parent: map
         covar:
@@ -94,6 +95,18 @@
           yaw: 50.0
         pose:
           x: -2.0
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      slalom_red:
+        parent: slalom_front_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 50.0
+        pose:
+          x: 0.0
           y: 0.0
           z: 0.0
           yaw: 0.0
@@ -258,7 +271,7 @@
           yaw: 180.0
 
     # location tracking settings
-    buffer_size: 100
+    buffer_size: 60
 
 # LILTANK SETTINGS
 /liltank/riptide_mapping2:

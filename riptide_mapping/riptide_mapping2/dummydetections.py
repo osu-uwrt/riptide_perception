@@ -37,6 +37,8 @@ objects = [
     "torpedo_sawfish_hole",
     "bin_target",
     "table",
+    "table_reefshark",
+    "table_sawfish",
     "table_basket_pink",
     "table_basket_yellow",
     "table_spoon_pink",
@@ -280,6 +282,23 @@ class DummyDetectionNode(Node):
                     #populate detection. looks like mapping only uses results so I'll just populate that and also header because its easy
                     detection = Detection3D()
                     detection.header = fwdHeader if visibleForwards else dwdHeader if visibleDownwards else None
+                    
+                    #
+                    # BODGE FIX ALERT!!!!!!!!!!!!!!!!!!!!!
+                    # What is about to happen below is happening only because I am in the van on the way to RoboSub
+                    # and I really need this to work with minimal effort to ensure slalom tree v2 function when we get
+                    # to the airbnb. A proper implementation of this could look like:
+                    # - an 'alias' parameter array which acts like a vector of pairs and defins maps between object names (actually dont do this, do the next one)
+                    # - A parameter for each dummy object like 'publish_name' which would define the name the object is published as (I like this better)
+                    # - just not this lmaoo. It should not be hardcoded
+                    # 
+                    
+                    if objectName == "slalom_front" or objectName == "slalom_middle" or objectName == "slalom_back":
+                        objectName = "slalom_red"
+                    
+                    #
+                    # END BODGE
+                    #
                     
                     hypothesis = ObjectHypothesisWithPose()
                     hypothesis.hypothesis.class_id = objectName
