@@ -44,7 +44,7 @@ class YOLONode(Node):
 		##########################
 		self.log_processing_time = False
 		self.use_incoming_timestamp = True
-		self.export = True  # Whether or not to export .pt file to engine
+		self.export = False  # Whether or not to export .pt file to engine
 		self.print_camera_info = False  # Print the camera info recieved
 		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5  # Minimum number of points for SVD
@@ -346,123 +346,123 @@ class YOLONode(Node):
 		self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
  
 	def process_slalom_red_detections(self, detections_array):
-	    """
-	    Process all slalom_red detections to determine closest, middle, and farthest.
-	    If 3 slaloms are found with proper spacing and aspect ratio, report all.
-	    If 1 or 2 are found, report only the closest (no aspect ratio check).
-	    """
-	    num_detections = len(self.slalom_red_detections)
+		"""
+		Process all slalom_red detections to determine closest, middle, and farthest.
+		If 3 slaloms are found with proper spacing and aspect ratio, report all.
+		If 1 or 2 are found, report only the closest (no aspect ratio check).
+		"""
+		num_detections = len(self.slalom_red_detections)
 	
-	    if num_detections == 3:
-	        # Validate aspect ratios (height/width >= 2.5)
-	        valid_detections = []
-	        for detection_data in self.slalom_red_detections:
-	            height = detection_data['bbox_height']
-	            width = detection_data['bbox_width']
-	            aspect_ratio = height / width if width > 0 else 0
+		if num_detections == 3:
+			# Validate aspect ratios (height/width >= 2.5)
+			valid_detections = []
+			for detection_data in self.slalom_red_detections:
+				height = detection_data['bbox_height']
+				width = detection_data['bbox_width']
+				aspect_ratio = height / width if width > 0 else 0
 	
-	            if aspect_ratio >= 2.5:
-	                valid_detections.append(detection_data)
-	            else:
-	                # self.get_logger().warn(f"Slalom rejected: aspect ratio {aspect_ratio:.2f} < 2.5")
-	                return
+				if aspect_ratio >= 2.5:
+					valid_detections.append(detection_data)
+				else:
+					# self.get_logger().warn(f"Slalom rejected: aspect ratio {aspect_ratio:.2f} < 2.5")
+					return
 	
-	        # Check if we still have 3 valid detections after aspect ratio filtering
-	        if len(valid_detections) != 3:
-	            # self.get_logger().warn(f"Only {len(valid_detections)}/3 slaloms meet aspect ratio requirement")
-	            self.slalom_red_detections = []
-	            return
+			# Check if we still have 3 valid detections after aspect ratio filtering
+			if len(valid_detections) != 3:
+				# self.get_logger().warn(f"Only {len(valid_detections)}/3 slaloms meet aspect ratio requirement")
+				self.slalom_red_detections = []
+				return
 	
-	        # Sort by distance (Z coordinate - depth)
-	        sorted_detections = sorted(valid_detections, key=lambda x: x['centroid'][2])
+			# Sort by distance (Z coordinate - depth)
+			sorted_detections = sorted(valid_detections, key=lambda x: x['centroid'][2])
 	
-	        # Check minimum spacing between consecutive slaloms (at least 1m apart)
-	        spacing_valid = True
-	        for i in range(len(sorted_detections) - 1):
-	            current_pos = sorted_detections[i]['centroid']
-	            next_pos = sorted_detections[i + 1]['centroid']
+			# Check minimum spacing between consecutive slaloms (at least 1m apart)
+			spacing_valid = True
+			for i in range(len(sorted_detections) - 1):
+				current_pos = sorted_detections[i]['centroid']
+				next_pos = sorted_detections[i + 1]['centroid']
 	
-	            # Calculate 3D distance between centroids
-	            distance = ((next_pos[0] - current_pos[0])**2 +
-	                        (next_pos[1] - current_pos[1])**2 +
-	                        (next_pos[2] - current_pos[2])**2)**0.5
+				# Calculate 3D distance between centroids
+				distance = ((next_pos[0] - current_pos[0])**2 +
+							(next_pos[1] - current_pos[1])**2 +
+							(next_pos[2] - current_pos[2])**2)**0.5
 	
-	            if distance < 1.0:  # 1 meter minimum spacing
-	                # self.get_logger().warn(f"Slaloms too close: {distance:.2f}m < 1.0m between slalom {i} and {i+1}")
-	                spacing_valid = False
-	                break
+				if distance < 1.0:  # 1 meter minimum spacing
+					# self.get_logger().warn(f"Slaloms too close: {distance:.2f}m < 1.0m between slalom {i} and {i+1}")
+					spacing_valid = False
+					break
 	
-	        # Only proceed if spacing is valid
-	        if not spacing_valid:
-	            # self.get_logger().warn("Slalom spacing validation failed")
-	            self.slalom_red_detections = []
-	            return
+			# Only proceed if spacing is valid
+			if not spacing_valid:
+				# self.get_logger().warn("Slalom spacing validation failed")
+				self.slalom_red_detections = []
+				return
 	
-	        # All validations passed - proceed with classification
-	        # self.get_logger().info("3 valid slaloms found with proper spacing and aspect ratio")
+			# All validations passed - proceed with classification
+			# self.get_logger().info("3 valid slaloms found with proper spacing and aspect ratio")
 	
-	        # Assign new class names based on distance
-	        class_names = ['slalom_close', 'slalom_middle', 'slalom_far']
-	        for i, detection_data in enumerate(sorted_detections):
-	            # Create new detection with updated class name
-	            detection = Detection3D()
-	            detection.header.frame_id = self.frame_id
-	            if self.use_incoming_timestamp:
-	                detection.header.stamp = self.detection_timestamp
-	            else:
-	                detection.header.stamp = self.get_clock().now().to_msg()
+			# Assign new class names based on distance
+			class_names = ['slalom_close', 'slalom_middle', 'slalom_far']
+			for i, detection_data in enumerate(sorted_detections):
+				# Create new detection with updated class name
+				detection = Detection3D()
+				detection.header.frame_id = self.frame_id
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
 	
-	            # Create object hypothesis with new class name
-	            detection.results.append(self.create_object_hypothesis_with_pose(
-	                class_names[i],
-	                detection_data['centroid'],
-	                detection_data['quat'],
-	                detection_data['conf']
-	            ))
+				# Create object hypothesis with new class name
+				detection.results.append(self.create_object_hypothesis_with_pose(
+					class_names[i],
+					detection_data['centroid'],
+					detection_data['quat'],
+					detection_data['conf']
+				))
 	
-	            # Publish marker with new class name
-	            self.publish_marker(
-	                detection_data['quat'],
-	                detection_data['centroid'],
-	                class_names[i],
-	                detection_data['bbox_width'],
-	                detection_data['bbox_height']
-	            )
-	            detections_array.detections.append(detection)
+				# Publish marker with new class name
+				self.publish_marker(
+					detection_data['quat'],
+					detection_data['centroid'],
+					class_names[i],
+					detection_data['bbox_width'],
+					detection_data['bbox_height']
+				)
+				detections_array.detections.append(detection)
 	
-	        # Clear the list for next frame
-	        self.slalom_red_detections = []
+			# Clear the list for next frame
+			self.slalom_red_detections = []
 	
-	    elif num_detections > 0:
-	        # Report only the closest one
-	        closest_detection = min(self.slalom_red_detections, key=lambda x: x['centroid'][2])
-	        detection = Detection3D()
-	        detection.header.frame_id = self.frame_id
-	        if self.use_incoming_timestamp:
-	            detection.header.stamp = self.detection_timestamp
-	        else:
-	            detection.header.stamp = self.get_clock().now().to_msg()
+		elif num_detections > 0:
+			# Report only the closest one
+			closest_detection = min(self.slalom_red_detections, key=lambda x: x['centroid'][2])
+			detection = Detection3D()
+			detection.header.frame_id = self.frame_id
+			if self.use_incoming_timestamp:
+				detection.header.stamp = self.detection_timestamp
+			else:
+				detection.header.stamp = self.get_clock().now().to_msg()
 	
-	        detection.results.append(self.create_object_hypothesis_with_pose(
-	            'slalom_close',
-	            closest_detection['centroid'],
-	            closest_detection['quat'],
-	            closest_detection['conf']
-	        ))
+			detection.results.append(self.create_object_hypothesis_with_pose(
+				'slalom_close',
+				closest_detection['centroid'],
+				closest_detection['quat'],
+				closest_detection['conf']
+			))
 	
-	        self.publish_marker(
-	            closest_detection['quat'],
-	            closest_detection['centroid'],
-	            'slalom_close',
-	            closest_detection['bbox_width'],
-	            closest_detection['bbox_height']
-	        )
-	        detections_array.detections.append(detection)
-	        self.slalom_red_detections = []
+			self.publish_marker(
+				closest_detection['quat'],
+				closest_detection['centroid'],
+				'slalom_close',
+				closest_detection['bbox_width'],
+				closest_detection['bbox_height']
+			)
+			detections_array.detections.append(detection)
+			self.slalom_red_detections = []
 	
-	    else:
-	        # No valid detections
-	        self.slalom_red_detections = []
+		else:
+			# No valid detections
+			self.slalom_red_detections = []
 
 	def image_callback(self, msg: Image):
  
@@ -506,7 +506,8 @@ class YOLONode(Node):
 					conf = box.conf[0]
 					#self.get_logger().info(f"class id: {class_id}")
 					# If its a hole, store it, otherwise make the detection message
-					if class_id == 2:
+					if self.class_id_map[class_id] == "mapping_hole":
+						
 						#self.get_logger().info(f"class id: {class_id}")
 						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
 						if self.use_incoming_timestamp:
@@ -514,6 +515,7 @@ class YOLONode(Node):
 						else:
 							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 						self.mapping_holes.append(box)
+						self.get_logger().info(f"Holes after adding: {len(self.holes)}")
 						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 					elif class_id in self.class_id_map and self.class_id_map[class_id] == "slalom_red":
 						# Don't create detection immediately, store for later processing
@@ -698,6 +700,8 @@ class YOLONode(Node):
 		# Get the current time as a builtin_interfaces.msg.Time object
 		current_time = self.get_clock().now().to_msg()
  
+		for bbox, timestamp in self.holes:
+			self.get_logger().info(f"Time for cleanup: {((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9)}")
 		# Filter out holes older than the specified age threshold
 		self.holes = [(bbox, timestamp) for bbox, timestamp in self.holes
 					if ((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9) < age_threshold]
@@ -764,9 +768,9 @@ class YOLONode(Node):
 				hole_quat = self.mapping_map_quat
 
 				if hole_scale == "smallest":
-					class_name = "torpedo_small_hole"
+					class_name = "torpedo_shark_hole"
 				elif hole_scale == "largest":
-					class_name = "torpedo_large_hole"
+					class_name = "torpedo_sawfish_hole"
 				else:
 					return None
  
@@ -841,6 +845,7 @@ class YOLONode(Node):
 			padding_y = int((y_max - y_min) * 0.1)  # 10% of the bounding box height
 			#self.get_logger().info(f"holes for exclusion count: {len(self.holes)}")
  
+			self.get_logger().info(f"Holes: {len(self.holes)}")
 			for hole_bbox, _ in self.holes:
 				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
 				adjusted_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
@@ -858,19 +863,15 @@ class YOLONode(Node):
  
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-		# elif class_name == "buoy":
-		# 	# Sample the depth value at the center of the bounding box
+		
+  
+		# elif class_name == "slalom_close":
 		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-		# 	# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
-		# 	# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
-		# 	# self.get_logger().info(f"depth: {depth_value}")
-		# 	if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
-		# 		self.get_logger().info("rejecting buoy")
-		# 		return None
 		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
 		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
+   
 		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
- 
+   
 		# 	# Create Detection3D message
 		# 	detection = Detection3D()
 		# 	detection.header.frame_id = self.frame_id
@@ -878,12 +879,63 @@ class YOLONode(Node):
 		# 		detection.header.stamp = self.detection_timestamp
 		# 	else:
 		# 		detection.header.stamp = self.get_clock().now().to_msg()
- 
+
 		# 	# Set the pose
-		# 	class_name = "bin_target"
+		# 	class_name = "slalom_close"
 		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
+
 		# 	return detection
+
+
+
+		# elif class_name == "slalom_red":
+		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
+		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
+		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
+
+		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+			
+   
+		# 	# Create Detection3D message
+		# 	detection = Detection3D()
+		# 	detection.header.frame_id = self.frame_id
+		# 	if self.use_incoming_timestamp:
+		# 		detection.header.stamp = self.detection_timestamp
+		# 	else:
+		# 		detection.header.stamp = self.get_clock().now().to_msg()
+
+		# 	# Set the pose
+		# 	class_name = "slalom_close"
+		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+
+		# 	return detection
+   
+		elif class_name == "slalom_red":
+			# Sample the depth value at the center of the bounding box
+			depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
+			# self.get_logger().info(f"bbox_center_x: {bbox_center_x}") 
+			# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
+			# self.get_logger().info(f"depth: {depth_value}")
+			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
+				self.get_logger().info("rejecting slalom_red")
+				return None
+			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
+			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
+			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+ 
+			# Create Detection3D message
+			detection = Detection3D()
+			detection.header.frame_id = self.frame_id
+			if self.use_incoming_timestamp:
+				detection.header.stamp = self.detection_timestamp
+			else:
+				detection.header.stamp = self.get_clock().now().to_msg()
+ 
+			# Set the pose
+			#class_name = "bin_target"
+			detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
+ 
+			return detection
 		elif class_name in ["torpedo_open", "torpedo_closed"]:
 			# Prepare the ROI mask, excluding the holes
 			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
@@ -906,6 +958,9 @@ class YOLONode(Node):
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
  
+		if class_name == "Bin":
+			class_name = "bin_target"
+ 
 		#self.get_logger().info(f"class det3d: {class_name}")
 		# Detect features within the object's bounding box
 		good_features = cv2.goodFeaturesToTrack(masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
@@ -917,6 +972,13 @@ class YOLONode(Node):
  
 			# Convert features to a list of (x, y) points
 			feature_points = [pt[0] for pt in good_features]
+
+			# min_depth_point = []
+			# for point in feature_points:
+			# 	if self.depth_image[point[0],point[1]] < self.depth_image[min_depth_point[0], min_depth_point[1]]:
+			# 		min_depth_point = [point[0],point[1]]
+			
+   
  
 			# Get 3D points from feature points
 			points_3d = self.get_3d_points(feature_points, cv_image)
@@ -924,7 +986,7 @@ class YOLONode(Node):
 			if points_3d is not None and len(points_3d) >= self.min_points:
 				normal, _, centroid = self.fit_plane_to_points(points_3d)
  
-				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
+				centroid = self.calculate_centroid(min_depth_point[0], min_depth_point[1], centroid[2])
  
 				if normal[2] > 0:
 					normal = -normal
@@ -954,6 +1016,7 @@ class YOLONode(Node):
 				# Create Detection3D message
 				detection = Detection3D()
 				detection.header.frame_id = self.frame_id
+	
 				if self.use_incoming_timestamp:
 					detection.header.stamp = self.detection_timestamp
 				else:
@@ -994,6 +1057,11 @@ class YOLONode(Node):
 		hypothesis = ObjectHypothesis()
  
 		hypothesis.class_id = class_name
+
+		#temp
+		if class_name == "mapping_map":
+			hypothesis.class_id = "torpedo"
+  
 		hypothesis.score = conf.item() # Convert from numpy float to float
  
 		hypothesis_with_pose.hypothesis = hypothesis

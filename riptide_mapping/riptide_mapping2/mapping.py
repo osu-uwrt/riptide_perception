@@ -56,7 +56,7 @@ class MappingNode(Node):
             "gate": dict(),
             "gate_reefshark": dict(),
             "gate_sawfish": dict(),
-            "slalom_red": dict(),
+            "slalom_close": dict(),
             "slalom_front": dict(),
             "slalom_middle": dict(),
             "slalom_back": dict(),
