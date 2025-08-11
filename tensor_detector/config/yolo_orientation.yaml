@@ -31,7 +31,7 @@
       11: 'spoon_pink',
       12: 'torpedo_hole'
     }"
-    ffc_threshold: 0.4
+    ffc_threshold: 0.65
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------

@@ -101,7 +101,9 @@ class YOLONode(Node):
 		self.plane_normal = None
 		self.slalom_red_detections = [] 
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
-
+		self.slalom_history = []
+		self.slalom_history_size = 10
+  
 		self.create_switch_service()
 
 		# Set up the camera based on the active_camera parameter
@@ -436,28 +438,44 @@ class YOLONode(Node):
 		elif num_detections > 0:
 			# Report only the closest one
 			closest_detection = min(self.slalom_red_detections, key=lambda x: x['centroid'][2])
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
-	
-			detection.results.append(self.create_object_hypothesis_with_pose(
-				'slalom_close',
-				closest_detection['centroid'],
-				closest_detection['quat'],
-				closest_detection['conf']
-			))
-	
-			self.publish_marker(
-				closest_detection['quat'],
-				closest_detection['centroid'],
-				'slalom_close',
-				closest_detection['bbox_width'],
-				closest_detection['bbox_height']
-			)
-			detections_array.detections.append(detection)
+			# Store closest detection in history (keep last slalom_history_size)
+			closest_data = {
+				'centroid': closest_detection['centroid'],
+				'quat': closest_detection['quat'],
+				'conf': closest_detection['conf']
+			}
+			self.slalom_history.append(closest_data)
+			if len(self.slalom_history) > self.slalom_history_size:
+				self.slalom_history.pop(0)
+
+			# Find the closest one from history based on Z coordinate
+			if self.slalom_history:
+				closest_in_history = min(self.slalom_history, key=lambda x: x['centroid'][2])
+				#self.get_logger().info(f"Closest slalom in history: [{closest_in_history['centroid'][0]:.2f}, {closest_in_history['centroid'][1]:.2f}, {closest_in_history['centroid'][2]:.2f}]")
+				
+				# Create detection using closest from history
+				detection = Detection3D()
+				detection.header.frame_id = self.frame_id
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
+
+				detection.results.append(self.create_object_hypothesis_with_pose(
+					'slalom_close',
+					closest_in_history['centroid'],
+					closest_in_history['quat'],
+					closest_in_history['conf']
+				))
+
+				self.publish_marker(
+					closest_in_history['quat'],
+					closest_in_history['centroid'],
+					'slalom_close',
+					closest_detection['bbox_width'],  # Use current frame's bbox dimensions
+					closest_detection['bbox_height']
+				)
+				detections_array.detections.append(detection)
 			self.slalom_red_detections = []
 	
 		else:
@@ -515,7 +533,7 @@ class YOLONode(Node):
 						else:
 							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 						self.mapping_holes.append(box)
-						self.get_logger().info(f"Holes after adding: {len(self.holes)}")
+						#self.get_logger().info(f"Holes after adding: {len(self.holes)}")
 						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 					elif class_id in self.class_id_map and self.class_id_map[class_id] == "slalom_red":
 						# Don't create detection immediately, store for later processing
@@ -700,8 +718,8 @@ class YOLONode(Node):
 		# Get the current time as a builtin_interfaces.msg.Time object
 		current_time = self.get_clock().now().to_msg()
  
-		for bbox, timestamp in self.holes:
-			self.get_logger().info(f"Time for cleanup: {((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9)}")
+		# for bbox, timestamp in self.holes:
+		# 	self.get_logger().info(f"Time for cleanup: {((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9)}")
 		# Filter out holes older than the specified age threshold
 		self.holes = [(bbox, timestamp) for bbox, timestamp in self.holes
 					if ((current_time.sec - timestamp.sec) + (current_time.nanosec - timestamp.nanosec) * 1e-9) < age_threshold]
@@ -820,10 +838,13 @@ class YOLONode(Node):
 			detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
 			return detection
  
- 
-		# Calculate the shrink size based on the class_detect_shrink percentage
-		shrink_x = (x_max - x_min) * self.class_detect_shrink  
-		shrink_y = (y_max - y_min) * self.class_detect_shrink  
+		if class_name == "slalom_red":
+			shrink_x = (x_max - x_min) * 0.3
+			shrink_y = (y_max - y_min) * self.class_detect_shrink
+		else:
+			# Calculate the shrink size based on the class_detect_shrink percentage
+			shrink_x = (x_max - x_min) * self.class_detect_shrink  
+			shrink_y = (y_max - y_min) * self.class_detect_shrink  
  
 		# Adjust the bounding box coordinates to exclude the edges
 		x_min = int(x_min + shrink_x)
@@ -917,7 +938,7 @@ class YOLONode(Node):
 			# self.get_logger().info(f"bbox_center_y: {bbox_center_y}")
 			# self.get_logger().info(f"depth: {depth_value}")
 			if np.isnan(depth_value) or math.isinf(bbox_center_x) or math.isinf(bbox_center_y) or math.isinf(depth_value):
-				self.get_logger().info("rejecting slalom_red")
+				#self.get_logger().info("rejecting slalom_red")
 				return None
 			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
 			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
@@ -986,7 +1007,7 @@ class YOLONode(Node):
 			if points_3d is not None and len(points_3d) >= self.min_points:
 				normal, _, centroid = self.fit_plane_to_points(points_3d)
  
-				centroid = self.calculate_centroid(min_depth_point[0], min_depth_point[1], centroid[2])
+				centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, centroid[2])
  
 				if normal[2] > 0:
 					normal = -normal
