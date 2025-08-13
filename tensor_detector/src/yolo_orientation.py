@@ -476,6 +476,31 @@ class YOLONode(Node):
 					closest_detection['bbox_height']
 				)
 				detections_array.detections.append(detection)
+
+				# Repeat publication of the closest slalom to maintain heading through course
+				detection = Detection3D()
+				detection.header.frame_id = self.frame_id
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
+
+				detection.results.append(self.create_object_hypothesis_with_pose(
+					'slalom_front',
+					closest_in_history['centroid'],
+					closest_in_history['quat'],
+					closest_in_history['conf']
+				))
+
+				self.publish_marker(
+					closest_in_history['quat'],
+					closest_in_history['centroid'],
+					'slalom_front',
+					closest_detection['bbox_width'],  # Use current frame's bbox dimensions
+					closest_detection['bbox_height']
+				)
+				detections_array.detections.append(detection)
+    
 			self.slalom_red_detections = []
 	
 		else:
@@ -1026,6 +1051,7 @@ class YOLONode(Node):
 				elif class_name == "mapping_map":
 					self.mapping_map_centroid = centroid
 					self.mapping_map_quat = quat
+					#class_name == "gate_sawfish"
 					class_name = "torpedo"
 				elif class_name == "buoy":
 					class_name = "bin_target"

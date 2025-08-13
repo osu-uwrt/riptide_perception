@@ -33,7 +33,7 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 3.0
+          x: -1.0
           y: -0.0
           z: -0.25
           yaw: 3.0
@@ -119,7 +119,7 @@
           yaw: 0.5
         pose:
           x: -1.0
-          y: 1.0
+          y: 0.0
           z: -1.6
           yaw: 0.0
       torpedo_shark_hole:
