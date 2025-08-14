@@ -14,8 +14,8 @@
     #   6: 'bin'
     # }"
 
-    ffc_model: "rs25.pt"
-    ffc_model: "rs25_8_10_1.pt"
+    #ffc_model: "rs25.pt"
+    ffc_model: "rs25_8_13_1.pt"
     ffc_class_id_map: "{
       0: 'Bin',
       1: 'Bin_saw',
