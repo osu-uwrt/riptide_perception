@@ -103,6 +103,12 @@ class YOLONode(Node):
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 		self.slalom_history = []
 		self.slalom_history_size = 10
+		self.torpedo_type = None  # Will be "shark" or "saw"
+		self.torpedo_holes = []
+		self.torpedo_centroid = None
+		self.torpedo_quat = None
+		self.torpedo_top_hole = None
+		self.torpedo_bottom_hole = None
   
 		self.create_switch_service()
 
@@ -535,7 +541,10 @@ class YOLONode(Node):
  
 		# Reset mapping holes each image
 		self.mapping_holes = []
+		self.torpedo_holes = []
 		self.slalom_red_detections = []
+		self.torpedo_top_hole = None
+		self.torpedo_bottom_hole = None
 		self.largest_hole = None
 		self.smallest_hole = None
  
@@ -558,6 +567,17 @@ class YOLONode(Node):
 						else:
 							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
 						self.mapping_holes.append(box)
+						#self.get_logger().info(f"Holes after adding: {len(self.holes)}")
+						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
+					if self.class_id_map[class_id] == "torpedo_hole":
+						
+						#self.get_logger().info(f"class id: {class_id}")
+						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+						if self.use_incoming_timestamp:
+							self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+						else:
+							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
+						self.torpedo_holes.append(box)
 						#self.get_logger().info(f"Holes after adding: {len(self.holes)}")
 						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
 					elif class_id in self.class_id_map and self.class_id_map[class_id] == "slalom_red":
@@ -627,6 +647,28 @@ class YOLONode(Node):
 			else:
 				self.get_logger().warning("No largest hole found.")
 
+		if len(self.torpedo_holes) == 2:
+			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
+			self.find_top_and_bottom_holes()
+
+
+			if self.torpedo_top_hole is not None:
+				class_id = self.torpedo_top_hole.cls[0]
+				conf = self.torpedo_top_hole.conf[0]
+				detection = self.create_detection3d_message(self.torpedo_top_hole, cv_image, conf, "smallest")
+				if detection:
+					detections.detections.append(detection)
+			else:
+				self.get_logger().warning("No top hole found.")
+
+			if self.torpedo_bottom_hole is not None:
+				class_id = self.torpedo_bottom_hole.cls[0]
+				conf = self.torpedo_bottom_hole.conf[0]
+				detection = self.create_detection3d_message(self.torpedo_bottom_hole, cv_image, conf, "largest")
+				if detection:
+					detections.detections.append(detection)
+			else:
+				self.get_logger().warning("No largest hole found.")
 		
 		self.publish_markers(self.temp_markers)
 		self.temp_markers = []  # Clear the list for the next frame
@@ -680,6 +722,52 @@ class YOLONode(Node):
 	# 			if hole_size < smallest_hole_size:
 	# 				self.smallest_hole = hole
  
+	def find_top_and_bottom_holes(self):
+		if self.plane_normal is None or self.torpedo_centroid is None:
+			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole positions.")
+			return
+
+		hole_positions = []
+		for hole in self.torpedo_holes:
+			x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
+			bbox_center_x = (x_min + x_max) / 2
+			bbox_center_y = (y_min + y_max) / 2
+			
+			# Calculate 3D position using plane intersection
+			d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
+			d = d / np.linalg.norm(d)
+			
+			n = self.plane_normal
+			p0 = self.torpedo_centroid
+
+			numerator = np.dot(n, p0)
+			denominator = np.dot(n, d)
+			if denominator == 0:
+				self.get_logger().warning(f"Denominator zero for hole center ({bbox_center_x}, {bbox_center_y}). Skipping this hole.")
+				continue
+			t = numerator / denominator
+			if t <= 0:
+				self.get_logger().warning(f"Intersection behind the camera for hole center ({bbox_center_x}, {bbox_center_y}). Skipping this hole.")
+				continue
+			point_3d = t * d
+			
+			# Store hole with its 3D position and Y coordinate for sorting
+			hole_positions.append((hole, point_3d, point_3d[1]))
+			#self.get_logger().info(f"Hole position computed: Y={point_3d[1]}")
+
+		if not hole_positions:
+			self.get_logger().warning("No valid hole positions computed.")
+			return
+
+		# Sort holes based on Y coordinate (height)
+		hole_positions.sort(key=lambda x: x[2])
+
+		self.torpedo_bottom_hole = hole_positions[0][0]  # Lower Y = bottom
+		self.torpedo_top_hole = hole_positions[-1][0]    # Higher Y = top
+
+		#self.get_logger().info(f"Bottom hole Y: {hole_positions[0][2]}")
+		#self.get_logger().info(f"Top hole Y: {hole_positions[-1][2]}")
+
 	def find_smallest_and_largest_holes(self):
 		if self.plane_normal is None or self.mapping_map_centroid is None:
 			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole sizes.")
@@ -737,8 +825,6 @@ class YOLONode(Node):
 		#self.get_logger().info(f"Smallest hole size: {hole_sizes[0][1]}")
 		#self.get_logger().info(f"Largest hole size: {hole_sizes[-1][1]}")
  
-
- 
 	def cleanup_old_holes(self, age_threshold=2.0):
 		# Get the current time as a builtin_interfaces.msg.Time object
 		current_time = self.get_clock().now().to_msg()
@@ -779,8 +865,72 @@ class YOLONode(Node):
 			self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
 			#self.get_logger().info(f"publishing map")
 			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
+		elif class_name in ["torpedo_saw_top", "torpedo_shark_top"]:
  
- 
+			torpedo_width = x_max - x_min
+			torpedo_height = y_max - y_min
+			torpedo_area = max(torpedo_width,torpedo_height)
+			#self.get_logger().info(f"map max: {map_area}")
+			if torpedo_area < self.map_min_area:
+				self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
+				return None
+			self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
+			#self.get_logger().info(f"publishing map")
+			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
+		# Replace the torpedo_hole detection logic in create_detection3d_message:
+
+		elif class_name == "torpedo_hole":
+			if self.torpedo_centroid is not None and self.torpedo_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
+				if self.plane_normal is None:
+					return None
+				d = np.linalg.inv(self.intrinsic_matrix) @ np.array([bbox_center_x, bbox_center_y, 1.0])
+				d = d / np.linalg.norm(d)
+
+				# Plane normal and point
+				n = self.plane_normal  # From SVD
+				p0 = self.torpedo_centroid  # Centroid of the plane
+
+				# Compute t
+				numerator = np.dot(n, p0)
+				denominator = np.dot(n, d)
+				if denominator == 0:
+					return None  # Avoid division by zero
+
+				t = numerator / denominator
+				hole_position = t * d
+
+				# Update centroid and orientation
+				hole_centroid = hole_position
+				hole_quat = self.torpedo_quat
+
+				# Determine hole class name based on torpedo type and hole scale
+				if self.torpedo_type is None:
+					return None
+					
+				if hole_scale == "smallest":  # Top hole lol
+					if self.torpedo_type == "shark":
+						class_name = "torpedo_shark_hole"  # Shark top -> shark hole
+					else:  # torpedo_type == "saw"
+						class_name = "torpedo_saw_hole"     # Saw top -> saw hole
+				elif hole_scale == "largest":  # Bottom hole robosub moment the spaghet is 🤌
+					if self.torpedo_type == "shark":
+						class_name = "torpedo_saw_hole"     # Shark top -> saw hole (bottom)
+					else:  # torpedo_type == "saw"
+						class_name = "torpedo_shark_hole"   # Saw top -> shark hole (bottom)
+				else:
+					return None
+
+				self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
+
+				# Create Detection3D message
+				detection = Detection3D()
+				detection.header.frame_id = self.frame_id
+				if self.use_incoming_timestamp:
+					detection.header.stamp = self.detection_timestamp
+				else:
+					detection.header.stamp = self.get_clock().now().to_msg()
+				detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
+				return detection
 		elif class_name == "mapping_hole":
 			if self.mapping_map_centroid is not None and self.mapping_map_quat is not None and self.latest_bbox_class_1 and self.is_inside_bbox(bbox, self.latest_bbox_class_1):
 				#hole_quat = self.mapping_map_quat
@@ -829,39 +979,39 @@ class YOLONode(Node):
 				detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
 				return detection
  
-		elif class_name == "torpedo_open":
-			self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
-		elif class_name == "torpedo_closed":
-			self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
-		elif class_name == "torpedo_hole":
-			if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
-				class_name = "torpedo_open_hole"
-				hole_quat = self.open_torpedo_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
-			elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
-				class_name = "torpedo_closed_hole"
-				hole_quat = self.closed_torpedo_quat
-				hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
-			else:
-				return None
+		# elif class_name == "torpedo_open":
+		# 	self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
+		# elif class_name == "torpedo_closed":
+		# 	self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
+		# elif class_name == "torpedo_hole":
+		# 	if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
+		# 		class_name = "torpedo_open_hole"
+		# 		hole_quat = self.open_torpedo_quat
+		# 		hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
+		# 	elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
+		# 		class_name = "torpedo_closed_hole"
+		# 		hole_quat = self.closed_torpedo_quat
+		# 		hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
+		# 	else:
+		# 		return None
  
-			if self.use_incoming_timestamp:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-			else:
-				self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
+		# 	if self.use_incoming_timestamp:
+		# 		self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
+		# 	else:
+		# 		self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
  
  
-			self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
+		# 	self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
  
-			# Create Detection3D message
-			detection = Detection3D()
-			detection.header.frame_id = self.frame_id
-			if self.use_incoming_timestamp:
-				detection.header.stamp = self.detection_timestamp
-			else:
-				detection.header.stamp = self.get_clock().now().to_msg()
-			detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
-			return detection
+		# 	# Create Detection3D message
+		# 	detection = Detection3D()
+		# 	detection.header.frame_id = self.frame_id
+		# 	if self.use_incoming_timestamp:
+		# 		detection.header.stamp = self.detection_timestamp
+		# 	else:
+		# 		detection.header.stamp = self.get_clock().now().to_msg()
+		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
+		# 	return detection
  
 		if class_name == "slalom_red":
 			shrink_x = (x_max - x_min) * 0.3
@@ -910,6 +1060,33 @@ class YOLONode(Node):
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 		
+		if class_name in ["torpedo_shark_top", "torpedo_saw_top"]:
+			# Prepare the ROI mask, excluding the holes
+			mask_roi = self.mask[y_min:y_max, x_min:x_max].copy()  # Work on a copy to avoid modifying the original
+ 
+			# Dynamic padding calculation based on bounding box size
+			padding_x = int((x_max - x_min) * 0.1)  # 10% of the bounding box width
+			padding_y = int((y_max - y_min) * 0.1)  # 10% of the bounding box height
+			#self.get_logger().info(f"holes for exclusion count: {len(self.holes)}")
+ 
+			self.get_logger().info(f"Holes: {len(self.holes)}")
+			for hole_bbox, _ in self.holes:
+				hole_x_min, hole_y_min, hole_x_max, hole_y_max = hole_bbox
+				adjusted_hole_x_min = max(hole_x_min - x_min - padding_x, 0)
+				adjusted_hole_y_min = max(hole_y_min - y_min - padding_y, 0)
+				adjusted_hole_x_max = min(hole_x_max - x_min + padding_x, mask_roi.shape[1])
+				adjusted_hole_y_max = min(hole_y_max - y_min + padding_y, mask_roi.shape[0])
+ 
+				# Set the hole region in mask_roi to 0 to exclude it from feature detection
+				mask_roi[adjusted_hole_y_min:adjusted_hole_y_max, adjusted_hole_x_min:adjusted_hole_x_max] = 0
+ 
+			# Apply morphological operations to refine the exclusion zones
+			kernel = np.ones((5, 5), np.uint8)
+			mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
+			mask_roi = cv2.erode(mask_roi, kernel, iterations=1)
+ 
+			# Continue with feature detection using the adjusted mask_roi
+			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
   
 		# elif class_name == "slalom_close":
 		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
@@ -1055,7 +1232,13 @@ class YOLONode(Node):
 					class_name = "torpedo"
 				elif class_name == "buoy":
 					class_name = "bin_target"
- 
+				elif class_name in ["torpedo_shark_top", "torpedo_saw_top"]:
+					self.torpedo_centroid = centroid
+					self.torpedo_quat = quat
+					if class_name == "torpedo_shark_top":
+						self.torpedo_type = "shark"
+					else:
+						self.torpedo_type = "saw"
  
 				# When calling publish_marker, pass these dimensions along with other required information
 				self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
@@ -1106,8 +1289,9 @@ class YOLONode(Node):
 		hypothesis.class_id = class_name
 
 		#temp
-		if class_name == "mapping_map":
+		if class_name in ["mapping_map", "torpedo_shark_top", "torpedo_saw_top"]:
 			hypothesis.class_id = "torpedo"
+			
   
 		hypothesis.score = conf.item() # Convert from numpy float to float
  
