@@ -1289,7 +1289,9 @@ class YOLONode(Node):
 		hypothesis.class_id = class_name
 
 		#temp
-		if class_name in ["mapping_map", "torpedo_shark_top", "torpedo_saw_top"]:
+		if class_name == "mapping_map":
+			hypothesis.class_id = "gate_cold" # Gaslight the robot
+		if class_name in ["torpedo_shark_top", "torpedo_saw_top"]:
 			hypothesis.class_id = "torpedo"
 			
   
