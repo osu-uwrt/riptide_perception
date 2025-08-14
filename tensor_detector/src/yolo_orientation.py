@@ -668,7 +668,7 @@ class YOLONode(Node):
 				if detection:
 					detections.detections.append(detection)
 			else:
-				self.get_logger().warning("No largest hole found.")
+				self.get_logger().warning("No bottom hole found.")
 		
 		self.publish_markers(self.temp_markers)
 		self.temp_markers = []  # Clear the list for the next frame
@@ -723,8 +723,11 @@ class YOLONode(Node):
 	# 				self.smallest_hole = hole
  
 	def find_top_and_bottom_holes(self):
-		if self.plane_normal is None or self.torpedo_centroid is None:
-			self.get_logger().warning("Plane normal or centroid not defined. Cannot compute hole positions.")
+		if self.plane_normal is None:
+			self.get_logger().warning("Plane normal not defined. Cannot compute hole positions.")
+			return
+		if self.torpedo_centroid is None:
+			self.get_logger().warning("Centroid not defined. Cannot compute hole positions.")
 			return
 
 		hole_positions = []
@@ -872,9 +875,9 @@ class YOLONode(Node):
 			torpedo_area = max(torpedo_width,torpedo_height)
 			#self.get_logger().info(f"map max: {map_area}")
 			if torpedo_area < self.map_min_area:
-				self.get_logger().info(f"Not Publishing: map area {map_area} < {self.map_min_area}")
+				self.get_logger().info(f"Not Publishing: map area {torpedo_area} < {self.map_min_area}")
 				return None
-			self.get_logger().info(f"Publishing: map area {map_area} >= {self.map_min_area}")
+			self.get_logger().info(f"Publishing: map area {torpedo_area} >= {self.map_min_area}")
 			#self.get_logger().info(f"publishing map")
 			self.latest_bbox_class_1 = (x_min, y_min, x_max, y_max)
 		# Replace the torpedo_hole detection logic in create_detection3d_message:
@@ -1165,7 +1168,7 @@ class YOLONode(Node):
  
 			# Padding for exclusion zone
 			padding = 10
- 
+			self.get_logger().info(f"Holes: {len(self.holes)}")
 			for hole_bbox, _ in self.holes:
 				# For simplicity, let's assume hole_bbox is a tuple of (hole_x_min, hole_y_min, hole_x_max, hole_y_max)
 				# You might need to adjust the coordinates based on the ROI's position
@@ -1216,9 +1219,9 @@ class YOLONode(Node):
 
 				self.plane_normal = normal
 				quat, _ = self.calculate_quaternion_and_euler_angles(normal)
+
  
- 
- 
+				self.get_logger().info(f"Class name: {class_name}")
 				if class_name == "torpedo_open":  
 					self.open_torpedo_centroid = centroid
 					self.open_torpedo_quat = quat
