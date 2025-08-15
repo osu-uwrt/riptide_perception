@@ -33,7 +33,8 @@ class YOLONode(Node):
 				('dfc_threshold', 0.9),
 				('ffc_iou', 0.9),
 				('dfc_iou', 0.9),
-				('robot_namespace', 'talos')
+				('robot_namespace', 'talos'),
+				('torp_top', 'saw')
 			]
 		)
 
@@ -103,6 +104,7 @@ class YOLONode(Node):
 		self.plane_normal = None
 		self.slalom_red_detections = [] 
 		self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
+		self.torp_top = self.get_parameter('torp_top').get_parameter_value().string_value
 		self.slalom_history = []
 		self.slalom_history_size = 10
 		self.torpedo_type = None  # Will be "shark" or "saw"
@@ -767,8 +769,8 @@ class YOLONode(Node):
 		# Sort holes based on Y coordinate (height)
 		hole_positions.sort(key=lambda x: x[2])
 
-		self.torpedo_bottom_hole = hole_positions[0][0]  # Lower Y = bottom
-		self.torpedo_top_hole = hole_positions[-1][0]    # Higher Y = top
+		self.torpedo_bottom_hole = hole_positions[-1][0]  # Lower Y = bottom
+		self.torpedo_top_hole = hole_positions[0][0]    # Higher Y = top
 
 		#self.get_logger().info(f"Bottom hole Y: {hole_positions[0][2]}")
 		#self.get_logger().info(f"Top hole Y: {hole_positions[-1][2]}")
@@ -914,12 +916,12 @@ class YOLONode(Node):
 				self.get_logger().info(f"torpedo type: {self.torpedo_type}")
 				self.get_logger().info(f"hole scale: {hole_scale}")
 				if hole_scale == "smallest":  # Top hole lol
-					if self.torpedo_type == "saw":
+					if self.torpedo_type == "shark":
 						class_name = "torpedo_shark_hole"  # Shark top -> shark hole
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_saw_hole"     # Saw top -> saw hole
 				elif hole_scale == "largest":  # Bottom hole robosub moment the spaghet is 🤌
-					if self.torpedo_type == "saw":
+					if self.torpedo_type == "shark":
 						class_name = "torpedo_saw_hole"     # Shark top -> saw hole (bottom)
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_shark_hole"   # Saw top -> shark hole (bottom)
