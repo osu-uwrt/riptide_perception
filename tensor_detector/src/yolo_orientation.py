@@ -911,17 +911,17 @@ class YOLONode(Node):
 				hole_quat = self.torpedo_quat
 
 				# Determine hole class name based on torpedo type and hole scale
-				if self.torpedo_type is None:
+				if self.torp_top is None:
 					return None
-				self.get_logger().info(f"torpedo type: {self.torpedo_type}")
+				self.get_logger().info(f"torpedo top: {self.torp_top}")
 				self.get_logger().info(f"hole scale: {hole_scale}")
 				if hole_scale == "smallest":  # Top hole lol
-					if self.torpedo_type == "shark":
+					if self.torp_top == "shark":
 						class_name = "torpedo_shark_hole"  # Shark top -> shark hole
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_saw_hole"     # Saw top -> saw hole
 				elif hole_scale == "largest":  # Bottom hole robosub moment the spaghet is 🤌
-					if self.torpedo_type == "shark":
+					if self.torp_top == "shark":
 						class_name = "torpedo_saw_hole"     # Shark top -> saw hole (bottom)
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_shark_hole"   # Saw top -> shark hole (bottom)
