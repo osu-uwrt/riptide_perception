@@ -6,6 +6,18 @@
     # ffc_model: "robosub_2024_v3.pt"
     # ffc_class_id_map: "{
     #   0: 'buoy', 
+    #   1: 'gate_sawfish', 
+    #   2: 'mapping_hole', 
+    #   3: 'gate_reefshark', 
+    #   4: 'gate_cold',
+    #   5: 'bin_temperature',
+    #   6: 'bin'
+    # }"
+    
+    # ffc_model: "rs25.pt"
+    # ffc_model: "rs25_8_10_1.pt"
+    # ffc_class_id_map: "{
+    #   0: 'buoy', 
     #   1: 'mapping_map', 
     #   2: 'mapping_hole', 
     #   3: 'gate_reefshark', 
@@ -14,7 +26,7 @@
     #   6: 'bin'
     # }"
 
-    #ffc_model: "rs25.pt"
+    ffc_model: "rs25.pt"
     ffc_model: "rs25_8_13_1.pt"
     ffc_class_id_map: "{
       0: 'Bin',
@@ -31,7 +43,7 @@
       11: 'spoon_pink',
       12: 'torpedo_hole'
     }"
-    ffc_threshold: 0.45
+    ffc_threshold: 0.85
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------

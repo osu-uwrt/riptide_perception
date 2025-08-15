@@ -63,7 +63,9 @@ class YOLONode(Node):
 			'gate_hot': (1.0, 1.0, 1.0),
 			'slalom_close': (1.0, 0.0, 0.0), 
 			'slalom_middle': (1.0, 1.0, 0.0),
-			'slalom_far': (0.0, 1.0, 0.0) 
+			'slalom_far': (0.0, 1.0, 0.0),
+			'torpedo_saw_hole': (1.0, 0.0, 0.0),
+			'torpedo_shark_hole': (0.0, 1.0, 0.0)
 		}
 
 		self.create_publishers()
@@ -909,14 +911,15 @@ class YOLONode(Node):
 				# Determine hole class name based on torpedo type and hole scale
 				if self.torpedo_type is None:
 					return None
-					
+				self.get_logger().info(f"torpedo type: {self.torpedo_type}")
+				self.get_logger().info(f"hole scale: {hole_scale}")
 				if hole_scale == "smallest":  # Top hole lol
-					if self.torpedo_type == "shark":
+					if self.torpedo_type == "saw":
 						class_name = "torpedo_shark_hole"  # Shark top -> shark hole
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_saw_hole"     # Saw top -> saw hole
 				elif hole_scale == "largest":  # Bottom hole robosub moment the spaghet is 🤌
-					if self.torpedo_type == "shark":
+					if self.torpedo_type == "saw":
 						class_name = "torpedo_saw_hole"     # Shark top -> saw hole (bottom)
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_shark_hole"   # Saw top -> shark hole (bottom)

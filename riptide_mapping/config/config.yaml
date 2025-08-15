@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -1.0
+          x: 2.41
           y: -0.0
-          z: -0.25
-          yaw: 3.0
+          z: -0.8
+          yaw: 0.0
       gate_reefshark:
         parent: gate_frame
         covar:
@@ -46,8 +46,8 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.25
-          z: 0.0
+          y: 0.0
+          z: 0.25
           yaw: 180.0
       gate_sawfish:
         parent: gate_frame
@@ -58,8 +58,8 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: -0.25
-          z: 0.0
+          y: 0.0
+          z: 0.25
           yaw: 180.0
       
       slalom_front:
@@ -70,10 +70,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -1.0
-          y: 0.0
-          z: -1.0
-          yaw: 0.0
+          x: 4.78
+          y: -1.47
+          z: -0.8
+          yaw: 120.0
       slalom_middle:
         parent: slalom_front_frame
         covar:
@@ -82,9 +82,9 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: -3.0
-          y: 1.0
-          z: -1.0
+          x: -2.0
+          y: 0.0
+          z: 0.0
           yaw: 0.0
       slalom_back:
         parent: slalom_middle_frame
@@ -94,9 +94,9 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -4.0
+          x: -2.0
           y: 0.0
-          z: -1.0
+          z: 0.0
           yaw: 0.0
       slalom_close:
         parent: slalom_front_frame
@@ -118,10 +118,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: -1.0
-          y: 0.0
-          z: -1.6
-          yaw: 0.0
+          x: 3.73
+          y: 1.21
+          z: -0.8
+          yaw: 300.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
@@ -154,9 +154,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.0
-          y: 0.0
-          z: -2.1
+          x: 5.43
+          y: 0.58
+          z: -0.78
           yaw: 0.0
       
       # table locations
@@ -168,9 +168,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 10.0
-          y: 4.0
-          z: -1.5
+          x: 5.43
+          y: 0.58
+          z: -0.78
           yaw: 0.0
       table_reefshark:
         parent: table_frame
