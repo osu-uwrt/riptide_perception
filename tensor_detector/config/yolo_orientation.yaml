@@ -3,6 +3,7 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     torp_top: "saw"
+    bin_target: "bin_saw"
 
     # ---------- FFC configuration ----------
     # ffc_model: "robosub_2024_v3.pt"
@@ -31,9 +32,9 @@
     #ffc_model: "rs25.pt"
     ffc_model: "rs25_8_15_1.pt"
     ffc_class_id_map: "{
-      0: 'Bin',
-      1: 'Bin_saw',
-      2: 'Bin_shark',
+      0: 'bin',
+      1: 'bin_saw',
+      2: 'bin_shark',
       3: 'torpedo_shark_top',
       4: 'torpedo_saw_top',
       5: 'bin_pink',
@@ -49,10 +50,10 @@
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------
-    dfc_model: "just_bin_temp.pt"
+    dfc_model: "rs25_8_15_1_BIN.pt"
     dfc_class_id_map: "{
       0: 'Bin',
-      1: 'Bin_saw',
+      1: 'bin_target',
       2: 'Bin_shark',
       3: 'Torpdo_shark_top',
       4: 'Torpedo_saw_top',
