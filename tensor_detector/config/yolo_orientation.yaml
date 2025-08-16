@@ -50,7 +50,7 @@
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------
-    dfc_model: "rs25_8_15_1_BIN.pt"
+    dfc_model: "rs25_8_16_dfc.pt"
     dfc_class_id_map: "{
       0: 'Bin',
       1: 'bin_target',
