@@ -2,7 +2,7 @@
   ros__parameters:
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
-    torp_top: "saw"
+    torp_top: "shark"
     bin_target: "bin_saw"
 
     # ---------- FFC configuration ----------
@@ -67,5 +67,5 @@
       12: 'spoon_yellow',
       13: 'torpedo_hole'
     }"
-    dfc_threshold: 0.8
+    dfc_threshold: 0.6
     dfc_iou: 0.9

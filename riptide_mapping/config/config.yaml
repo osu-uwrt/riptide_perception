@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 2.41
-          y: -0.0
+          x: 4.57
+          y: -0.30
           z: -0.8
-          yaw: 0.0
+          yaw: 180.0
       gate_reefshark:
         parent: gate_frame
         covar:
@@ -46,9 +46,9 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.0
+          y: 0.75
           z: 0.25
-          yaw: 180.0
+          yaw: 0.0
       gate_sawfish:
         parent: gate_frame
         covar:
@@ -58,9 +58,9 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.0
+          y: -0.75
           z: 0.25
-          yaw: 180.0
+          yaw: 0.0
       
       slalom_front:
         parent: map
@@ -70,10 +70,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.78
-          y: -1.47
+          x: 8.05
+          y: -3.07
           z: -0.8
-          yaw: 120.0
+          yaw: 180.0
       slalom_middle:
         parent: slalom_front_frame
         covar:
@@ -83,7 +83,7 @@
           yaw: -90.0
         pose:
           x: -2.0
-          y: 0.0
+          y: 0.25
           z: 0.0
           yaw: 0.0
       slalom_back:
@@ -118,10 +118,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 3.73
-          y: 1.21
+          x: 15.01
+          y: 4.39
           z: -0.8
-          yaw: 300.0
+          yaw: 210.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
@@ -154,9 +154,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 5.43
-          y: 0.58
-          z: -0.78
+          x: 15.01
+          y: -2.31
+          z: -2.31
           yaw: 0.0
       
       # table locations
@@ -168,8 +168,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 5.43
-          y: 0.58
+          x: 19.13
+          y: -1.14
           z: -0.78
           yaw: 0.0
       table_reefshark:

@@ -66,7 +66,9 @@ class YOLONode(Node):
 			'slalom_middle': (1.0, 1.0, 0.0),
 			'slalom_far': (0.0, 1.0, 0.0),
 			'torpedo_saw_hole': (1.0, 0.0, 0.0),
-			'torpedo_shark_hole': (0.0, 1.0, 0.0)
+			'torpedo_shark_hole': (0.0, 1.0, 0.0),
+			'gate_saw': (0.0, 0.0, 1.0),
+			'gate_shark': (1.0, 0.0, 0.0)
 		}
 
 		self.create_publishers()
