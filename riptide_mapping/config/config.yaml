@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.57
-          y: -0.30
+          x: 2.74
+          y: -0.22
           z: -0.8
-          yaw: 180.0
+          yaw: 0.0
       gate_reefshark:
         parent: gate_frame
         covar:
@@ -48,7 +48,7 @@
           x: 0.0
           y: 0.75
           z: 0.25
-          yaw: 0.0
+          yaw: 180.0
       gate_sawfish:
         parent: gate_frame
         covar:
@@ -60,7 +60,7 @@
           x: 0.0
           y: -0.75
           z: 0.25
-          yaw: 0.0
+          yaw: 180.0
       
       slalom_front:
         parent: map
@@ -70,10 +70,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 8.05
-          y: -3.07
+          x: 4.42
+          y: -0.4
           z: -0.8
-          yaw: 180.0
+          yaw: 115.0
       slalom_middle:
         parent: slalom_front_frame
         covar:
@@ -82,7 +82,7 @@
           z: 1.0
           yaw: -90.0
         pose:
-          x: -2.0
+          x: -1.0
           y: 0.25
           z: 0.0
           yaw: 0.0
@@ -94,7 +94,7 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: -2.0
+          x: -1.0
           y: 0.0
           z: 0.0
           yaw: 0.0
@@ -118,10 +118,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 15.01
-          y: 4.39
-          z: -0.8
-          yaw: 210.0
+          x: 4.83
+          y: 1.04
+          z: -0.77
+          yaw: -63.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
@@ -154,9 +154,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 15.01
-          y: -2.31
-          z: -2.31
+          x: 5.66
+          y: 0.34
+          z: -2.1
           yaw: 0.0
       
       # table locations
@@ -168,10 +168,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 19.13
-          y: -1.14
+          x: 5.43
+          y: 0.58
           z: -0.78
-          yaw: 0.0
+          yaw: 90.0
       table_reefshark:
         parent: table_frame
         covar:
