@@ -53,8 +53,8 @@
     dfc_model: "rs25_8_16_dfc.pt"
     dfc_class_id_map: "{
       0: 'Bin',
-      1: 'bin_target',
-      2: 'Bin_shark',
+      1: 'bin_shark',
+      2: 'bin_target',
       3: 'Torpdo_shark_top',
       4: 'Torpedo_saw_top',
       5: 'bin_pink',

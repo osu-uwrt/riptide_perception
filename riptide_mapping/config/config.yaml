@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.4196
-          y: 0.0
+          x: 4.5847
+          y: 0.6096
           z: -0.8
-          yaw: 0.0
+          yaw: 180.0
       gate_reefshark:
         parent: gate_frame
         covar:
@@ -46,9 +46,9 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.75
-          z: 0.25
-          yaw: 180.0
+          y: -0.5
+          z: 0.0
+          yaw: 0.0
       gate_sawfish:
         parent: gate_frame
         covar:
@@ -58,9 +58,9 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: -0.75
-          z: 0.25
-          yaw: 180.0
+          y: 0.5
+          z: 0.
+          yaw: 0.0
       
       slalom_front:
         parent: map
@@ -70,34 +70,34 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 6.7056
-          y: -2.3368
+          x: 7.3279
+          y: 1.854
           z: -0.8
-          yaw: 115.0
+          yaw: 180.0
       slalom_middle:
-        parent: slalom_front_frame
+        parent: map
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: -90.0
         pose:
-          x: -1.0
-          y: 0.25
-          z: 0.0
-          yaw: 0.0
+          x: 9.525
+          y: 1.981
+          z: -0.8
+          yaw: 180.0
       slalom_back:
-        parent: slalom_middle_frame
+        parent: map
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 50.0
         pose:
-          x: -1.0
-          y: 0.0
-          z: 0.0
-          yaw: 0.0
+          x: 11.43
+          y: 2.108
+          z: -0.8
+          yaw: 180.0
       slalom_close:
         parent: slalom_front_frame
         covar:
@@ -118,10 +118,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 4.83
-          y: 1.04
+          x: 17.3736
+          y: -1.9431
           z: -0.77
-          yaw: -63.0
+          yaw: 180.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
@@ -154,8 +154,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 7.1374
-          y: 2.8194
+          x: 14.986
+          y: 0.8382
           z: -2.1
           yaw: 0.0
       
@@ -168,8 +168,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 5.43
-          y: 0.58
+          x: 19.6469
+          y: 2.5654
           z: -0.78
           yaw: 90.0
       table_reefshark:
