@@ -3,55 +3,71 @@
     timer_period: 0.05
     detection_data:
       gate:
-        pose: [2.0, 0.0, -0.25, 0.0, 0.0, 3.1415]
+        pose: [3.0, 0.0, -0.25, 0.0, 0.0, 0.1]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
-        max_dist: 4.0 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      gate_hot:
-        pose: [2.0, 0.2, -0.5, 0.0, 0.0, 3.1415]
+        max_dist: 4.5 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
+      gate_reefshark:
+        pose: [3.0, -0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.25
-        max_dist: 3.0
-      gate_cold:
-        pose: [2.0, -0.1, -0.5, 0.0, 0.0, 3.1415]
+        max_dist: 3.5
+      gate_sawfish:
+        pose: [3.0, 0.7, -0.5, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.25
-        max_dist: 3.0
-      buoy:
-        pose: [5.0, -3.0, -0.75, 0.0, 0.0, 3.1415]
-        noise: 0.001
+        max_dist: 3.5
+      slalom_front:
+        pose: [10.0, -2.0, -1.0, 0.0, 0.0, 0.0]
+        noise: 0.1
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
-        max_dist: 4.0
+        max_dist: 3.0
+      slalom_middle:
+        pose: [8.0, -3.0, -1.0, 0.0, 0.0, 0.0]
+        noise: 0.1
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      slalom_back:
+        pose: [6.0, -2.0, -1.0, 0.0, 0.0, 0.0]
+        noise: 0.1
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
       torpedo:
-        pose: [5.0, 2.0, -1.0, 0.0, 0.0, 1.5707]
-        noise: 0.05
+        pose: [10.0, 2.0, -1.0, 0.0, 0.0, 3.1415]
+        noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 3.5
-      torpedo_large_hole:
-        pose: [5.25, 1.75, -1.125, 0.0, 0.0, 1.5707]
+      torpedo_shark_hole:
+        pose: [10.0, 1.875, -1.125, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      torpedo_small_hole:
-        pose: [4.75, 2.25, -0.8, 0.0, 0.0, 1.5707]
+      torpedo_sawfish_hole:
+        pose: [10.0, 2.125, -0.875, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
         downward: false
@@ -59,7 +75,7 @@
         min_dist: 0.5
         max_dist: 3.0
       bin_target:
-        pose: [8.25, 1.5, -2.1, 0.0, 0.0, 0.0]
+        pose: [5.0, 2.5, -2.1, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
@@ -67,22 +83,91 @@
         min_dist: 0.5
         max_dist: 3.0
       table:
-        pose: [8.0, -8.0, -1.5, 0.0, 0.0, 0.0]
+        pose: [10.0, 4.0, -1.5, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 4.0
-    
+      table_reefshark:
+        pose: [9.5, 4.0, -0.8, 0.0, 0.0, 0.0]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.12
+        max_dist: 3.0
+      table_sawfish:
+        pose: [10.5, 4.0, -0.8, 0.0, 0.0, 3.1415]
+        noise: 0.01
+        score: 0.8
+        downwward: false
+        pub_invalid_orientation: false
+        min_dist: 0.12
+        max_dist: 3.0
+      table_basket_pink:
+        pose: [0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.01
+        max_dist: 4.0
+      table_basket_yellow:
+        pose: [-0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.01
+        max_dist: 4.0
+      table_spoon_pink:
+        pose: [0.2, 0.3, -2.0, 0.0, -1.5707, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.01
+        max_dist: 4.0
+      table_bottle_yellow:
+        pose: [-0.2, -0.3, -2.0, 0.0, -1.5707, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.01
+        max_dist: 4.0
+  
+/talos/dummydetections:
+  ros__parameters:
     #POOL SIMULATION SETTINGS
     simulate_pool: true #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
     
     #the following settings are only used when simulate_pool is TRUE
     forward_camera_frame: <robot>/base_link #if <robot> is present in name, it will be populated with the robot name
+    forward_camera_pub_frame: <robot>/base_link # this is the frame that the detections are published in
     forward_camera_hfov: 120 #degrees. used to determine if robot is actually looking at the object.
     forward_camera_vfov: 68 #degrees. used just like the hfov but not horizontal
     
-    downward_camera_frame: <robot>/dummy_dfc_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_frame: <robot>/dfc_camera_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_pub_frame: <robot>/dfc_camera_link
     downward_camera_hfov: 60
     downward_camera_vfov: 40
+
+/liltank/dummydetections:
+  ros__parameters:
+    #POOL SIMULATION SETTINGS
+    simulate_pool: true #if true, will monitor robot's odometry and only publish a detection for an object if the robot is looking at it
+    
+    #the following settings are only used when simulate_pool is TRUE
+    forward_camera_frame: simulator/<robot>/zed2i/left_optical #if <robot> is present in name, it will be populated with the robot name
+    forward_camera_pub_frame: <robot>/base_link # this is the frame that the detections are published in
+    forward_camera_hfov: 60 #degrees. used to determine if robot is actually looking at the object.
+    forward_camera_vfov: 120 #degrees. used just like the hfov but not horizontal
+    
+    downward_camera_frame: <robot>/dummy_dfc_link #if <robot> is present in name, it will be populated with the robot name
+    downward_camera_pub_frame: <robot>/base_link
+    downward_camera_hfov: 60
+    downward_camera_vfov: 40
+  

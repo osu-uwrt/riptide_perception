@@ -4,7 +4,7 @@
 # Robot gaslighting script :)
 #
 
-from math import sqrt, atan, pi
+from math import sqrt, atan2, pi, acos
 
 import numpy as np
 import transforms3d as tf3d
@@ -14,26 +14,35 @@ from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Quaternion
 from rclpy.node import Node
 from std_msgs.msg import Header
+from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 from tf2_geometry_msgs import do_transform_pose
 from transforms3d.euler import euler2quat, quat2euler
-from transforms3d.quaternions import qmult, qinverse
+from transforms3d.quaternions import qmult, qinverse, rotate_vector
 from vision_msgs.msg import (Detection3D, Detection3DArray,
                              ObjectHypothesisWithPose)
 
 TOPIC_NAME = "detected_objects"
-CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707)
+CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707) # makes orientations agree with camera
 
 objects = [
     "gate",
-    "gate_hot",
-    "gate_cold",
-    "buoy",
+    "gate_reefshark",
+    "gate_sawfish",
+    "slalom_front",
+    "slalom_middle",
+    "slalom_back",
     "torpedo",
-    "torpedo_large_hole",
-    "torpedo_small_hole",
+    "torpedo_shark_hole",
+    "torpedo_sawfish_hole",
     "bin_target",
-    "table"
+    "table",
+    "table_reefshark",
+    "table_sawfish",
+    "table_basket_pink",
+    "table_basket_yellow",
+    "table_spoon_pink",
+    "table_bottle_yellow"
 ]
 
 config = {}
@@ -59,6 +68,8 @@ class DummyDetectionNode(Node):
         self.tfBuffer    = Buffer()
         self.tfListener  = TransformListener(self.tfBuffer, self)
         self.pubs        = [ ]
+        self.srv = self.create_service(SetBool, 'set_camera_is_dfc', self.setActiveCameraCb)
+
         for object in objects:
             self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{object}", 10))
         
@@ -72,9 +83,11 @@ class DummyDetectionNode(Node):
         self.declare_parameter("forward_camera_hfov", 60)
         self.declare_parameter("forward_camera_vfov", 40)
         self.declare_parameter("forward_camera_frame", "stereo/left_link")
+        self.declare_parameter("forward_camera_pub_frame", "stereo/left_link")
         self.declare_parameter("downward_camera_hfov", 60)
         self.declare_parameter("downward_camera_vfov", 40)
         self.declare_parameter("downward_camera_frame", "downward_link")
+        self.declare_parameter("downward_camera_pub_frame", "downward_link")
         
         for object in objects:
             self.declare_parameter(f"detection_data.{object}.pose", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -95,6 +108,14 @@ class DummyDetectionNode(Node):
                 self.timer.timer_period_ns = param.value * 1e9
                 
         return SetParametersResult(successful=True)
+
+
+    def setActiveCameraCb(self, request: SetBool.Request, response: SetBool.Response):
+        response.success = True
+        self.get_logger().info(f"Incoming request to set camera to {'dfc' if request.data else 'ffc'}")
+
+        return response
+
     
     
     def isVisibleByCamera(self, cameraName: str, objectPoseMap: Pose, objectMinDist: float, objectMaxDist: float, downward: bool):
@@ -117,12 +138,12 @@ class DummyDetectionNode(Node):
                     objectPoseCameraFrame.position.z ** 2)
                         
         #object position relative to camera. Measured in angles to make it easier to eval fov
-        objectHAng = abs(atan(objectPoseCameraFrame.position.y / 
+        objectHAng = abs(atan2(objectPoseCameraFrame.position.y,
                             objectPoseCameraFrame.position.x) * 180 / pi)
         
-        objectVAng = abs(atan(objectPoseCameraFrame.position.z /
+        objectVAng = abs(atan2(objectPoseCameraFrame.position.z,
                             objectPoseCameraFrame.position.x) * 180 / pi)
-                
+
         #object rotation relative to camera (if camera is next to object it cant see it)
         #invert direction of object rotation in camera frame so angles are < 180
         transformQuat = [objectPoseCameraFrame.orientation.w, objectPoseCameraFrame.orientation.x,
@@ -130,14 +151,22 @@ class DummyDetectionNode(Node):
         
         reverseQuat = [0.707, 0, 0.707, 0] if downward else [0, 0, 0, 1] #quats aimed to align normal vectors with the camera x axis. ordered wxyz
         cameraDiffQuat = qmult(transformQuat, reverseQuat)
-        [_, cameraDiffP, cameraDiffY] = quat2euler(cameraDiffQuat)
 
-        absCameraDiffPDeg = abs(cameraDiffP * 180 / pi)
-        absCameraDiffYDeg = abs(cameraDiffY * 180 / pi)
-                
-        return objectDist < objectMaxDist and objectDist > objectMinDist and \
+        rotatedVector = rotate_vector([1, 0, 0], cameraDiffQuat)
+        cosang = np.dot([1, 0, 0], rotatedVector) / np.linalg.norm(rotatedVector)
+        camRotDiff = acos(cosang) * 180.0 / pi
+        
+        self.get_logger().debug(f"object dist: {objectDist} in [{objectMinDist}, {objectMaxDist}]")
+        self.get_logger().debug(f"object hang: {objectHAng} < {cameraHFov / 2}")
+        self.get_logger().debug(f"object vang: {objectVAng} < {cameraVfov / 2}")
+        self.get_logger().debug(f"rotation diff: {camRotDiff} < 94")
+        
+        isVisible =  objectDist < objectMaxDist and objectDist > objectMinDist and \
                 objectHAng < cameraHFov / 2 and objectVAng < cameraVfov / 2 and \
-                absCameraDiffPDeg < cameraVfov and absCameraDiffYDeg < cameraHFov
+                camRotDiff < 94 # this number was arbitrarily chosen for liltank testing
+        
+        self.get_logger().debug(f"Object is visible: {isVisible}\n")
+        return isVisible
     
     
     #takes objectPos as [x, y, z] and maxDist to determine whether or not the robot can see an object.
@@ -166,43 +195,54 @@ class DummyDetectionNode(Node):
         objectPoseInMap.position.z = objectPose[2]
         objectPoseInMap.orientation = objectQuat
                 
-        return self.isVisibleByCamera("forward", objectPoseInMap, minDist, maxDist, downward) \
-                or self.isVisibleByCamera("downward", objectPoseInMap, minDist, maxDist, downward)
+        return self.isVisibleByCamera("forward", objectPoseInMap, minDist, maxDist, downward), \
+                self.isVisibleByCamera("downward", objectPoseInMap, minDist, maxDist, downward)
         
         
     def timerCB(self):
         #quick param update
         self.pool        = self.get_parameter("simulate_pool").value
-        detectArray = Detection3DArray()
+        forwardsDetectArray = Detection3DArray()
+        downwardsDetectArray = Detection3DArray()
+        
+        now = self.get_clock().now().to_msg()
         
         #formulate header
-        header = Header()
-        header.frame_id = "map"
-        header.stamp = self.get_clock().now().to_msg()
+        fwdHeader = Header()
+        fwdHeader.frame_id = self.get_parameter("forward_camera_pub_frame").value.replace("<robot>", self.robot)
+        fwdHeader.stamp = now
         
-        detectArray.header = header
+        dwdHeader = Header()
+        dwdHeader.frame_id = self.get_parameter("downward_camera_pub_frame").value.replace("<robot>", self.robot)
+        dwdHeader.stamp = now
+        
+        forwardsDetectArray.header = fwdHeader
+        downwardsDetectArray.header = dwdHeader
         
         for i in range(0, len(objects)):
             objectName = objects[i]
             self.get_logger().debug(f"Processing dummy detection for {objectName}")
             
-            poseArr = self.get_parameter(f"detection_data.{objectName}.pose").value
+            poseArr = self.get_parameter(f"detection_data.{objectName}.pose").value # this pose is in map frame
             noise = self.get_parameter(f"detection_data.{objectName}.noise").value
             score = self.get_parameter(f"detection_data.{objectName}.score").value
             publishInvalid = self.get_parameter(f"detection_data.{objectName}.publish_invalid_orientation").value
             
+            self.get_logger().debug(f"Object name: {objectName}")
+            
             if poseArr is not None:
-                if not self.pool or self.isVisibleByRobot(objectName):
-                    pose = PoseWithCovariance()
+                visibleForwards, visibleDownwards = self.isVisibleByRobot(objectName)
+                if not self.pool or visibleForwards or visibleDownwards:
+                    mapPose = Pose()
                 
                     #generate noise
-                    [r, p, y] = quat2euler([pose.pose.orientation.w, pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z]) #wxyz
+                    [r, p, y] = quat2euler([mapPose.orientation.w, mapPose.orientation.x, mapPose.orientation.y, mapPose.orientation.z]) #wxyz
                     noise = np.random.normal(0, noise, 7)
                     
                     #add noise to stuff
-                    pose.pose.position.x = poseArr[0] + noise[0]
-                    pose.pose.position.y = poseArr[1] + noise[1]
-                    pose.pose.position.z = poseArr[2] + noise[2]
+                    mapPose.position.x = poseArr[0] + noise[0]
+                    mapPose.position.y = poseArr[1] + noise[1]
+                    mapPose.position.z = poseArr[2] + noise[2]
                     r = poseArr[3] + noise[3]
                     p = poseArr[4] + noise[4]
                     y = poseArr[5] + noise[5]
@@ -212,37 +252,72 @@ class DummyDetectionNode(Node):
                     if publishInvalid:
                         newQuat = [2.0, 2.0, 2.0, 2.0] #invalid quaternion indicating that mapping should not merge orientation
                     
-                    pose.pose.orientation.w = newQuat[0]
-                    pose.pose.orientation.x = newQuat[1]
-                    pose.pose.orientation.y = newQuat[2]
-                    pose.pose.orientation.z = newQuat[3]
+                    mapPose.orientation.w = newQuat[0]
+                    mapPose.orientation.x = newQuat[1]
+                    mapPose.orientation.y = newQuat[2]
+                    mapPose.orientation.z = newQuat[3]
+                    
+                    # now convert pose to the desired camera frame
+                    fwd_camera_frame = self.get_parameter("forward_camera_frame").value.replace("<robot>", self.robot) #this is the frame that "detects" the object
+                    dwd_camera_frame = self.get_parameter("downward_camera_frame").value.replace("<robot>", self.robot)
+                    camera_frame = fwd_camera_frame if visibleForwards else dwd_camera_frame if visibleDownwards else None
+                    
+                    map2camera = self.tfBuffer.lookup_transform(camera_frame, "map", rclpy.time.Time())
+                    framePose = do_transform_pose(mapPose, map2camera)
                     
                     pubPose = PoseWithCovarianceStamped()
-                    pubPose.header = header
-                    pubPose.pose = pose
+                    pubPose.header = fwdHeader if visibleForwards else dwdHeader if visibleDownwards else None
+                    pubPose.pose.pose = framePose
                     self.pubs[i].publish(pubPose)
                     
                     #rotate quaternion to the "z out" position
-                    rotatedQuat = tf3d.quaternions.qmult(newQuat, CAMERA_ROTATION) #wxyz
+                    transformedQuat = [framePose.orientation.w, framePose.orientation.x, framePose.orientation.y, framePose.orientation.z]
+                    rotatedQuat = tf3d.quaternions.qmult(transformedQuat, CAMERA_ROTATION) #wxyz
                     
-                    pose.pose.orientation.w = rotatedQuat[0]
-                    pose.pose.orientation.x = rotatedQuat[1]
-                    pose.pose.orientation.y = rotatedQuat[2]
-                    pose.pose.orientation.z = rotatedQuat[3]
-                    
+                    framePose.orientation.w = rotatedQuat[0]
+                    framePose.orientation.x = rotatedQuat[1]
+                    framePose.orientation.y = rotatedQuat[2]
+                    framePose.orientation.z = rotatedQuat[3]
+                                        
                     #populate detection. looks like mapping only uses results so I'll just populate that and also header because its easy
                     detection = Detection3D()
-                    detection.header = header
+                    detection.header = fwdHeader if visibleForwards else dwdHeader if visibleDownwards else None
+                    
+                    #
+                    # BODGE FIX ALERT!!!!!!!!!!!!!!!!!!!!!
+                    # What is about to happen below is happening only because I am in the van on the way to RoboSub
+                    # and I really need this to work with minimal effort to ensure slalom tree v2 function when we get
+                    # to the airbnb. A proper implementation of this could look like:
+                    # - an 'alias' parameter array which acts like a vector of pairs and defins maps between object names (actually dont do this, do the next one)
+                    # - A parameter for each dummy object like 'publish_name' which would define the name the object is published as (I like this better)
+                    # - just not this lmaoo. It should not be hardcoded
+                    # 
+                    
+                    if objectName == "slalom_front" or objectName == "slalom_middle" or objectName == "slalom_back":
+                        objectName = "slalom_red"
+                    
+                    #
+                    # END BODGE
+                    #
                     
                     hypothesis = ObjectHypothesisWithPose()
                     hypothesis.hypothesis.class_id = objectName
                     hypothesis.hypothesis.score = score
-                    hypothesis.pose = pose
+                    hypothesis.pose.pose = framePose
                                         
                     detection.results.append(hypothesis)
-                    detectArray.detections.append(detection)
+                    
+                    # now append the detection to the correct detection array
+                    if visibleForwards:
+                        forwardsDetectArray.detections.append(detection)
+                    
+                    elif visibleDownwards:
+                        downwardsDetectArray.detections.append(detection)
+                    
+        self.pub.publish(forwardsDetectArray)
         
-        self.pub.publish(detectArray)
+        if len(downwardsDetectArray.detections) > 0:
+            self.pub.publish(downwardsDetectArray)
         
         
 def main(args = None):
