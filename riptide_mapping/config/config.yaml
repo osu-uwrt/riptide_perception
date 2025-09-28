@@ -46,9 +46,9 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.25
+          y: -0.5
           z: 0.0
-          yaw: 180.0
+          yaw: 0.0
       gate_sawfish:
         parent: gate_frame
         covar:
@@ -58,9 +58,9 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: -0.25
-          z: 0.0
-          yaw: 180.0
+          y: 0.5
+          z: 0.
+          yaw: 0.0
       
       slalom_front:
         parent: map
@@ -75,7 +75,7 @@
           z: -0.8
           yaw: 180.0
       slalom_middle:
-        parent: slalom_front_frame
+        parent: map
         covar:
           x: 1.0
           y: 1.0
@@ -87,7 +87,7 @@
           z: -0.8
           yaw: 180.0
       slalom_back:
-        parent: slalom_middle_frame
+        parent: map
         covar:
           x: 1.0
           y: 1.0
