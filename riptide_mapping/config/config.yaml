@@ -33,8 +33,8 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 2.90
-          y: -3.48
+          x: 0.0
+          y: 50.0
           z: -0.8
           yaw: 180.0
       gate_reefshark:
@@ -59,8 +59,7 @@
         pose:
           x: 0.0
           y: -0.5
-          z:
-           0.
+          z: 0.0
           yaw: 0.0
       
       slalom_front:
@@ -119,10 +118,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 23.0
-          y: 1.3
-          z: -2.0
-          yaw: 180.0
+          x: 3.0
+          y: -4.5
+          z: -1.5
+          yaw: 90.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
@@ -132,7 +131,7 @@
           yaw: 0.5
         pose:
           x: 0.0
-          y: 0.25
+          y: -0.25
           z: 0.25
           yaw: 0.0
       torpedo_sawfish_hole:
@@ -144,7 +143,7 @@
           yaw: 0.001
         pose:
           x: 0.0
-          y: -0.25
+          y: 0.25
           z: -0.25
           yaw: 0.0
       bin_target:
