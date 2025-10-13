@@ -65,7 +65,7 @@ class YOLONode(Node):
 			'slalom_close': (1.0, 0.0, 0.0), 
 			'slalom_middle': (1.0, 1.0, 0.0),
 			'slalom_far': (0.0, 1.0, 0.0),
-			'torpedo_saw_hole': (1.0, 0.0, 0.0),
+			'torpedo_sawfish_hole': (1.0, 0.0, 0.0),
 			'torpedo_shark_hole': (0.0, 1.0, 0.0),
 			'gate_saw': (0.0, 0.0, 1.0),
 			'gate_shark': (1.0, 0.0, 0.0)
@@ -921,10 +921,10 @@ class YOLONode(Node):
 					if self.torp_top == "shark":
 						class_name = "torpedo_shark_hole"  # Shark top -> shark hole
 					else:  # torpedo_type == "saw"
-						class_name = "torpedo_saw_hole"     # Saw top -> saw hole
+						class_name = "torpedo_sawfish_hole"     # Saw top -> saw hole
 				elif hole_scale == "largest":  # Bottom hole robosub moment the spaghet is 🤌
 					if self.torp_top == "shark":
-						class_name = "torpedo_saw_hole"     # Shark top -> saw hole (bottom)
+						class_name = "torpedo_sawfish_hole"     # Shark top -> saw hole (bottom)
 					else:  # torpedo_type == "saw"
 						class_name = "torpedo_shark_hole"   # Saw top -> shark hole (bottom)
 				else:
