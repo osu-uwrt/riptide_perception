@@ -118,10 +118,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 2.5
-          y: -4.5
-          z: -1.5
-          yaw: 90.0
+          x: -2.0
+          y: 0.0
+          z: -1.75
+          yaw: 0.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
