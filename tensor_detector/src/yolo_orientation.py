@@ -651,6 +651,8 @@ class YOLONode(Node):
 			self.handle_mapping_hole(box)
 		elif class_name == "torpedo_hole":
 			self.handle_torpedo_hole(box)
+		elif class_name == "slalom_red":
+			self.handle_slalom_red(box, cv_image)
 		else:
 			detection = self.create_detection3d_message(box, cv_image, conf)
 			if detection:
