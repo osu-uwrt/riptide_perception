@@ -1065,51 +1065,6 @@ class YOLONode(Node):
  
 			# Continue with feature detection using the adjusted mask_roi
 			masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-  
-		# elif class_name == "slalom_close":
-		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
-		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-   
-		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
-   
-		# 	# Create Detection3D message
-		# 	detection = Detection3D()
-		# 	detection.header.frame_id = self.frame_id
-		# 	if self.use_incoming_timestamp:
-		# 		detection.header.stamp = self.detection_timestamp
-		# 	else:
-		# 		detection.header.stamp = self.get_clock().now().to_msg()
-
-		# 	# Set the pose
-		# 	class_name = "slalom_close"
-		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
-
-		# 	return detection
-
-
-
-		# elif class_name == "slalom_red":
-		# 	depth_value = self.depth_image[int(bbox_center_y), int(bbox_center_x)]
-		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
-		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-
-		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
-			
-   
-		# 	# Create Detection3D message
-		# 	detection = Detection3D()
-		# 	detection.header.frame_id = self.frame_id
-		# 	if self.use_incoming_timestamp:
-		# 		detection.header.stamp = self.detection_timestamp
-		# 	else:
-		# 		detection.header.stamp = self.get_clock().now().to_msg()
-
-		# 	# Set the pose
-		# 	class_name = "slalom_close"
-		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
-
-		# 	return detection
    
 		elif class_name == "slalom_red":
 			# Sample the depth value at the center of the bounding box
@@ -1234,26 +1189,7 @@ class YOLONode(Node):
 				detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
  
 				return detection
- 
-		# else:
-		# 	self.get_logger().info(f"wtf: {class_name}")
-		# if self.latest_buoy is not None and class_name == "buoy":
-		# 	centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.latest_buoy[2])
-		# 	quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-		# 	self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
-		# 	detection = Detection3D()
-		# 	detection.header.frame_id = self.frame_id
-		# 	if self.use_incoming_timestamp:
-		# 		detection.header.stamp = self.detection_timestamp
-		# 	else:
-		# 		detection.header.stamp = self.get_clock().now().to_msg()
- 
-		# 	# Set the pose
-		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, centroid, quat, conf))
- 
-		# 	return detection
- 
-		# return None
+
  
 	def calculate_centroid(self, center_x, center_y, z):
 		center_3d_x = (center_x - self.cx) * z / self.fx
