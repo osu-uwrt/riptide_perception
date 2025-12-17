@@ -989,39 +989,7 @@ class YOLONode(Node):
 				detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
 				return detection
  
-		# elif class_name == "torpedo_open":
-		# 	self.latest_bbox_class_7 = (x_min, y_min, x_max, y_max)
-		# elif class_name == "torpedo_closed":
-		# 	self.latest_bbox_class_8 = (x_min, y_min, x_max, y_max)
-		# elif class_name == "torpedo_hole":
-		# 	if self.open_torpedo_centroid is not None and self.open_torpedo_quat is not None and self.latest_bbox_class_7 and self.is_inside_bbox(bbox, self.latest_bbox_class_7):
-		# 		class_name = "torpedo_open_hole"
-		# 		hole_quat = self.open_torpedo_quat
-		# 		hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.open_torpedo_centroid[2])
-		# 	elif self.closed_torpedo_centroid is not None and self.closed_torpedo_quat is not None and self.latest_bbox_class_8 and self.is_inside_bbox(bbox, self.latest_bbox_class_8):
-		# 		class_name = "torpedo_closed_hole"
-		# 		hole_quat = self.closed_torpedo_quat
-		# 		hole_centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, self.closed_torpedo_centroid[2])
-		# 	else:
-		# 		return None
- 
-		# 	if self.use_incoming_timestamp:
-		# 		self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-		# 	else:
-		# 		self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
- 
- 
-		# 	self.publish_marker(hole_quat, hole_centroid, class_name, bbox_width, bbox_height)
- 
-		# 	# Create Detection3D message
-		# 	detection = Detection3D()
-		# 	detection.header.frame_id = self.frame_id
-		# 	if self.use_incoming_timestamp:
-		# 		detection.header.stamp = self.detection_timestamp
-		# 	else:
-		# 		detection.header.stamp = self.get_clock().now().to_msg()
-		# 	detection.results.append(self.create_object_hypothesis_with_pose(class_name, hole_centroid, hole_quat, conf))
-		# 	return detection
+	
  
 		if class_name == "slalom_red":
 			shrink_x = (x_max - x_min) * 0.3
