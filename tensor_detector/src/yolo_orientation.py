@@ -520,20 +520,20 @@ class YOLONode(Node):
 			self.slalom_red_detections = []
 
 	def image_callback(self, msg: Image):
- 
+
 		if self.log_processing_time:
 			self.detection_time = time.time()
- 
+
 		if self.depth_image is None or not self.camera_info_gathered:
 			self.get_logger().warning("Skipping image because either no depth image or camera info is available.", throttle_duration_sec=1)
 			return
- 
+
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
 			return
 		results = self.model(cv_image, verbose=False, iou=self.iou, conf=self.conf)
- 
+
 		detections = Detection3DArray()
 		detections.header.frame_id = self.frame_id
 		self.detection_timestamp = msg.header.stamp
@@ -541,10 +541,10 @@ class YOLONode(Node):
 			detections.header.stamp = msg.header.stamp
 		else:
 			detections.header.stamp = self.get_clock().now().to_msg()
- 
+
 		if self.mask is None or self.mask.shape[:2] != cv_image.shape[:2]:
 			self.mask = np.zeros(cv_image.shape[:2], dtype=np.uint8)
- 
+
 		# Reset mapping holes each image
 		self.mapping_holes = []
 		self.torpedo_holes = []
@@ -553,13 +553,13 @@ class YOLONode(Node):
 		self.torpedo_bottom_hole = None
 		self.largest_hole = None
 		self.smallest_hole = None
- 
+
 		for result in results:
 			for box in result.boxes.cpu().numpy():
 				if box.conf[0] <= self.conf:
 					continue
 				class_id = box.cls[0]
- 
+
 				if class_id in self.class_id_map:
 					conf = box.conf[0]
 					#self.get_logger().info(f"class id: {class_id}")
@@ -618,18 +618,18 @@ class YOLONode(Node):
 							})
 					else:
 						detection = self.create_detection3d_message(box, cv_image, conf)
- 
+
 						if detection:
 							detections.detections.append(detection)
- 
+
 					self.mask.fill(0)
 					for contour in result.masks.xy:
 						contour = np.array(contour, dtype=np.int32)
 						cv2.fillPoly(self.mask, [contour], 255)
 					mask_msg = self.bridge.cv2_to_imgmsg(self.mask,encoding="mono8")
 					#self.mask_publisher.publish(mask_msg)
- 
- 
+
+
 		# Create detection3d for the holes if there are 4
 		if len(self.mapping_holes) == 4:
 			#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
@@ -678,7 +678,7 @@ class YOLONode(Node):
 		
 		self.publish_markers(self.temp_markers)
 		self.temp_markers = []  # Clear the list for the next frame
- 
+
 		annotated_frame = results[0].plot()
 		
 		self.publish_accumulated_point_cloud()
@@ -701,32 +701,83 @@ class YOLONode(Node):
 		if self.has_subscribers(self.detection_publisher):
 			self.detection_publisher.publish(detections)
 		self.detection_id_counter = 0
- 
+	def handle_box(self, box, cv_image, detections):
+		conf = box.conf[0]
+		class_id = box.cls[0]
+
+		if conf <= self.conf:
+			return
+		if class_id not in self.class_id_map:
+			return
+		class_name = self.class_id_map[class_id]
+
+		if class_name == "mapping_hole":
+			self.handle_mapping_hole(box)
+		elif class_name == "torpedo_hole":
+			self.handle_torpedo_hole(box)
+		else:
+			detection = self.create_detection3d_message(box, cv_image, conf)
+			if detection:
+				detections.detections.append(detection)
+	
+	def handle_mapping_hole(self, box):
+		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		timestamp = (
+			self.detection_timestamp
+			if self.use_incoming_timestamp
+			else self.get_clock().now().to_msg()
+		)
+		self.holes.append(((x_min, y_min, x_max, y_max), timestamp))
+		self.mapping_holes.append(box)
+
+
+	def handle_torpedo_hole(self, box):
+		x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+		timestamp = (
+			self.detection_timestamp
+			if self.use_incoming_timestamp
+			else self.get_clock().now().to_msg()
+
+		) 
+		self.holes.append(((x_min, y_min, x_max, y_max), timestamp))
+		self.torpedo_holes.append(box)
+
+	def handle_slalom_red(self, box, cv_image):
+		detection_temp = self.create_detection3d_message(box, cv_image, box.conf[0])
+		if not detection_temp or not detection_temp.results:
+			return
+		
+		result_temp = detection_temp.results[0]
+
+		centroid = [
+			result_temp.pose.pose.position.x,
+			result_temp.pose.pose.position.y,
+			result_temp.pose.pose.position.z
+		]
+
+		quat = [
+			result_temp.pose.pose.orientation.x,
+			result_temp.pose.pose.orientation.y,
+			result_temp.pose.pose.orientation.z,
+			result_temp.pose.pose.orientation.w
+		]
+
+		x_min, y_min, x_max, y_max, = map(int, box.xyxy[0])
+
+		self.slalom_red_detections.append({
+			'centroid':centroid,
+			'quat':quat,
+			'conf':box.conf[0],
+			'bbox_width': x_max - x_min,
+			'bbox_height': y_max - y_min
+		})
+
 	def get_hole_size(self, hole):
 		x_min, y_min, x_max, y_max = map(int, hole.xyxy[0])
 		hole_width = x_max - x_min
 		hole_height = y_max - y_min
 		hole_size = hole_height*hole_width
 		return hole_size
- 
-	# def find_smallest_and_largest_holes(self):
-	# 	hole_sizes = []
-	# 	for hole in self.mapping_holes:
-	# 		hole_size = self.get_hole_size(hole)
- 
-	# 		if self.largest_hole is None:
-	# 			self.largest_hole = hole
-	# 		else:
-	# 			largest_hole_size = self.get_hole_size(self.largest_hole)
-	# 			if hole_size > largest_hole_size:
-	# 				self.largest_hole = hole
- 
-	# 		if self.smallest_hole is None:
-	# 			self.smallest_hole = hole
-	# 		else:
-	# 			smallest_hole_size = self.get_hole_size(self.smallest_hole)
-	# 			if hole_size < smallest_hole_size:
-	# 				self.smallest_hole = hole
  
 	def find_top_and_bottom_holes(self):
 		if self.plane_normal is None:
