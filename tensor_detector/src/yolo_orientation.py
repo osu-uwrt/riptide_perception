@@ -556,78 +556,14 @@ class YOLONode(Node):
 
 		for result in results:
 			for box in result.boxes.cpu().numpy():
-				if box.conf[0] <= self.conf:
-					continue
-				class_id = box.cls[0]
+				self.handle_box(box, cv_image, detections)
 
-				if class_id in self.class_id_map:
-					conf = box.conf[0]
-					#self.get_logger().info(f"class id: {class_id}")
-					# If its a hole, store it, otherwise make the detection message
-					if self.class_id_map[class_id] == "mapping_hole":
-						
-						#self.get_logger().info(f"class id: {class_id}")
-						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-						if self.use_incoming_timestamp:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-						else:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
-						self.mapping_holes.append(box)
-						#self.get_logger().info(f"Holes after adding: {len(self.holes)}")
-						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-					if self.class_id_map[class_id] == "torpedo_hole":
-						
-						#self.get_logger().info(f"class id: {class_id}")
-						x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-						if self.use_incoming_timestamp:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.detection_timestamp))
-						else:
-							self.holes.append(((x_min, y_min, x_max, y_max), self.get_clock().now().to_msg()))
-						self.torpedo_holes.append(box)
-						#self.get_logger().info(f"Holes after adding: {len(self.holes)}")
-						#self.get_logger().info(f"holes: {len(self.mapping_holes)}")
-					elif class_id in self.class_id_map and self.class_id_map[class_id] == "slalom_red":
-						# Don't create detection immediately, store for later processing
-						detection_temp = self.create_detection3d_message(box, cv_image, conf)
-						if detection_temp and detection_temp.results:
-							# Extract the centroid and quaternion from the detection
-							result_temp= detection_temp.results[0]
-							centroid = [
-								result_temp.pose.pose.position.x,
-								result_temp.pose.pose.position.y, 
-								result_temp.pose.pose.position.z
-							]
-							quat = [
-								result_temp.pose.pose.orientation.x,
-								result_temp.pose.pose.orientation.y,
-								result_temp.pose.pose.orientation.z,
-								result_temp.pose.pose.orientation.w
-							]
-							
-							# Store detection data for sorting
-							x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-							bbox_width = x_max - x_min
-							bbox_height = y_max - y_min
-							
-							self.slalom_red_detections.append({
-								'centroid': centroid,
-								'quat': quat,
-								'conf': box.conf[0],
-								'bbox_width': bbox_width,
-								'bbox_height': bbox_height
-							})
-					else:
-						detection = self.create_detection3d_message(box, cv_image, conf)
-
-						if detection:
-							detections.detections.append(detection)
-
-					self.mask.fill(0)
-					for contour in result.masks.xy:
-						contour = np.array(contour, dtype=np.int32)
-						cv2.fillPoly(self.mask, [contour], 255)
-					mask_msg = self.bridge.cv2_to_imgmsg(self.mask,encoding="mono8")
-					#self.mask_publisher.publish(mask_msg)
+				self.mask.fill(0)
+				for contour in result.masks.xy:
+					contour = np.array(contour, dtype=np.int32)
+					cv2.fillPoly(self.mask, [contour], 255)
+				mask_msg = self.bridge.cv2_to_imgmsg(self.mask,encoding="mono8")
+				#self.mask_publisher.publish(mask_msg)
 
 
 		# Create detection3d for the holes if there are 4
