@@ -120,7 +120,7 @@
         pose:
           x: 1.0
           y: 2.0
-          z: -1.75
+          z: -1.25
           yaw: -90.0
       torpedo_shark_hole:
         parent: torpedo_frame
