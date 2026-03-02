@@ -131,8 +131,8 @@
           yaw: 0.5
         pose:
           x: 0.0
-          y: -0.25
-          z: 0.25
+          y: -0.029972
+          z: 0.217424
           yaw: 0.0
       torpedo_sawfish_hole:
         parent: torpedo_frame
@@ -143,8 +143,8 @@
           yaw: 0.001
         pose:
           x: 0.0
-          y: 0.25
-          z: -0.25
+          y: 0.11176
+          z: -0.0889
           yaw: 0.0
       bin_target:
         parent: map
