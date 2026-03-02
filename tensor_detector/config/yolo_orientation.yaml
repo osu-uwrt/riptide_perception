@@ -50,7 +50,8 @@
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------
-    dfc_model: "rs25_8_16_dfc.pt"
+    #dfc_model: "rs25_8_16_dfc.pt"
+    dfc_model: "rs25_8_15_2.pt"
     dfc_class_id_map: "{
       0: 'Bin',
       1: 'bin_shark',
@@ -67,5 +68,5 @@
       12: 'spoon_yellow',
       13: 'torpedo_hole'
     }"
-    dfc_threshold: 0.6
+    dfc_threshold: 0.75
     dfc_iou: 0.9
