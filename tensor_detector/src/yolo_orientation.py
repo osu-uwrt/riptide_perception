@@ -141,6 +141,15 @@ class YOLONode(Node):
 		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
 
 
+	def shift_toward_blue(self, img_bgr, blue_boost=0.20, rg_reduce=0.05):
+		out = img_bgr.astype(np.float32)
+		out[:, :, 0] *= (1.0 + blue_boost) 
+		out[:, :, 1] *= (1.0 - rg_reduce) 
+		out[:, :, 2] *= (1.0 - rg_reduce)
+		np.clip(out, 0, 255, out)
+		return out.astype(np.uint8)
+
+
 	def switch_camera_callback(self, request, response):
 		if getattr(self, 'camera_switch_in_progress', False):
 			response.success = False
@@ -529,6 +538,7 @@ class YOLONode(Node):
 			return
  
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+		#cv_image = self.shift_toward_blue(cv_image, blue_boost=0.2, rg_reduce=0.05)
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
 			return
