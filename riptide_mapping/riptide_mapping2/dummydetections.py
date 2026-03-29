@@ -36,13 +36,6 @@ objects = [
     "torpedo_shark_hole",
     "torpedo_sawfish_hole",
     "bin_target",
-    "table",
-    "table_reefshark",
-    "table_sawfish",
-    "table_basket_pink",
-    "table_basket_yellow",
-    "table_spoon_pink",
-    "table_bottle_yellow"
 ]
 
 config = {}
@@ -72,6 +65,8 @@ class DummyDetectionNode(Node):
 
         for object in objects:
             self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{object}", 10))
+
+        self.smoothed_slalom_dist = 3.0
         
         self.updateParams(self.get_parameters(self._parameters.keys()))
         self.get_logger().info("Started dummy detection node.")
@@ -294,7 +289,14 @@ class DummyDetectionNode(Node):
                     # 
                     
                     if objectName == "slalom_front" or objectName == "slalom_middle" or objectName == "slalom_back":
-                        objectName = "slalom_red"
+                        objectName = "slalom_close"
+                        slalomDist = np.linalg.norm(np.array([mapPose.position.x, mapPose.position.y, mapPose.position.z]))
+
+                        alpha = 0.5
+                        self.smoothed_slalom_dist = slalomDist * alpha + self.smoothed_slalom_dist * (1 - alpha)
+
+                        if slalomDist > self.smoothed_slalom_dist:
+                            continue
                     
                     #
                     # END BODGE
