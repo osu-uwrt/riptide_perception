@@ -72,7 +72,7 @@
         pose:
           x: -2.0
           y: 0.0
-          z: -0.8
+          z: -2.25
           yaw: 0.0
       slalom_middle:
         parent: map
@@ -84,7 +84,7 @@
         pose:
           x: -3.6
           y: -1.0
-          z: -0.8
+          z: -2.25
           yaw: 0.0
       slalom_back:
         parent: map
@@ -96,7 +96,7 @@
         pose:
           x: -5.2
           y: 0.0
-          z: -0.8
+          z: -2.25
           yaw: 0.0
       slalom_close:
         parent: slalom_front_frame
