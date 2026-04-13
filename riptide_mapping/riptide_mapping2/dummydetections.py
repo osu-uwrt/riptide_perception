@@ -288,15 +288,15 @@ class DummyDetectionNode(Node):
                     # - just not this lmaoo. It should not be hardcoded
                     # 
                     
-                    if objectName == "slalom_front" or objectName == "slalom_middle" or objectName == "slalom_back":
-                        objectName = "slalom_close"
-                        slalomDist = np.linalg.norm(np.array([mapPose.position.x, mapPose.position.y, mapPose.position.z]))
+                    # if objectName == "slalom_front" or objectName == "slalom_middle" or objectName == "slalom_back":
+                    #     objectName = "slalom_close"
+                    #     slalomDist = np.linalg.norm(np.array([mapPose.position.x, mapPose.position.y, mapPose.position.z]))
 
-                        alpha = 0.5
-                        self.smoothed_slalom_dist = slalomDist * alpha + self.smoothed_slalom_dist * (1 - alpha)
+                    #     alpha = 0.5
+                    #     self.smoothed_slalom_dist = slalomDist * alpha + self.smoothed_slalom_dist * (1 - alpha)
 
-                        if slalomDist > self.smoothed_slalom_dist:
-                            continue
+                    #     if slalomDist > self.smoothed_slalom_dist:
+                    #         continue
                     
                     #
                     # END BODGE

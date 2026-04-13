@@ -17,6 +17,7 @@ import os
 import yaml
 import math
 from std_srvs.srv import SetBool
+from riptide_msgs2.srv import SetString
 
 class YOLONode(Node):
 	def __init__(self):
@@ -115,8 +116,11 @@ class YOLONode(Node):
 		self.torpedo_quat = None
 		self.torpedo_top_hole = None
 		self.torpedo_bottom_hole = None
+		self.slalom_name = None
   
 		self.create_switch_service()
+
+		self.create_slalom_switch_service()
 
 		# Set up the camera based on the active_camera parameter
 		self.setup_camera()
@@ -139,6 +143,10 @@ class YOLONode(Node):
 		# Create the service for camera switching
 		self.srv = self.create_service(SetBool, 'set_camera_is_dfc', self.switch_camera_callback)
 		self.get_logger().info("Camera switch service created. Call to toggle between ffc and dfc cameras")
+	
+	def create_slalom_switch_service(self):
+		self.slalom_srv = self.create_service(SetString, 'set_slalom_type', self.switch_slalom_callback)
+		self.get_logger().info("Slalom switch service created. Call to change name of pubbed slalom det")
 
 
 	def shift_toward_blue(self, img_bgr, blue_boost=0.20, rg_reduce=0.05):
@@ -176,6 +184,13 @@ class YOLONode(Node):
 
 		response.success = True
 		response.message = f"Successfully switched from {old_camera} to {new_camera}"
+		return response
+	
+	def switch_slalom_callback(self, request, response):
+		self.slalom_name = request.data
+
+		response.success = True
+		response.message = f"Successfully set slalom type to {self.slalom_name}"
 		return response
 
 	def setup_camera(self):
@@ -376,87 +391,87 @@ class YOLONode(Node):
 		"""
 		num_detections = len(self.slalom_red_detections)
 	
-		if num_detections == 3:
-			# Validate aspect ratios (height/width >= 2.5)
-			valid_detections = []
-			for detection_data in self.slalom_red_detections:
-				height = detection_data['bbox_height']
-				width = detection_data['bbox_width']
-				aspect_ratio = height / width if width > 0 else 0
+		# if num_detections == 3:
+		# 	# Validate aspect ratios (height/width >= 2.5)
+		# 	valid_detections = []
+		# 	for detection_data in self.slalom_red_detections:
+		# 		height = detection_data['bbox_height']
+		# 		width = detection_data['bbox_width']
+		# 		aspect_ratio = height / width if width > 0 else 0
 	
-				if aspect_ratio >= 2.5:
-					valid_detections.append(detection_data)
-				else:
-					# self.get_logger().warn(f"Slalom rejected: aspect ratio {aspect_ratio:.2f} < 2.5")
-					return
+		# 		if aspect_ratio >= 2.5:
+		# 			valid_detections.append(detection_data)
+		# 		else:
+		# 			# self.get_logger().warn(f"Slalom rejected: aspect ratio {aspect_ratio:.2f} < 2.5")
+		# 			return
 	
-			# Check if we still have 3 valid detections after aspect ratio filtering
-			if len(valid_detections) != 3:
-				# self.get_logger().warn(f"Only {len(valid_detections)}/3 slaloms meet aspect ratio requirement")
-				self.slalom_red_detections = []
-				return
+		# 	# Check if we still have 3 valid detections after aspect ratio filtering
+		# 	if len(valid_detections) != 3:
+		# 		# self.get_logger().warn(f"Only {len(valid_detections)}/3 slaloms meet aspect ratio requirement")
+		# 		self.slalom_red_detections = []
+		# 		return
 	
-			# Sort by distance (Z coordinate - depth)
-			sorted_detections = sorted(valid_detections, key=lambda x: x['centroid'][2])
+		# 	# Sort by distance (Z coordinate - depth)
+		# 	sorted_detections = sorted(valid_detections, key=lambda x: x['centroid'][2])
 	
-			# Check minimum spacing between consecutive slaloms (at least 1m apart)
-			spacing_valid = True
-			for i in range(len(sorted_detections) - 1):
-				current_pos = sorted_detections[i]['centroid']
-				next_pos = sorted_detections[i + 1]['centroid']
+		# 	# Check minimum spacing between consecutive slaloms (at least 1m apart)
+		# 	spacing_valid = True
+		# 	for i in range(len(sorted_detections) - 1):
+		# 		current_pos = sorted_detections[i]['centroid']
+		# 		next_pos = sorted_detections[i + 1]['centroid']
 	
-				# Calculate 3D distance between centroids
-				distance = ((next_pos[0] - current_pos[0])**2 +
-							(next_pos[1] - current_pos[1])**2 +
-							(next_pos[2] - current_pos[2])**2)**0.5
+		# 		# Calculate 3D distance between centroids
+		# 		distance = ((next_pos[0] - current_pos[0])**2 +
+		# 					(next_pos[1] - current_pos[1])**2 +
+		# 					(next_pos[2] - current_pos[2])**2)**0.5
 	
-				if distance < 1.0:  # 1 meter minimum spacing
-					# self.get_logger().warn(f"Slaloms too close: {distance:.2f}m < 1.0m between slalom {i} and {i+1}")
-					spacing_valid = False
-					break
+		# 		if distance < 1.0:  # 1 meter minimum spacing
+		# 			# self.get_logger().warn(f"Slaloms too close: {distance:.2f}m < 1.0m between slalom {i} and {i+1}")
+		# 			spacing_valid = False
+		# 			break
 	
-			# Only proceed if spacing is valid
-			if not spacing_valid:
-				# self.get_logger().warn("Slalom spacing validation failed")
-				self.slalom_red_detections = []
-				return
+		# 	# Only proceed if spacing is valid
+		# 	if not spacing_valid:
+		# 		# self.get_logger().warn("Slalom spacing validation failed")
+		# 		self.slalom_red_detections = []
+		# 		return
 	
-			# All validations passed - proceed with classification
-			# self.get_logger().info("3 valid slaloms found with proper spacing and aspect ratio")
+		# 	# All validations passed - proceed with classification
+		# 	# self.get_logger().info("3 valid slaloms found with proper spacing and aspect ratio")
 	
-			# Assign new class names based on distance
-			class_names = ['slalom_close', 'slalom_middle', 'slalom_far']
-			for i, detection_data in enumerate(sorted_detections):
-				# Create new detection with updated class name
-				detection = Detection3D()
-				detection.header.frame_id = self.frame_id
-				if self.use_incoming_timestamp:
-					detection.header.stamp = self.detection_timestamp
-				else:
-					detection.header.stamp = self.get_clock().now().to_msg()
+		# 	# Assign new class names based on distance
+		# 	class_names = ['slalom_close', 'slalom_middle', 'slalom_far']
+		# 	for i, detection_data in enumerate(sorted_detections):
+		# 		# Create new detection with updated class name
+		# 		detection = Detection3D()
+		# 		detection.header.frame_id = self.frame_id
+		# 		if self.use_incoming_timestamp:
+		# 			detection.header.stamp = self.detection_timestamp
+		# 		else:
+		# 			detection.header.stamp = self.get_clock().now().to_msg()
 	
-				# Create object hypothesis with new class name
-				detection.results.append(self.create_object_hypothesis_with_pose(
-					class_names[i],
-					detection_data['centroid'],
-					detection_data['quat'],
-					detection_data['conf']
-				))
+		# 		# Create object hypothesis with new class name
+		# 		detection.results.append(self.create_object_hypothesis_with_pose(
+		# 			class_names[i],
+		# 			detection_data['centroid'],
+		# 			detection_data['quat'],
+		# 			detection_data['conf']
+		# 		))
 	
-				# Publish marker with new class name
-				self.publish_marker(
-					detection_data['quat'],
-					detection_data['centroid'],
-					class_names[i],
-					detection_data['bbox_width'],
-					detection_data['bbox_height']
-				)
-				detections_array.detections.append(detection)
+		# 		# Publish marker with new class name
+		# 		self.publish_marker(
+		# 			detection_data['quat'],
+		# 			detection_data['centroid'],
+		# 			class_names[i],
+		# 			detection_data['bbox_width'],
+		# 			detection_data['bbox_height']
+		# 		)
+		# 		detections_array.detections.append(detection)
 	
-			# Clear the list for next frame
-			self.slalom_red_detections = []
+		# 	# Clear the list for next frame
+		# 	self.slalom_red_detections = []
 	
-		elif num_detections > 0:
+		if num_detections > 0:
 			# Report only the closest one
 			closest_detection = min(self.slalom_red_detections, key=lambda x: x['centroid'][2])
 			# Store closest detection in history (keep last slalom_history_size)
@@ -483,7 +498,7 @@ class YOLONode(Node):
 					detection.header.stamp = self.get_clock().now().to_msg()
 
 				detection.results.append(self.create_object_hypothesis_with_pose(
-					'slalom_close',
+					self.slalom_name,
 					closest_in_history['centroid'],
 					closest_in_history['quat'],
 					closest_in_history['conf']
@@ -492,35 +507,35 @@ class YOLONode(Node):
 				self.publish_marker(
 					closest_in_history['quat'],
 					closest_in_history['centroid'],
-					'slalom_close',
+					self.slalom_name,
 					closest_detection['bbox_width'],  # Use current frame's bbox dimensions
 					closest_detection['bbox_height']
 				)
 				detections_array.detections.append(detection)
 
-				# Repeat publication of the closest slalom to maintain heading through course
-				detection = Detection3D()
-				detection.header.frame_id = self.frame_id
-				if self.use_incoming_timestamp:
-					detection.header.stamp = self.detection_timestamp
-				else:
-					detection.header.stamp = self.get_clock().now().to_msg()
+				# # Repeat publication of the closest slalom to maintain heading through course
+				# detection = Detection3D()
+				# detection.header.frame_id = self.frame_id
+				# if self.use_incoming_timestamp:
+				# 	detection.header.stamp = self.detection_timestamp
+				# else:
+				# 	detection.header.stamp = self.get_clock().now().to_msg()
 
-				detection.results.append(self.create_object_hypothesis_with_pose(
-					'slalom_front',
-					closest_in_history['centroid'],
-					closest_in_history['quat'],
-					closest_in_history['conf']
-				))
+				# detection.results.append(self.create_object_hypothesis_with_pose(
+				# 	'slalom_front',
+				# 	closest_in_history['centroid'],
+				# 	closest_in_history['quat'],
+				# 	closest_in_history['conf']
+				# ))
 
-				self.publish_marker(
-					closest_in_history['quat'],
-					closest_in_history['centroid'],
-					'slalom_front',
-					closest_detection['bbox_width'],  # Use current frame's bbox dimensions
-					closest_detection['bbox_height']
-				)
-				detections_array.detections.append(detection)
+				# self.publish_marker(
+				# 	closest_in_history['quat'],
+				# 	closest_in_history['centroid'],
+				# 	'slalom_front',
+				# 	closest_detection['bbox_width'],  # Use current frame's bbox dimensions
+				# 	closest_detection['bbox_height']
+				# )
+				# detections_array.detections.append(detection)
     
 			self.slalom_red_detections = []
 	
