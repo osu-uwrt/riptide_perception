@@ -18,6 +18,10 @@ import yaml
 import math
 from std_srvs.srv import SetBool
 from riptide_msgs2.srv import SetString
+from tf2_ros.transform_listener import TransformListener
+from tf2_ros import Buffer
+from rclpy.time import Time
+from tf_transformations import quaternion_from_euler, quaternion_multiply
 
 class YOLONode(Node):
 	def __init__(self):
@@ -116,7 +120,11 @@ class YOLONode(Node):
 		self.torpedo_quat = None
 		self.torpedo_top_hole = None
 		self.torpedo_bottom_hole = None
-		self.slalom_name = None
+		self.slalom_name = 'slalom_front'
+
+		# tf stuff
+		self.tf_buffer = Buffer()
+		self.tf_listener = TransformListener(self.tf_buffer, self)
   
 		self.create_switch_service()
 
@@ -488,7 +496,29 @@ class YOLONode(Node):
 			if self.slalom_history:
 				closest_in_history = min(self.slalom_history, key=lambda x: x['centroid'][2])
 				#self.get_logger().info(f"Closest slalom in history: [{closest_in_history['centroid'][0]:.2f}, {closest_in_history['centroid'][1]:.2f}, {closest_in_history['centroid'][2]:.2f}]")
-				
+				# self.get_logger().info(f"Frames: parent {parent_frame}, self.frame_id ")
+				# Always use slalom_parent's yaw for detection
+				parent_frame = "slalom_parent_frame"
+				detection_quat = None
+				try:
+					# Detections need to be in camera frame
+					parent_quat_tf = self.tf_buffer.lookup_transform(self.frame_id, parent_frame, Time()).transform.rotation
+					detection_quat = [
+						parent_quat_tf.x,
+						parent_quat_tf.y,
+						parent_quat_tf.z,
+						parent_quat_tf.w
+					]
+				except:
+					self.get_logger().warning(f'Pubbing slalom detection with rotation since {parent_frame} not found')
+					detection_quat = closest_in_history['quat']
+
+				# Fun unknown offset for 90 deg
+				z_to_x_quat = quaternion_from_euler(0.0, -1.57079632679, 0.0)
+				corrected_quat = quaternion_multiply(detection_quat, z_to_x_quat)
+				# self.get_logger().info(f'Pubbing slalom with quat {corrected_quat}')
+
+
 				# Create detection using closest from history
 				detection = Detection3D()
 				detection.header.frame_id = self.frame_id
@@ -500,12 +530,12 @@ class YOLONode(Node):
 				detection.results.append(self.create_object_hypothesis_with_pose(
 					self.slalom_name,
 					closest_in_history['centroid'],
-					closest_in_history['quat'],
+					corrected_quat,
 					closest_in_history['conf']
 				))
 
 				self.publish_marker(
-					closest_in_history['quat'],
+					corrected_quat,
 					closest_in_history['centroid'],
 					self.slalom_name,
 					closest_detection['bbox_width'],  # Use current frame's bbox dimensions
@@ -553,7 +583,7 @@ class YOLONode(Node):
 			return
  
 		cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-		#cv_image = self.shift_toward_blue(cv_image, blue_boost=0.2, rg_reduce=0.05)
+		# cv_image = self.shift_toward_blue(cv_image, blue_boost=0.2, rg_reduce=0.05)
 		self.gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 		if cv_image is None:
 			return
@@ -1179,7 +1209,7 @@ class YOLONode(Node):
 				return None
 			centroid = self.calculate_centroid(bbox_center_x, bbox_center_y, float(depth_value))
 			quat, _ = self.calculate_quaternion_and_euler_angles(-self.default_normal)
-			self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
+			# self.publish_marker(quat, centroid, class_name, bbox_width, bbox_height)
  
 			# Create Detection3D message
 			detection = Detection3D()
