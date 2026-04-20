@@ -94,7 +94,7 @@
           yaw: 0.001
         pose:
           x: -1.6
-          y: -1.0
+          y: 1.0
           z: 0.0
           yaw: 0.0
       slalom_back:
@@ -106,7 +106,7 @@
           yaw: 0.001
         pose:
           x: -3.2
-          y: 0.0
+          y: 0.3
           z: 0.0
           yaw: 0.0
       torpedo:
