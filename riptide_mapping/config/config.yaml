@@ -33,10 +33,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 0.0
-          y: 50.0
+          x: 2.0
+          y: 0.0
           z: -0.8
-          yaw: 180.0
+          yaw: 0.0
       gate_reefshark:
         parent: gate_frame
         covar:
@@ -48,7 +48,7 @@
           x: 0.0
           y: 0.5
           z: 0.0
-          yaw: 0.0
+          yaw: 180.0
       gate_sawfish:
         parent: gate_frame
         covar:
@@ -60,7 +60,7 @@
           x: 0.0
           y: -0.5
           z: 0.0
-          yaw: 0.0
+          yaw: 180.0
       slalom_parent:
         parent: map
         covar:
@@ -69,10 +69,10 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -2.0
+          x: 4.5
           y: 0.0
           z: -2.25
-          yaw: 0.0
+          yaw: 180.0
       slalom_front:
         parent: slalom_parent_frame
         covar:
@@ -93,8 +93,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -1.6
-          y: 1.0
+          x: -2.0
+          y: -1.0
           z: 0.0
           yaw: 0.0
       slalom_back:
@@ -105,8 +105,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -3.2
-          y: 0.3
+          x: -4.0
+          y: 0.0
           z: 0.0
           yaw: 0.0
       torpedo:
@@ -117,10 +117,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: -20.0
-          y: 0.0
-          z: -4.0
-          yaw: 0.0
+          x: 12.0
+          y: 4.0
+          z: -3.0
+          yaw: 180.0
       torpedo_shark_hole:
         parent: torpedo_frame
         covar:
@@ -153,8 +153,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 23.0
-          y: -1.3
+          x: 11.0
+          y: -6.0
           z: -3.25
           yaw: 0.0
       
@@ -168,9 +168,9 @@
           yaw: 0.001
         pose:
           x: 4.0
-          y: 5.0
-          z: -0.78
-          yaw: 90.0
+          y: -8.0
+          z: -3.25
+          yaw: 180.0
       table_reefshark:
         parent: table_frame
         covar:
