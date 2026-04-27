@@ -39,7 +39,8 @@ class YOLONode(Node):
 				('ffc_iou', 0.9),
 				('dfc_iou', 0.9),
 				('robot_namespace', 'talos'),
-				('torp_top', 'saw')
+				('torp_top', 'saw'),
+				('bin_target', 'bin_saw')
 			]
 		)
 
@@ -121,6 +122,7 @@ class YOLONode(Node):
 		self.torpedo_top_hole = None
 		self.torpedo_bottom_hole = None
 		self.slalom_name = 'slalom_front'
+		self.bin_target = self.get_parameter('bin_target').get_parameter_value().string_value
 
 		# tf stuff
 		self.tf_buffer = Buffer()
@@ -1295,7 +1297,7 @@ class YOLONode(Node):
 					self.mapping_map_quat = quat
 					#class_name == "gate_sawfish"
 					class_name = "torpedo"
-				elif class_name == "buoy":
+				elif class_name == self.bin_target:
 					class_name = "bin_target"
 				elif class_name in ["torpedo_shark_top", "torpedo_saw_top"]:
 					self.torpedo_centroid = centroid
