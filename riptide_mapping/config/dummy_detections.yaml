@@ -10,7 +10,7 @@
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
         max_dist: 4.5 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      gate_reefshark:
+      gate_shark:
         pose: [2.0, 0.5, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
@@ -18,7 +18,7 @@
         pub_invalid_orientation: false
         min_dist: 0.25
         max_dist: 3.5
-      gate_sawfish:
+      gate_saw:
         pose: [2.0, -0.5, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8

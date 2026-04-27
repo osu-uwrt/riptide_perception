@@ -37,7 +37,7 @@
           y: 0.0
           z: -0.8
           yaw: 0.0
-      gate_reefshark:
+      gate_shark:
         parent: gate_frame
         covar:
           x: 1.0
@@ -49,7 +49,7 @@
           y: 0.5
           z: 0.0
           yaw: 180.0
-      gate_sawfish:
+      gate_saw:
         parent: gate_frame
         covar:
           x: 1.0

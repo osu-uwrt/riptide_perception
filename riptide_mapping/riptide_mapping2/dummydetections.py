@@ -27,8 +27,8 @@ CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707) # makes orientation
 
 objects = [
     "gate",
-    "gate_reefshark",
-    "gate_sawfish",
+    "gate_shark",
+    "gate_saw",
     "slalom_front",
     "slalom_middle",
     "slalom_back",

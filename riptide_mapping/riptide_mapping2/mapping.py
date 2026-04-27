@@ -54,8 +54,8 @@ class MappingNode(Node):
 
         self.objects = {
             "gate": dict(),
-            "gate_reefshark": dict(),
-            "gate_sawfish": dict(),
+            "gate_shark": dict(),
+            "gate_saw": dict(),
             "slalom_parent": dict(),
             "slalom_front": dict(),
             "slalom_middle": dict(),
@@ -189,8 +189,8 @@ class MappingNode(Node):
         
         closest_object = self.closest_object(detections)
         
-        for det in detections.detections:
-            self.get_logger().info(f"slalomi: {det}")
+        # for det in detections.detections:
+        #     self.get_logger().info(f"slalomi: {det}")
         
         # if no target object set, use closest
         closest_or_target = closest_object if self.target_object == "" else self.target_object
