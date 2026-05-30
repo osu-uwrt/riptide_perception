@@ -76,12 +76,10 @@ class MappingNode(Node):
         }
         
         self.downwards_objects = {
-            "bin_target": dict(),
-            "table_basket_pink": dict(),
-            "table_basket_yellow": dict(),
-            
-            "table_spoon_pink": dict(),
-            "table_bottle_yellow": dict()
+            "nut_and_bolt": dict(),
+            "bandage": dict(),
+            "fire": dict(),
+            "blood": dict(),
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []
@@ -275,11 +273,15 @@ class MappingNode(Node):
 
         trans_pose = do_transform_pose_stamped(pose, transform)
         
-        if result.hypothesis.class_id in self.downwards_objects.keys() or "slalom" in result.hypothesis.class_id: # and parent == "map":
+        
+        if result.hypothesis.class_id in self.downwards_objects.keys(): # and parent == "map":
             trans_pose.pose.orientation.x = 0.0
             trans_pose.pose.orientation.y = 0.0
             trans_pose.pose.orientation.z = 0.0
             trans_pose.pose.orientation.w = 1.0
+
+        if "slalom" in result.hypothesis.class_id:
+            update_orientation = False
         
         object_location: Location = self.objects[child]["location"]
         object_location.add_pose(trans_pose.pose, update_position, update_orientation)
