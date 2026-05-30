@@ -33,19 +33,22 @@
     # ffc_model: "rs26_gen2.pt"
     ffc_model: "rs25_3_4_26.pt"
     ffc_class_id_map: "{
-      0: 'bin',
-      1: 'bin_saw',
-      2: 'bin_shark',
-      3: 'torpedo_shark_top',
-      4: 'torpedo_saw_top',
-      5: 'bin_pink',
-      6: 'bin_yellow',
-      7: 'bottle_yellow',
-      8: 'gate_saw',
-      9: 'gate_shark',
-      10: 'slalom_red',
-      11: 'spoon_pink',
-      12: 'torpedo_hole'
+      0: 'ambulance',
+      1: 'bandage',
+      2: 'blood',
+      3: 'buoy',
+      4: 'compass',
+      5: 'circle'
+      6: 'fire',
+      7: 'fire_engine',
+      8: 'hammer_and_wrench',
+      9: 'helmet',
+      10: 'nut_and_bolt',
+      11: 'pill',
+      12: 'plug',
+      13: 'slalom'
+      14: 'sos',
+      15: 'warning'
     }"
     # ffc_class_id_map: "{
     #   0: 'ambulance',
@@ -71,20 +74,14 @@
     # dfc_model: "rs25_3_4_26.pt" # new rotationally invariant model
     # dfc_model: "rs25_8_15_1_BIN.pt" # New rotationally invariant version with dropout
     dfc_class_id_map: "{
-      0: 'ambulance',
       1: 'bandage',
       2: 'blood',
-      3: 'buoy',
-      4: 'compass',
-      5: 'fire',
-      6: 'fire_engine',
-      7: 'hammer_and_wrench',
-      8: 'helmet',
-      9: 'nut_and_bolt',
-      10: 'pill',
-      11: 'plug',
-      12: 'sos',
-      13: 'warning'
+      6: 'fire',
+      9: 'helmet',
+      10: 'nut_and_bolt',
+      11: 'pill',
+      12: 'plug',
+      15: 'warning'
     }"
     # dfc_class_id_map: "{
     #   0: 'bin',
