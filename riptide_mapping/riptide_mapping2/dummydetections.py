@@ -13,6 +13,7 @@ import rclpy.time
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Quaternion
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from std_msgs.msg import Header
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -25,18 +26,6 @@ from vision_msgs.msg import (Detection3D, Detection3DArray,
 TOPIC_NAME = "detected_objects"
 CAMERA_ROTATION = tf3d.euler.euler2quat(-1.5707, 0, -1.5707) # makes orientations agree with camera
 
-objects = [
-    "gate",
-    "gate_shark",
-    "gate_saw",
-    "slalom_front",
-    "slalom_middle",
-    "slalom_back",
-    "torpedo",
-    "torpedo_shark_hole",
-    "torpedo_sawfish_hole",
-    "bin_target",
-]
 
 config = {}
 
@@ -63,7 +52,7 @@ class DummyDetectionNode(Node):
         self.pubs        = [ ]
         self.srv = self.create_service(SetBool, 'set_camera_is_dfc', self.setActiveCameraCb)
 
-        for object in objects:
+        for object in self.objects:
             self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{object}", 10))
 
         self.smoothed_slalom_dist = 3.0
@@ -75,6 +64,7 @@ class DummyDetectionNode(Node):
     def declareParams(self):
         self.declare_parameter("timer_period", 0.0)
         self.declare_parameter("simulate_pool", False)
+        self.declare_parameter("objects", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("forward_camera_hfov", 60)
         self.declare_parameter("forward_camera_vfov", 40)
         self.declare_parameter("forward_camera_frame", "stereo/left_link")
@@ -84,16 +74,19 @@ class DummyDetectionNode(Node):
         self.declare_parameter("downward_camera_frame", "downward_link")
         self.declare_parameter("downward_camera_pub_frame", "downward_link")
         
-        for object in objects:
+        for object in self.objects:
+            self.declare_parameter(f"detection_data.{object}.class_id", object)
             self.declare_parameter(f"detection_data.{object}.pose", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             self.declare_parameter(f"detection_data.{object}.noise", 0.0)
             self.declare_parameter(f"detection_data.{object}.score", 0.0)
             self.declare_parameter(f"detection_data.{object}.downward", False)
             self.declare_parameter(f"detection_data.{object}.publish_invalid_orientation", False)
+            self.declare_parameter(f"detection_data.{object}.pub_invalid_orientation", False)
             self.declare_parameter(f"detection_data.{object}.min_dist", 0.0)
             self.declare_parameter(f"detection_data.{object}.max_dist", 0.0)   
         
-    
+        self.objects = list(self.get_parameter("objects").value)
+        
     #TODO: UPDATE ALL THE OTHER NON OBJECT PARAMS LIKE SIMULATE_POOL
     def updateParams(self, params):
         for param in params: #set timer to new rate if there is a new rate to set
@@ -214,14 +207,17 @@ class DummyDetectionNode(Node):
         forwardsDetectArray.header = fwdHeader
         downwardsDetectArray.header = dwdHeader
         
-        for i in range(0, len(objects)):
-            objectName = objects[i]
+        for i in range(0, len(self.objects)):
+            objectName = self.objects[i]
             self.get_logger().debug(f"Processing dummy detection for {objectName}")
             
             poseArr = self.get_parameter(f"detection_data.{objectName}.pose").value # this pose is in map frame
             noise = self.get_parameter(f"detection_data.{objectName}.noise").value
             score = self.get_parameter(f"detection_data.{objectName}.score").value
-            publishInvalid = self.get_parameter(f"detection_data.{objectName}.publish_invalid_orientation").value
+            # This is funny so I kept it
+            publishInvalid = self.get_parameter(f"detection_data.{objectName}.publish_invalid_orientation").value or \
+                self.get_parameter(f"detection_data.{objectName}.pub_invalid_orientation").value
+            classId = self.get_parameter(f"detection_data.{objectName}.class_id").value
             
             self.get_logger().debug(f"Object name: {objectName}")
             
@@ -303,7 +299,7 @@ class DummyDetectionNode(Node):
                     #
                     
                     hypothesis = ObjectHypothesisWithPose()
-                    hypothesis.hypothesis.class_id = objectName
+                    hypothesis.hypothesis.class_id = classId
                     hypothesis.hypothesis.score = score
                     hypothesis.pose.pose = framePose
                                         

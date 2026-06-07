@@ -1,6 +1,26 @@
 /**/dummydetections:
   ros__parameters:
     timer_period: 0.05
+    objects:
+      - gate
+      - gate_shark
+      - gate_saw
+      - slalom_front
+      - slalom_middle
+      - slalom_back
+      - torpedo
+      - torpedo_shark_hole
+      - torpedo_sawfish_hole
+      - bin_target
+      - blood_1
+      - blood_2
+      - table
+      - table_reefshark
+      - table_sawfish
+      - table_basket_pink
+      - table_basket_yellow
+      - table_spoon_pink
+      - table_bottle_yellow
     detection_data:
       gate:
         pose: [2.0, 0.0, -0.8, 0.0, 0.0, 0.0]
@@ -31,7 +51,7 @@
         noise: 0.1
         score: 0.8
         downward: false
-        pub_invalid_orientation: false
+        pub_invalid_orientation: true
         min_dist: 0.5
         max_dist: 3.0
       slalom_middle:
@@ -76,6 +96,24 @@
         max_dist: 3.0
       bin_target:
         pose: [11.0, -6.0, -3.25, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      blood_1:
+        class_id: blood
+        pose: [4.0, -3.0, -3.25, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      blood_2:
+        class_id: blood
+        pose: [4.7, -3.5, -3.25, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true

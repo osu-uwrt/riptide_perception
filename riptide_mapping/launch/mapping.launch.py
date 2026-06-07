@@ -51,6 +51,11 @@ def generate_launch_description():
             default_value=[LC('config'), ".yaml"]
         ),
 
+        DeclareLaunchArgument(
+            "binary_classifier_yaml",
+            default_value="binary_classifier.yaml"
+        ),
+        
         GroupAction([
             PushRosNamespace(
                 LC("robot")
@@ -69,6 +74,10 @@ def generate_launch_description():
                     PathJoinSubstitution([
                         config_dir,
                         LC("config_yaml")
+                    ]),
+                    PathJoinSubstitution([
+                        config_dir, 
+                        LC("binary_classifier_yaml")
                     ])
                 ]
             ),

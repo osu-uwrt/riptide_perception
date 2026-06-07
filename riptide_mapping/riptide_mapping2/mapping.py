@@ -7,10 +7,11 @@ from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
 from rclpy.time import Time
 
 from std_msgs.msg import Header, Int8
-from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point
+from std_srvs.srv import Trigger
+from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point, PoseStamped
 from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
-from riptide_msgs2.srv import MappingTarget
+from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier
 from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 
 import tf2_ros
@@ -19,6 +20,7 @@ from tf2_ros import TransformException, TransformStamped
 from transforms3d.euler import euler2quat
 
 from location import Location
+from binary_classifier import BinaryClassifier, DetectionSample
 
 from tf2_msgs.msg import TFMessage
 import math
@@ -37,10 +39,11 @@ class TransformListenerWithHook(tf2_ros.TransformListener):
 
 
 class OutstandingDetectionInfo:
-    def __init__(self, det_result: ObjectHypothesisWithPose, det_header: Header, closest_object: str):
+    def __init__(self, det_result: ObjectHypothesisWithPose, det_header: Header, closest_object: str, binary_classifier_detection=False):
         self.det_result = det_result
         self.det_header = det_header
         self.closest_object = closest_object
+        self.binary_classifier_detection = binary_classifier_detection
         
 
 # Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
@@ -63,7 +66,9 @@ class MappingNode(Node):
             "torpedo": dict(),
             "torpedo_shark_hole": dict(),
             "torpedo_sawfish_hole": dict(),
-            "bin_target": dict(),
+            "bin": dict(),
+            "bin_target1": dict(),
+            "bin_target2": dict(),
             "table": dict(),
             "table_reefshark": dict(),
             "table_sawfish": dict(),
@@ -76,12 +81,12 @@ class MappingNode(Node):
         }
         
         self.downwards_objects = {
-            "bin_target": dict(),
-            "table_basket_pink": dict(),
-            "table_basket_yellow": dict(),
-            
-            "table_spoon_pink": dict(),
-            "table_bottle_yellow": dict()
+            "pill": dict(),
+            "plug": dict(),
+            "nut_and_bolt": dict(),
+            "bandage": dict(),
+            "fire": dict(),
+            "blood": dict(),
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []
@@ -99,7 +104,8 @@ class MappingNode(Node):
                     ('init_data.{}.covar.x'.format(object), 1.0),
                     ('init_data.{}.covar.y'.format(object), 1.0),
                     ('init_data.{}.covar.z'.format(object), 1.0),
-                    ('init_data.{}.covar.yaw'.format(object), 1.0)
+                    ('init_data.{}.covar.yaw'.format(object), 1.0),
+                    ('init_data.{}.lock_orientation_to_config'.format(object), False),
                 ]
             )
         
@@ -124,18 +130,76 @@ class MappingNode(Node):
         self.target_object = ""
         self.lock_map = False
         self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+        self.binary_classifier = BinaryClassifier(self)
 
         self.add_on_set_parameters_callback(self.param_callback)
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
-        self.create_service(MappingTarget, "mapping_target", self.target_callback)
+        self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
+        self.create_service(Trigger, "~/reset_mapping", self.reset_mapping_callback)
+
+        # binary classifier services (resolve under this nodes ns)
+        self.create_service(StartBinaryClassifier, "~/start_binary_classifier", self.start_binary_classifier_callback)
+        self.create_service(Trigger, "~/freeze_binary_classifier_buffer", self.freeze_binary_classifier_buffer_callback)
+        self.create_service(Trigger, "~/start_binary_classifier_second", self.start_binary_classifier_second_callback)
+        self.create_service(Trigger, "~/stop_binary_classifier", self.stop_binary_classifier_callback)
+
         self.led_pulse_pub = self.create_publisher(LedCommand, "command/led", qos_profile_system_default)
         
         self.last_pub_time = Time()
         self.publish_pose()
         self.publish_timer = self.create_timer(0.125, self.update_oustanding_items)
         
-        
+    def reset_runtime_state(self):
+        # Reset all configured map objects back to init_data params.
+        # This also clears each Location's internal sample buffer because create_location() constructs a new Location object
+        for object_name in self.objects.keys():
+            self.create_location(object_name)
+
+        # Reset global map drift/offset buffer
+        self.offset = Location(
+            Point(),
+            Vector3(),
+            int(self.get_parameter("buffer_size").value),
+            tuple(self.get_parameter("quantile").value),
+        )
+
+        # Drop queued detections waiting on TF
+        self.outstanding_detections.clear()
+
+        # Stop/clear binary classifier state
+        try:
+            self.binary_classifier.stop()
+        except Exception as ex:
+            self.get_logger().warning(f"Binary classifier stop during reset failed: {ex}")
+
+        # Reset mapping mode
+        self.target_object = ""
+        self.lock_map = False
+
+        # Immediately publish reset topics/TF/status
+        self.publish_pose()
+
+    def reset_mapping_callback(self, request: Trigger.Request, response: Trigger.Response):
+        self.get_logger().info("Resetting mapping runtime state to init_data")
+        self.reset_runtime_state()
+
+        response.success = True
+        response.message = "Mapping reset to init_data"
+        return response
+    
+    def pulse_detection_led(self, red=0, green=255, blue=0):
+        # Pulse LEDs to indicate a detection was received
+        ledPulse = LedCommand()
+        ledPulse.target = LedCommand.TARGET_ALU
+        ledPulse.mode = LedCommand.SINGLETON_FLASH
+
+        ledPulse.red = red
+        ledPulse.green = green
+        ledPulse.blue = blue
+
+        self.led_pulse_pub.publish(ledPulse)
+
     def create_location(self, object: str):
         #create the Location object using two vector3s describing coordinates and euler rotation
         xyz = Point()
@@ -183,14 +247,145 @@ class MappingNode(Node):
 
         return response
 
+    def start_binary_classifier_callback(self, request: StartBinaryClassifier.Request, response: StartBinaryClassifier.Response):
+        class_name = str(request.class_name).strip()
+        target1 = str(request.frame1_name).strip()
+        target2 = str(request.frame2_name).strip()
+
+        if self.binary_classifier.running:
+            response.success = False
+            response.message = "BinaryClassifier is already running"
+            return response
+
+        if class_name == "":
+            response.success = False
+            response.message = "class_name cannot be empty"
+            return response
+
+        if class_name not in self.objects.keys() and class_name not in self.downwards_objects.keys():
+            response.success = False
+            response.message = f"Unknown class_name {class_name}"
+            return response
+
+        # both instance targets are caller-supplied; they must be real mapping objects we can publish/seed
+        if target1 not in self.objects.keys() or target2 not in self.objects.keys():
+            response.success = False
+            response.message = f"instance targets must exist in mapping objects (got '{target1}', '{target2}')"
+            return response
+
+        success, message = self.binary_classifier.start(
+            class_name,
+            target1,
+            target2,
+        )
+
+        if not success:
+            response.success = False
+            response.message = message
+            return response
+
+        self.objects[target1]["location"].reset()
+        self.objects[target2]["location"].reset()
+
+        self.target_object = target1
+        self.lock_map = False
+        self.offset.cool_buffer()
+        self.outstanding_detections.clear()
+
+        response.success = True
+        response.message = message
+        self.get_logger().info(message)
+        return response
+
+    def freeze_binary_classifier_buffer_callback(self, request: Trigger.Request, response: Trigger.Response):
+        # Freeze the classifier buffer while autonomy goes to do the first task, so the
+        # second-instance detections already gathered survive the short TTL. Unfrozen by start_second.
+        success, message = self.binary_classifier.freeze_buffer()
+
+        if success:
+            self.get_logger().info(message)
+        else:
+            self.get_logger().warning(message)
+
+        response.success = success
+        response.message = message
+        return response
+
+    def start_binary_classifier_second_callback(self, request: Trigger.Request, response: Trigger.Response):
+        success, message = self.binary_classifier.start_second()
+
+        if success:
+            # If start_second locked instance 2 from the (preserved) buffer, publish it now as a TF for autonomy to navigate to, 
+            # but high covariance so it isn't treated as confirmed.
+            if self.binary_classifier.second_locked:
+                self.seed_object_estimate(self.binary_classifier.instance2_name, self.binary_classifier.instance2_centroid)
+                self.publish_pose()
+            else:
+                self.get_logger().info("start_second: no buffered cluster yet, will lock on live detection")
+
+            self.get_logger().info(message)
+        else:
+            self.get_logger().warning(message)
+
+        response.success = success
+        response.message = message
+        return response
+
+    def stop_binary_classifier_callback(self, request: Trigger.Request, response: Trigger.Response):
+        success, message = self.binary_classifier.stop()
+
+        if success:
+            self.target_object = ""
+            self.outstanding_detections.clear()
+            self.get_logger().info(message)
+        else:
+            self.get_logger().warning(message)
+
+        response.success = success
+        response.message = message
+        return response
+
+    def seed_object_estimate(self, child: str, centroid_map):
+        # Seed a map-parented object's pose so both its Location and TF frame land on the same centroid.
+        # Rebuilt Location stays soft/unwarmed (cov=1.0) until its buffer fills.
+        if child not in self.objects.keys():
+            self.get_logger().error(f"seed_object_estimate: unknown object {child}")
+            return
+
+        offset_pos = self.offset.get_pose().pose.position
+
+        cx = float(centroid_map[0])
+        cy = float(centroid_map[1])
+        cz = float(centroid_map[2])
+
+        # rebuild Location centered on the centroid -> topic position = centroid, cov = soft 1.0
+        xyz = Point(x=cx, y=cy, z=cz)
+        rpy = Vector3()  # no orientation from the classifier, leave identity
+        self.objects[child]["location"] = Location(
+            xyz, rpy,
+            int(self.get_parameter("buffer_size").value),
+            tuple(self.get_parameter("quantile").value),
+        )
+
+        # TF init_pose cancels the shared offset so map -> offset -> child lands on the centroid
+        init_pose = Pose()
+        init_pose.position.x = cx - offset_pos.x
+        init_pose.position.y = cy - offset_pos.y
+        init_pose.position.z = cz - offset_pos.z
+        init_pose.orientation.w = 1.0
+        self.objects[child]["init_pose"] = init_pose
+
     def vision_callback(self, detections: Detection3DArray):
         if self.lock_map:
             return
         
-        closest_object = self.closest_object(detections)
+        # Bypass normal mapping behavior for binary classifier
+        if self.binary_classifier.running:
+            self.handle_binary_classifier_detections(detections)
+            self.publish_pose()
+            return
         
-        # for det in detections.detections:
-        #     self.get_logger().info(f"slalomi: {det}")
+        closest_object = self.closest_object(detections)
         
         # if no target object set, use closest
         closest_or_target = closest_object if self.target_object == "" else self.target_object
@@ -217,12 +412,7 @@ class MappingNode(Node):
                 self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
                 continue
             
-            # Pulse LEDs to indicate a detection was received
-            ledPulse = LedCommand()
-            ledPulse.target = LedCommand.TARGET_ALU
-            ledPulse.mode = LedCommand.SINGLETON_FLASH
-            ledPulse.green = 255
-            self.led_pulse_pub.publish(ledPulse)
+            self.pulse_detection_led()
             
             # update pose of object in map
             update_success, _ = self.try_update_pose(result, detections.header, closest_object)
@@ -230,7 +420,28 @@ class MappingNode(Node):
                 self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
             
         self.publish_pose()
-    
+
+    def handle_binary_classifier_detections(self, detections: Detection3DArray):
+        for detection in detections.detections:
+            result_ids = [r.hypothesis.class_id for r in detection.results]
+
+            try:
+                result_idx = result_ids.index(self.binary_classifier.class_name)
+            except ValueError:
+                continue
+
+            result = detection.results[result_idx]
+
+            if result.hypothesis.score < float(self.get_parameter("confidence_cutoff").value):
+                self.get_logger().info(f"Rejecting detection of {result.hypothesis.class_id} because confidence {result.hypothesis.score} is too low")
+                continue
+
+            self.pulse_detection_led()
+
+            update_success, _ = self.try_update_binary_classifier_pose(result, detections.header)
+
+            if not update_success:
+                self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, "", True))
     
     def update_outstanding_detections(self):
         current_time = self.get_clock().now()
@@ -239,7 +450,17 @@ class MappingNode(Node):
             elapsed_nanoseconds = current_time.nanoseconds - (outstanding.det_header.stamp.sec * 1e9) - outstanding.det_header.stamp.nanosec
             elapsed_seconds = elapsed_nanoseconds / float(1e9)
             
-            update_success, error_msg = self.try_update_pose(outstanding.det_result, outstanding.det_header, outstanding.closest_object)
+            if outstanding.binary_classifier_detection:
+                if self.binary_classifier.running:
+                    update_success, error_msg = self.try_update_binary_classifier_pose(outstanding.det_result, outstanding.det_header)
+                    now_sec = float(self.get_clock().now().nanoseconds) / 1e9
+                    self.binary_classifier.age_buffer(now_sec)
+                else:
+                    update_success = True
+                    error_msg = "BinaryClassifier stopped"
+            else:
+                update_success, error_msg = self.try_update_pose(outstanding.det_result, outstanding.det_header, outstanding.closest_object)
+
             if not update_success and not elapsed_seconds > STALE_TIME:     
                 oustanding_detections_remaining.append(outstanding)
             
@@ -249,12 +470,10 @@ class MappingNode(Node):
                 
         self.outstanding_detections = oustanding_detections_remaining
     
-    
-    def try_update_pose(self, result: ObjectHypothesisWithPose, detection_header: Header, closest_object: str):        
+    def transform_detection_to_object_parent(self, result: ObjectHypothesisWithPose, detection_header: Header, child: str):
         # We have a transform from camera to child we need to transform so
         # that we have a transform from parrent to child
-        parent: str = str(self.get_parameter("init_data.{}.parent".format(result.hypothesis.class_id)).value)
-        child: str = result.hypothesis.class_id
+        parent: str = str(self.get_parameter("init_data.{}.parent".format(child)).value)
 
         # Get the pose that is a transform from camera to child
         pose: PoseWithCovariance = result.pose
@@ -266,20 +485,27 @@ class MappingNode(Node):
                 detection_header.stamp
             )
         except TransformException as ex:
-            return False, str(ex)            
-
-        # If the current object isnt the closest object and its parent is map we
-        # aren't going to track its location in favor of offsetting the entire map
-        update_position = True
-        update_orientation = True
+            return False, None, None, str(ex)
 
         trans_pose = do_transform_pose_stamped(pose, transform)
-        
-        if result.hypothesis.class_id in self.downwards_objects.keys() or "slalom" in result.hypothesis.class_id: # and parent == "map":
+        if result.hypothesis.class_id in self.downwards_objects.keys():
             trans_pose.pose.orientation.x = 0.0
             trans_pose.pose.orientation.y = 0.0
             trans_pose.pose.orientation.z = 0.0
             trans_pose.pose.orientation.w = 1.0
+
+        return True, trans_pose, parent, ""
+
+    def update_object_with_pose(self, trans_pose, parent: str, child: str, closest_object: str):
+        if not child in self.objects.keys():
+            return False, f"Unknown mapping object {child}"
+
+        update_position = True
+        update_orientation = True
+
+        # These objects keep their orientation from config (detection yaw is unreliable)
+        if bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(child)).value):
+            update_orientation = False
         
         object_location: Location = self.objects[child]["location"]
         object_location.add_pose(trans_pose.pose, update_position, update_orientation)
@@ -299,8 +525,80 @@ class MappingNode(Node):
             self.offset.add_pose(offset_pose, True, False)
         
         return True, ""
-    
-                    
+
+    def try_update_pose(self, result: ObjectHypothesisWithPose, detection_header: Header, closest_object: str):        
+        child: str = result.hypothesis.class_id
+
+        update_success, trans_pose, parent, error_msg = self.transform_detection_to_object_parent(
+            result,
+            detection_header,
+            child,
+        )
+
+        if not update_success:
+            return False, error_msg
+
+        return self.update_object_with_pose(
+            trans_pose,
+            parent,
+            child,
+            closest_object,
+        )
+
+    def try_update_binary_classifier_pose(self, result: ObjectHypothesisWithPose, detection_header: Header):
+        common_target = self.binary_classifier.instance1_name
+
+        update_success, trans_pose, parent, error_msg = self.transform_detection_to_object_parent(
+            result,
+            detection_header,
+            common_target,
+        )
+
+        if not update_success:
+            return False, error_msg
+
+        stamp_sec = float(detection_header.stamp.sec) + float(detection_header.stamp.nanosec) / float(1e9)
+        now_sec = float(self.get_clock().now().nanoseconds) / float(1e9)
+
+        sample = DetectionSample(
+            trans_pose.pose.position.x,
+            trans_pose.pose.position.y,
+            trans_pose.pose.position.z,
+            result.hypothesis.score,
+            stamp_sec,
+        )
+
+        assignment = self.binary_classifier.observe(sample, now_sec)
+
+        if not assignment.accepted:
+            self.get_logger().debug(f"Binary classifier rejected sample: {assignment.reason}")
+            return True, assignment.reason
+
+        child: str = assignment.target_name
+
+        if not child in self.objects.keys():
+            return False, f"BinaryClassifier assigned unknown target {child}"
+
+        child_parent: str = str(self.get_parameter("init_data.{}.parent".format(child)).value)
+
+        # If both binary targets share the same parent, reuse the already-transformed pose
+        if child_parent != parent:
+            update_success, trans_pose, parent, error_msg = self.transform_detection_to_object_parent(
+                result,
+                detection_header,
+                child,
+            )
+
+            if not update_success:
+                return False, error_msg
+
+        return self.update_object_with_pose(
+            trans_pose,
+            parent,
+            child,
+            "",
+        )
+               
     def closest_object(self, detections: Detection3DArray) -> str:
         object = ""
         closest_dist: float = 1000
