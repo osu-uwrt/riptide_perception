@@ -136,13 +136,13 @@ class MappingNode(Node):
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
-        self.create_service(Trigger, "~/reset_mapping", self.reset_mapping_callback)
+        self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
 
         # binary classifier services (resolve under this nodes ns)
-        self.create_service(StartBinaryClassifier, "~/start_binary_classifier", self.start_binary_classifier_callback)
-        self.create_service(Trigger, "~/freeze_binary_classifier_buffer", self.freeze_binary_classifier_buffer_callback)
-        self.create_service(Trigger, "~/start_binary_classifier_second", self.start_binary_classifier_second_callback)
-        self.create_service(Trigger, "~/stop_binary_classifier", self.stop_binary_classifier_callback)
+        self.create_service(StartBinaryClassifier, "mapping/start_binary_classifier", self.start_binary_classifier_callback)
+        self.create_service(Trigger, "mapping/freeze_binary_classifier_buffer", self.freeze_binary_classifier_buffer_callback)
+        self.create_service(Trigger, "mapping/start_binary_classifier_second", self.start_binary_classifier_second_callback)
+        self.create_service(Trigger, "mapping/stop_binary_classifier", self.stop_binary_classifier_callback)
 
         self.led_pulse_pub = self.create_publisher(LedCommand, "command/led", qos_profile_system_default)
         
