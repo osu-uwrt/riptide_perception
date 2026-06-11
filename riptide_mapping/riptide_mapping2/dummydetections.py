@@ -62,9 +62,11 @@ class DummyDetectionNode(Node):
         
         
     def declareParams(self):
+        self.declare_parameter("objects", Parameter.Type.STRING_ARRAY)
+        self.objects = list(self.get_parameter("objects").value)
+        
         self.declare_parameter("timer_period", 0.0)
         self.declare_parameter("simulate_pool", False)
-        self.declare_parameter("objects", Parameter.Type.STRING_ARRAY)
         self.declare_parameter("forward_camera_hfov", 60)
         self.declare_parameter("forward_camera_vfov", 40)
         self.declare_parameter("forward_camera_frame", "stereo/left_link")
@@ -84,9 +86,8 @@ class DummyDetectionNode(Node):
             self.declare_parameter(f"detection_data.{object}.pub_invalid_orientation", False)
             self.declare_parameter(f"detection_data.{object}.min_dist", 0.0)
             self.declare_parameter(f"detection_data.{object}.max_dist", 0.0)   
-        
-        self.objects = list(self.get_parameter("objects").value)
-        
+
+
     #TODO: UPDATE ALL THE OTHER NON OBJECT PARAMS LIKE SIMULATE_POOL
     def updateParams(self, params):
         for param in params: #set timer to new rate if there is a new rate to set
