@@ -434,6 +434,7 @@ class BinaryClassifier:
 
     def buffer_size(self):
         return self.samples.c
+    
     def distance(self, point_a, point_b):
         return float(numpy.linalg.norm(self.metric_point(point_a) - self.metric_point(point_b)))
 
