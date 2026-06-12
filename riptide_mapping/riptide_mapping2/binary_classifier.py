@@ -102,6 +102,8 @@ class BinaryClassifier:
         return "{}.{}".format(self.param_namespace, name)
 
     def declare_params(self):
+        if self.node is None:
+            return
         # defaults come from the shared DEFAULTS dict; the launch-provided yaml overrides them
         self.node.declare_parameters(
             namespace="",
@@ -431,9 +433,6 @@ class BinaryClassifier:
             [sample for sample in self.samples if now_sec - sample.stamp_sec <= self.params.buffer_ttl_sec],
             maxlen=max(1, self.params.buffer_size),
         )
-
-    def buffer_size(self):
-        return self.samples.c
     
     def distance(self, point_a, point_b):
         return float(numpy.linalg.norm(self.metric_point(point_a) - self.metric_point(point_b)))
