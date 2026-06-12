@@ -249,8 +249,8 @@ class MappingNode(Node):
 
     def start_binary_classifier_callback(self, request: StartBinaryClassifier.Request, response: StartBinaryClassifier.Response):
         class_name = str(request.class_name).strip()
-        target1 = str(request.frame1_name).strip()
-        target2 = str(request.frame2_name).strip()
+        target1 = str(request.object1_name).strip()
+        target2 = str(request.object2_name).strip()
 
         if self.binary_classifier.running:
             response.success = False
