@@ -132,6 +132,10 @@ class MappingNode(Node):
         self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
         self.binary_classifier = BinaryClassifier(self)
 
+        # Store seeds (which move tf and reset cov once we enter tracking)
+        self.instance1_seeded = False
+        self.instance2_seeded = False
+
         self.add_on_set_parameters_callback(self.param_callback)
         self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
@@ -176,6 +180,8 @@ class MappingNode(Node):
         # Reset mapping mode
         self.target_object = ""
         self.lock_map = False
+        self.instance1_seeded = False
+        self.instance2_seeded = False
 
         # Immediately publish reset topics/TF/status
         self.publish_pose()
@@ -287,6 +293,9 @@ class MappingNode(Node):
         self.objects[target1]["location"].reset()
         self.objects[target2]["location"].reset()
 
+        self.instance1_seeded = False
+        self.instance2_seeded = False
+
         self.target_object = target1
         self.lock_map = False
         self.offset.cool_buffer()
@@ -319,6 +328,7 @@ class MappingNode(Node):
             # but high covariance so it isn't treated as confirmed.
             if self.binary_classifier.second_locked:
                 self.seed_object_estimate(self.binary_classifier.instance2_name, self.binary_classifier.instance2_centroid)
+                self.instance2_seeded = True
                 self.publish_pose()
             else:
                 self.get_logger().info("start_second: no buffered cluster yet, will lock on live detection")
@@ -345,6 +355,20 @@ class MappingNode(Node):
         response.message = message
         return response
 
+    def maybe_seed_binary_instances(self):
+        # Fire once on each aquire -> track transition
+        # Rebuild the target's Location centered on the classifier centroid so the published pose snaps to the cluster instead of crawling
+        # from the reckoned init pose (needs to only fire once, or cov would never drop)
+        bc = self.binary_classifier
+
+        if bc.first_locked and not self.instance1_seeded:
+            self.seed_object_estimate(bc.instance1_name, bc.instance1_centroid)
+            self.instance1_seeded = True
+
+        if bc.second_locked and not self.instance2_seeded:
+            self.seed_object_estimate(bc.instance2_name, bc.instance2_centroid)
+            self.instance2_seeded = True
+            
     def seed_object_estimate(self, child: str, centroid_map):
         # Seed a map-parented object's pose so both its Location and TF frame land on the same centroid.
         # Rebuilt Location stays soft/unwarmed (cov=1.0) until its buffer fills.
@@ -442,7 +466,9 @@ class MappingNode(Node):
 
             if not update_success:
                 self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, "", True))
-    
+
+        self.maybe_seed_binary_instances()
+
     def update_outstanding_detections(self):
         current_time = self.get_clock().now()
         oustanding_detections_remaining: list[OutstandingDetectionInfo] = []
@@ -455,6 +481,7 @@ class MappingNode(Node):
                     update_success, error_msg = self.try_update_binary_classifier_pose(outstanding.det_result, outstanding.det_header)
                     now_sec = float(self.get_clock().now().nanoseconds) / 1e9
                     self.binary_classifier.age_buffer(now_sec)
+                    self.maybe_seed_binary_instances()
                 else:
                     update_success = True
                     error_msg = "BinaryClassifier stopped"
