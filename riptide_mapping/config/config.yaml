@@ -157,9 +157,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 5.0
-          y: -3.0
-          z: -3.25
+          x: 1.0
+          y: 0.0
+          z: -1.2
           yaw: 0.0
       bin_target1:
         parent: bin_frame
