@@ -57,6 +57,8 @@ class YOLONode(Node):
                 ('export', False),                  # Export model
                 ('print_camera_info', False),
                 ('torpedo_task_camera', 'ffc'),     # Determines which camera will do weird stuff with blood/fire for now (should only be ffc)
+                ('gftt_quality_level', 0.02),   # goodFeaturesToTrack: min corner score vs best (lower = more, noisier)
+                ('gftt_min_distance', 0.0),     # goodFeaturesToTrack: min px between corners (0 = no suppression). MUST BE A FLOAT HERE OR YAML WON'T WORK.
             ]
         )
 
@@ -102,6 +104,8 @@ class YOLONode(Node):
             slalom_history_size=self.get_parameter('slalom_history_size').get_parameter_value().integer_value,
             use_incoming_timestamp=self.use_incoming_timestamp,
             publish_interval=self.publish_interval,
+            gftt_quality_level=self.get_parameter('gftt_quality_level').get_parameter_value().double_value,
+            gftt_min_distance=self.get_parameter('gftt_min_distance').get_parameter_value().double_value,
         )
 
     def create_publishers(self):

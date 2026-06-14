@@ -61,8 +61,6 @@ COLOR_MAP = {
     'pill': (0.7, 0.2, 0.9),
     'plug': (0.0, 0.4, 1.0),
     'warning': (1.0, 0.0, 1.0),
-
-
 }
 
 # Published-name relabels (no class is currently relabeled on publish but good to have)
@@ -100,7 +98,8 @@ class ProcessorConfig:
     slalom_history_size: int = 10
     use_incoming_timestamp: bool = True
     publish_interval: float = 0.1   # also drives marker lifetime
-
+    gftt_quality_level: float = 0.02   # goodFeaturesToTrack corner-score threshold
+    gftt_min_distance: float = 1.0     # goodFeaturesToTrack min px between corners
 
 @dataclass
 class Frame:
@@ -195,11 +194,15 @@ class DetectionProcessor:
         # Route each detection
         # Class specifics are handled, otherwise generic plane/fit
         for result in results:
-            if result is not None and result.boxes is not None:
+            if result is None:
+                continue
+            if result.boxes is not None:
                 for box in result.boxes.cpu().numpy():
                     if box.conf[0] <= frame.conf: # Technically redundant but extra safety check for now
                         continue
-                    class_id = box.cls[0]
+                    # int-cast here so routing keys match create_detection3d_message
+                    # and the int-keyed YAML class map (was a raw numpy float).
+                    class_id = int(box.cls[0])
                     if class_id not in frame.class_id_map:
                         continue
 
@@ -314,38 +317,8 @@ class DetectionProcessor:
         return detection
 
     ### Shared surface fitting
-    def _fit_surface_from_mask(self, frame, masked_gray_image, x_min, y_min,
-                               bbox_center_x, bbox_center_y, conf):
-        """goodFeatures -> 3D points -> plane fit
-
-        Returns (camera-facing normal, centroid at the bbox center projected to plane depth, orientation quat), or None if no reliable plane.
-        This is the default behavior.
-        """
-        good_features = cv2.goodFeaturesToTrack(
-            masked_gray_image, maxCorners=0, qualityLevel=0.02, minDistance=1)
-        if good_features is None:
-            return None
-
-        good_features[:, 0, 0] += x_min
-        good_features[:, 0, 1] += y_min
-        feature_points = [pt[0] for pt in good_features]
-
-        points_3d = self._get_3d_points(frame, feature_points)
-        if points_3d is None or len(points_3d) < self.cfg.min_points:
-            return None
-
-        normal, _, centroid3 = geometry.fit_plane(points_3d)
-        centroid = geometry.pixel_to_3d(bbox_center_x, bbox_center_y, centroid3[2],
-                                        frame.fx, frame.fy, frame.cx, frame.cy)
-        if normal[2] > 0:
-            normal = -normal
-        quat, _ = geometry.normal_to_quaternion(normal, self._default_normal)
-
-        return SurfaceFit(points=points_3d, normal=normal, centroid=centroid,
-                          quat=quat, center2d=(bbox_center_x, bbox_center_y), conf=conf)
-
-    def _fit_bbox(self, bbox, frame, conf):
-        """Generic planar surface fit over an arbitrary bbox: shrink -> masked goodFeatures -> plane fit."""
+    def _extract_bbox_points(self, bbox, frame):
+        """Shrink + mask one bbox, run goodFeatures, back-project to 3D"""
         x_min, y_min, x_max, y_max = map(int, bbox)
         shrink_x = (x_max - x_min) * self.cfg.class_detect_shrink
         shrink_y = (y_max - y_min) * self.cfg.class_detect_shrink
@@ -358,10 +331,59 @@ class DetectionProcessor:
         cropped_gray_image = frame.gray[y0:y1, x0:x1]
         masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
 
-        bbox_center_x = (x_min + x_max) / 2
-        bbox_center_y = (y_min + y_max) / 2
-        return self._fit_surface_from_mask(
-            frame, masked_gray_image, x0, y0, bbox_center_x, bbox_center_y, conf)
+        quality = self.cfg.gftt_quality_level
+        if quality <= 0.0:
+            self.log.warning(
+                f"gftt_quality_level={quality} invalid (must be > 0); using 0.02",
+                throttle_duration_sec=5.0)
+            quality = 0.02
+        min_dist = max(0.0, self.cfg.gftt_min_distance)
+
+        good_features = cv2.goodFeaturesToTrack(
+            masked_gray_image, maxCorners=0, qualityLevel=quality, minDistance=min_dist)
+        if good_features is None:
+            return None
+
+        good_features[:, 0, 0] += x0
+        good_features[:, 0, 1] += y0
+        feature_points = [pt[0] for pt in good_features]
+        return self._get_3d_points(frame, feature_points)
+
+    def _plane_from_points(self, points_3d, frame, center_bbox, conf):
+        """Pooled 3D points -> SVD plane -> camera-facing surface"""
+        if points_3d is None or len(points_3d) < self.cfg.min_points:
+            return None
+
+        normal, _, centroid3 = geometry.fit_plane(points_3d)
+        if normal is None:
+            return None
+
+        bbox_center_x = (center_bbox[0] + center_bbox[2]) / 2
+        bbox_center_y = (center_bbox[1] + center_bbox[3]) / 2
+        centroid = geometry.pixel_to_3d(bbox_center_x, bbox_center_y, centroid3[2],
+                                        frame.fx, frame.fy, frame.cx, frame.cy)
+        if normal[2] > 0:
+            normal = -normal
+        quat, _ = geometry.normal_to_quaternion(normal, self._default_normal)
+
+        return SurfaceFit(points=points_3d, normal=normal, centroid=centroid,
+                          quat=quat, center2d=(bbox_center_x, bbox_center_y), conf=conf)
+
+    def _fit_bbox(self, bbox, frame, conf):
+        """Generic planar surface fit over a single bbox: sample -> SVD."""
+        points_3d = self._extract_bbox_points(bbox, frame)
+        return self._plane_from_points(points_3d, frame, bbox, conf)
+
+    def _fit_boxes(self, boxes, frame, conf, center_bbox):
+        """Sample each box independently, pool the points, then one SVD fit"""
+        pooled = []
+        for box in boxes:
+            pts = self._extract_bbox_points(box.xyxy[0], frame)
+            if pts is not None and len(pts) > 0:
+                pooled.append(np.asarray(pts))
+        if not pooled:
+            return None
+        return self._plane_from_points(np.vstack(pooled), frame, center_bbox, conf)
 
     def _fit_symbol(self, box, frame):
         """Run the generic surface pipeline on one symbol box (fire/blood)."""
@@ -503,6 +525,14 @@ class DetectionProcessor:
         return box.conf[0]
 
     ### Gate pairs
+    def _union_bbox(self, boxes):
+        """Axis-aligned union of several boxes"""
+        xs0, ys0, xs1, ys1 = [], [], [], []
+        for box in boxes:
+            x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
+            xs0.append(x_min); ys0.append(y_min); xs1.append(x_max); ys1.append(y_max)
+        return (min(xs0), min(ys0), max(xs1), max(ys1))
+
     def _resolve_gate_pairs(self, frame, detections):
         """If both were seen this frame, publish ONE combined detection 
         If only one is present, publish each present box
@@ -521,19 +551,15 @@ class DetectionProcessor:
     def _emit_combined_gate(self, frame, detections, boxes, gate_name):
         """Union the member bboxes, fit one plane over the combined region, and
         publish it under gate_name (conf = min of the members)"""
-        xs0, ys0, xs1, ys1 = [], [], [], []
-        for box in boxes:
-            x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
-            xs0.append(x_min); ys0.append(y_min); xs1.append(x_max); ys1.append(y_max)
-        bbox = (min(xs0), min(ys0), max(xs1), max(ys1))
+        union = self._union_bbox(boxes)
         conf = min(self._box_conf(b) for b in boxes)
 
-        fit = self._fit_bbox(bbox, frame, conf)
+        fit = self._fit_boxes(boxes, frame, conf, center_bbox=union)
         if fit is None:
             return
         self.plane_normal = fit.normal # Stored for debug stuff
-        bbox_width = bbox[2] - bbox[0]
-        bbox_height = bbox[3] - bbox[1]
+        bbox_width = union[2] - union[0]
+        bbox_height = union[3] - union[1]
         self._build_marker(frame, fit.quat, fit.centroid, gate_name, bbox_width, bbox_height)
         detection = self._new_detection(frame)
         detection.results.append(self._make_hypothesis(gate_name, fit.centroid, fit.quat, conf))
