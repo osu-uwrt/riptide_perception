@@ -38,9 +38,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 endif()
 
 # Install the Python node
+file(GLOB PYTHON_SCRIPTS src/*.py)
 install(PROGRAMS
-  src/yolo_orientation.py 
-  DESTINATION lib/${PROJECT_NAME}  
+  ${PYTHON_SCRIPTS}
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 #install launch
