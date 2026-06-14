@@ -3,7 +3,7 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     # ---------- FFC configuration ----------
-    ffc_model: "rs25_8_15_2.pt"
+    ffc_model: "ffc_rs_26.pt"
     ffc_class_id_map: "{
       0: 'blood',
       1: 'buoy',
@@ -18,7 +18,7 @@
     ffc_iou: 0.9
 
     # ---------- DFC configuration ----------
-    dfc_model: "rs25_8_16_dfc.pt"
+    dfc_model: "dfc_rs_26.pt"
     dfc_class_id_map: "{
       0: 'bandage',
       1: 'blood',

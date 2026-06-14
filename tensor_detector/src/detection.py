@@ -185,36 +185,39 @@ class DetectionProcessor:
 
         # Build the full-frame segmentation mask
         self._mask.fill(0)
+
         for result in results:
-            for contour in result.masks.xy:
-                contour = np.array(contour, dtype=np.int32)
-                cv2.fillPoly(self._mask, [contour], 255)
+            if result is not None and result.masks is not None:
+                for contour in result.masks.xy:
+                    contour = np.array(contour, dtype=np.int32)
+                    cv2.fillPoly(self._mask, [contour], 255)
 
         # Route each detection
         # Class specifics are handled, otherwise generic plane/fit
         for result in results:
-            for box in result.boxes.cpu().numpy():
-                if box.conf[0] <= frame.conf: # Technically redundant but extra safety check for now
-                    continue
-                class_id = box.cls[0]
-                if class_id not in frame.class_id_map:
-                    continue
+            if result is not None and result.boxes is not None:
+                for box in result.boxes.cpu().numpy():
+                    if box.conf[0] <= frame.conf: # Technically redundant but extra safety check for now
+                        continue
+                    class_id = box.cls[0]
+                    if class_id not in frame.class_id_map:
+                        continue
 
-                conf = box.conf[0]
-                name = frame.class_id_map[class_id]
+                    conf = box.conf[0]
+                    name = frame.class_id_map[class_id]
 
-                if self.torpedo_enabled and name in TORPEDO_CLASSES:
-                    self._torpedo_add(name, box)
-                elif name in GATE_PAIR_CLASSES:
-                    self.gate_pair_boxes.setdefault(name, []).append(box)
-                elif name == SLALOM_CLASS:
-                    detection_temp = self.create_detection3d_message(box, frame, conf)
-                    if detection_temp and detection_temp.results:
-                        self._stash_slalom(box, detection_temp)
-                else:
-                    detection = self.create_detection3d_message(box, frame, conf)
-                    if detection:
-                        detections.detections.append(detection)
+                    if self.torpedo_enabled and name in TORPEDO_CLASSES:
+                        self._torpedo_add(name, box)
+                    elif name in GATE_PAIR_CLASSES:
+                        self.gate_pair_boxes.setdefault(name, []).append(box)
+                    elif name == SLALOM_CLASS:
+                        detection_temp = self.create_detection3d_message(box, frame, conf)
+                        if detection_temp and detection_temp.results:
+                            self._stash_slalom(box, detection_temp)
+                    else:
+                        detection = self.create_detection3d_message(box, frame, conf)
+                        if detection:
+                            detections.detections.append(detection)
 
         # Resolve grouped detections that need the whole frame first
         self._resolve_gate_pairs(frame, detections)
