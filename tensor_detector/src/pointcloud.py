@@ -1,29 +1,57 @@
 #!/usr/bin/env python3
 """Point Clouds: back-project feature pixels to 3D, filter outliers,
-accumulate, and drain into a PointCloud message"""
+accumulate, and drain into a PointCloud2 message with per-point RGB."""
+import struct
+from enum import Enum
+
 import cv2
 import numpy as np
 
-from sensor_msgs.msg import PointCloud
-from geometry_msgs.msg import Point32
+from sensor_msgs.msg import PointCloud2, PointField
 
 import geometry
+from detection import COLOR_MAP
 
 MAX_POINTS = 10000
+DEFAULT_COLOR = (1.0, 1.0, 1.0)
+
+
+class CloudColorMode(Enum):
+    CLASS   = "class"    # Flat color from COLOR_MAP keyed by class name
+    PIXEL   = "pixel"    # Sample the RGB image at each feature pixel
+
+
+def _pack_rgb(r, g, b):
+    """Pack three 0-1 floats into the uint32 that RViz expects for rgb fields."""
+    ri = int(np.clip(r * 255, 0, 255))
+    gi = int(np.clip(g * 255, 0, 255))
+    bi = int(np.clip(b * 255, 0, 255))
+    packed = (ri << 16) | (gi << 8) | bi
+    return struct.unpack('f', struct.pack('I', packed))[0]
 
 
 class PointCloudBuilder:
-    def __init__(self, min_points, logger):
+    def __init__(self, min_points, logger, color_mode=CloudColorMode.CLASS):
         self.min_points = min_points
         self.log = logger
+        self.color_mode = color_mode
+        # Each entry is (x, y, z, rgb_packed_float)
         self.accumulated_points = []
 
-    def extract(self, frame, feature_points, mask):
+    def extract(self, frame, feature_points, mask, class_name=None):
         """Back-project masked feature pixels to 3D, filter, accumulate, return.
+
+        Color per point is determined by self.color_mode:
+          CLASS  – flat color from COLOR_MAP for class_name
+          PIXEL  – sampled from frame.image at the source pixel (bgr8 -> rgb)
 
         Returns the filtered Nx3 array, or None if too few points survive.
         """
-        points_3d = []
+        class_color = COLOR_MAP.get(class_name, DEFAULT_COLOR)
+        class_rgb_packed = _pack_rgb(*class_color)
+
+        # Build (x, y, z, rgb) together so outlier removal keeps them in sync
+        xyzrgb = []
         for x, y in feature_points:
             xi = int(x)
             yi = int(y)
@@ -34,19 +62,34 @@ class PointCloudBuilder:
             z = frame.depth[yi, xi]
             if np.isnan(z) or z == 0:
                 continue
-            points_3d.append(geometry.pixel_to_3d(xi, yi, z,
-                                                  frame.fx, frame.fy, frame.cx, frame.cy))
 
-        self._overlay(frame, points_3d)
+            pt = geometry.pixel_to_3d(xi, yi, z, frame.fx, frame.fy, frame.cx, frame.cy)
 
-        points_3d = np.array(points_3d)
-        points_3d = geometry.radius_outlier_removal(
-            points_3d, min_neighbors=min(10, int(len(points_3d) * 0.8)))
-        points_3d = geometry.statistical_outlier_removal(
-            points_3d, k=min(10, int(len(points_3d) * 0.8)))
+            if self.color_mode == CloudColorMode.PIXEL:
+                b, g, r = frame.image[yi, xi]  # frame.image is bgr8
+                rgb = _pack_rgb(r / 255.0, g / 255.0, b / 255.0)
+            else:
+                rgb = class_rgb_packed
 
-        if points_3d is not None:
-            self.accumulated_points.extend(points_3d)
+            xyzrgb.append((*pt, rgb))
+
+        points_3d = np.array([p[:3] for p in xyzrgb]) if xyzrgb else np.array([])
+
+        self._overlay(frame, points_3d, class_color)
+
+        if len(points_3d) == 0:
+            return None
+
+        # Outlier removal operates on xyz; apply the same index mask to rgb
+        rgb_arr = np.array([p[3] for p in xyzrgb])
+
+        indices = self._outlier_indices(points_3d)
+        points_3d = points_3d[indices]
+        rgb_arr   = rgb_arr[indices]
+
+        if points_3d is not None and len(points_3d) > 0:
+            self.accumulated_points.extend(
+                (p[0], p[1], p[2], float(c)) for p, c in zip(points_3d, rgb_arr))
             if len(self.accumulated_points) > MAX_POINTS:
                 self.accumulated_points = self.accumulated_points[-MAX_POINTS:]
             if len(points_3d) < self.min_points:
@@ -55,35 +98,72 @@ class PointCloudBuilder:
         return points_3d
 
     def take_cloud(self, frame_id, stamp):
-        """Build and clear the accumulated cloud (None if empty)."""
+        """Build and clear the accumulated cloud as PointCloud2 (None if empty)."""
         if not self.accumulated_points:
             return None
-        cloud = PointCloud()
+
+        fields = [
+            PointField(name='x',   offset=0,  datatype=PointField.FLOAT32, count=1),
+            PointField(name='y',   offset=4,  datatype=PointField.FLOAT32, count=1),
+            PointField(name='z',   offset=8,  datatype=PointField.FLOAT32, count=1),
+            PointField(name='rgb', offset=12, datatype=PointField.FLOAT32, count=1),
+        ]
+        point_step = 16  # 4 floats x 4 bytes
+
+        data = bytearray()
+        for (x, y, z, rgb) in self.accumulated_points:
+            data += struct.pack('ffff', float(x), float(y), float(z), float(rgb))
+
+        cloud = PointCloud2()
         cloud.header.frame_id = frame_id
         cloud.header.stamp = stamp
-        for point in self.accumulated_points:
-            cloud.points.append(Point32(x=float(point[0]),
-                                        y=float(point[1]),
-                                        z=float(point[2])))
+        cloud.height = 1
+        cloud.width = len(self.accumulated_points)
+        cloud.fields = fields
+        cloud.is_bigendian = False
+        cloud.point_step = point_step
+        cloud.row_step = point_step * cloud.width
+        cloud.data = bytes(data)
+        cloud.is_dense = True
+
         self.accumulated_points.clear()
         return cloud
 
-    def _overlay(self, frame, points):
+    # --- internals ---
+
+    def _outlier_indices(self, points_3d):
+        """Return the surviving index array after both outlier passes."""
+        n = len(points_3d)
+        k = min(10, int(n * 0.8))
+        # radius pass
+        tmp = geometry.radius_outlier_removal(points_3d, min_neighbors=k)
+        if len(tmp) == 0:
+            return np.array([], dtype=int)
+        # find which original indices survived the radius pass
+        radius_idx = np.array([i for i, p in enumerate(points_3d)
+                                if any(np.allclose(p, t) for t in tmp)])
+        # statistical pass on the survivors
+        k2 = min(10, int(len(tmp) * 0.8))
+        tmp2 = geometry.statistical_outlier_removal(tmp, k=k2)
+        if len(tmp2) == 0:
+            return np.array([], dtype=int)
+        stat_mask = np.array([any(np.allclose(p, t) for t in tmp2) for p in tmp])
+        return radius_idx[stat_mask]
+
+    def _overlay(self, frame, points, color):
         if len(points) == 0:
             return
+        bgr = (int(color[2] * 255), int(color[1] * 255), int(color[0] * 255))
         for point in points:
             try:
-                if len(point) < 3:
-                    continue
                 if point[2] <= 0 or np.isnan(point[2]) or np.isinf(point[2]):
                     continue
-                if (np.isnan(point[0]) or np.isinf(point[0])
-                        or np.isnan(point[1]) or np.isinf(point[1])):
+                if np.isnan(point[0]) or np.isinf(point[0]) or np.isnan(point[1]) or np.isinf(point[1]):
                     continue
                 x2d = int(point[0] * frame.fx / point[2] + frame.cx)
                 y2d = int(point[1] * frame.fy / point[2] + frame.cy)
                 if 0 <= x2d < frame.image.shape[1] and 0 <= y2d < frame.image.shape[0]:
-                    cv2.circle(frame.image, (x2d, y2d), radius=3, color=(0, 255, 0), thickness=-1)
+                    cv2.circle(frame.image, (x2d, y2d), radius=3, color=bgr, thickness=-1)
             except (ZeroDivisionError, OverflowError, ValueError):
                 continue
             except Exception as e:

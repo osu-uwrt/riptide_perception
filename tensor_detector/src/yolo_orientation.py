@@ -12,7 +12,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo, PointCloud
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from visualization_msgs.msg import MarkerArray
 from vision_msgs.msg import Detection3DArray
 from cv_bridge import CvBridge
@@ -26,6 +26,7 @@ from tf2_ros.transform_listener import TransformListener
 from tf2_ros import Buffer
 
 from detection import DetectionProcessor, ProcessorConfig, Frame
+from pointcloud import CloudColorMode
 from yolo_model import YoloModel
 
 
@@ -57,8 +58,9 @@ class YOLONode(Node):
                 ('export', False),                  # Export model
                 ('print_camera_info', False),
                 ('torpedo_task_camera', 'ffc'),     # Determines which camera will do weird stuff with blood/fire for now (should only be ffc)
-                ('gftt_quality_level', 0.02),   # goodFeaturesToTrack: min corner score vs best (lower = more, noisier)
-                ('gftt_min_distance', 0.0),     # goodFeaturesToTrack: min px between corners (0 = no suppression). MUST BE A FLOAT HERE OR YAML WON'T WORK.
+                ('gftt_quality_level', 0.02),       # goodFeaturesToTrack: min corner score vs best (lower = more, noisier)
+                ('gftt_min_distance', 0.0),         # goodFeaturesToTrack: min px between corners (0 = no suppression). MUST BE A FLOAT HERE OR YAML WON'T WORK.
+                ('cloud_color_mode', 'pixel'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
             ]
         )
 
@@ -78,7 +80,6 @@ class YOLONode(Node):
         self.bridge = CvBridge()
         self.depth_image = None
         self.camera_info_gathered = False
-        self.last_publish_time = time.time()
 
         # tf
         self.tf_buffer = Buffer()
@@ -98,6 +99,13 @@ class YOLONode(Node):
         self.setup_camera()
 
     def _build_processor_config(self):
+        mode_str = self.get_parameter('cloud_color_mode').get_parameter_value().string_value
+        try:
+            color_mode = CloudColorMode(mode_str)
+        except ValueError:
+            self.get_logger().warning(
+                f"Unknown cloud_color_mode '{mode_str}', falling back to 'class'")
+            color_mode = CloudColorMode.CLASS
         return ProcessorConfig(
             class_detect_shrink=self.get_parameter('class_detect_shrink').get_parameter_value().double_value,
             min_points=self.get_parameter('min_points').get_parameter_value().integer_value,
@@ -106,12 +114,13 @@ class YOLONode(Node):
             publish_interval=self.publish_interval,
             gftt_quality_level=self.get_parameter('gftt_quality_level').get_parameter_value().double_value,
             gftt_min_distance=self.get_parameter('gftt_min_distance').get_parameter_value().double_value,
+            cloud_color_mode=color_mode,
         )
 
     def create_publishers(self):
         self.marker_array_publisher = self.create_publisher(MarkerArray, '~/visualization_marker_array', 10)
         self.publisher = self.create_publisher(Image, '~/yolo', 10)
-        self.point_cloud_publisher = self.create_publisher(PointCloud, '~/point_cloud', 10)
+        self.point_cloud_publisher = self.create_publisher(PointCloud2, '~/point_cloud', 10)
         self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
 
     ### Services
@@ -297,12 +306,9 @@ class YOLONode(Node):
 
         # Publish markers for visualization
         if markers and self.has_subscribers(self.marker_array_publisher):
-            now = time.time()
-            if now - self.last_publish_time > self.publish_interval:
-                marker_array = MarkerArray()
-                marker_array.markers = markers
-                self.last_publish_time = now
-                self.marker_array_publisher.publish(marker_array)
+            marker_array = MarkerArray()
+            marker_array.markers = markers
+            self.marker_array_publisher.publish(marker_array)
 
         # Publish GFTT Point cloud for visualization
         if self.has_subscribers(self.point_cloud_publisher):

@@ -21,7 +21,7 @@ from rclpy.time import Time
 import geometry
 import outputs
 from outputs import MarkerBuilder
-from pointcloud import PointCloudBuilder
+from pointcloud import PointCloudBuilder, CloudColorMode
 
 
 # Colors used for rviz markers, keyed by the published class name.
@@ -100,6 +100,7 @@ class ProcessorConfig:
     publish_interval: float = 0.1   # also drives marker lifetime
     gftt_quality_level: float = 0.02   # goodFeaturesToTrack corner-score threshold
     gftt_min_distance: float = 1.0     # goodFeaturesToTrack min px between corners
+    cloud_color_mode: CloudColorMode = CloudColorMode.CLASS
 
 @dataclass
 class Frame:
@@ -130,7 +131,7 @@ class DetectionProcessor:
 
         # Output things
         self.markers = MarkerBuilder(config)
-        self.cloud = PointCloudBuilder(config.min_points, logger)
+        self.cloud = PointCloudBuilder(config.min_points, logger, color_mode=config.cloud_color_mode)
 
         # Persistant states (stuff that lives across frames)
         self.plane_normal = None           # last fitted plane normal (debug/use)
@@ -231,7 +232,7 @@ class DetectionProcessor:
 
         self._process_slalom(frame, detections)
 
-        # Flush markers built so far; markers added after this (slalom) carry over.
+        # Flush all markers built this frame (including slalom)
         markers_out = self._markers
         self._markers = []
 
@@ -305,7 +306,7 @@ class DetectionProcessor:
             return detection
 
         # Generic planar surface fit (everything else)
-        fit = self._fit_bbox((x_min, y_min, x_max, y_max), frame, conf)
+        fit = self._fit_bbox((x_min, y_min, x_max, y_max), frame, conf, class_name=class_name)
         if fit is None:
             return None
 
@@ -317,7 +318,7 @@ class DetectionProcessor:
         return detection
 
     ### Shared surface fitting
-    def _extract_bbox_points(self, bbox, frame):
+    def _extract_bbox_points(self, bbox, frame, class_name=None):
         """Shrink + mask one bbox, run goodFeatures, back-project to 3D"""
         x_min, y_min, x_max, y_max = map(int, bbox)
         shrink_x = (x_max - x_min) * self.cfg.class_detect_shrink
@@ -347,7 +348,7 @@ class DetectionProcessor:
         good_features[:, 0, 0] += x0
         good_features[:, 0, 1] += y0
         feature_points = [pt[0] for pt in good_features]
-        return self._get_3d_points(frame, feature_points)
+        return self._get_3d_points(frame, feature_points, class_name=class_name)
 
     def _plane_from_points(self, points_3d, frame, center_bbox, conf):
         """Pooled 3D points -> SVD plane -> camera-facing surface"""
@@ -369,25 +370,25 @@ class DetectionProcessor:
         return SurfaceFit(points=points_3d, normal=normal, centroid=centroid,
                           quat=quat, center2d=(bbox_center_x, bbox_center_y), conf=conf)
 
-    def _fit_bbox(self, bbox, frame, conf):
+    def _fit_bbox(self, bbox, frame, conf, class_name=None):
         """Generic planar surface fit over a single bbox: sample -> SVD."""
-        points_3d = self._extract_bbox_points(bbox, frame)
+        points_3d = self._extract_bbox_points(bbox, frame, class_name=class_name)
         return self._plane_from_points(points_3d, frame, bbox, conf)
 
-    def _fit_boxes(self, boxes, frame, conf, center_bbox):
+    def _fit_boxes(self, boxes, frame, conf, center_bbox, class_name=None):
         """Sample each box independently, pool the points, then one SVD fit"""
         pooled = []
         for box in boxes:
-            pts = self._extract_bbox_points(box.xyxy[0], frame)
+            pts = self._extract_bbox_points(box.xyxy[0], frame, class_name=class_name)
             if pts is not None and len(pts) > 0:
                 pooled.append(np.asarray(pts))
         if not pooled:
             return None
         return self._plane_from_points(np.vstack(pooled), frame, center_bbox, conf)
 
-    def _fit_symbol(self, box, frame):
+    def _fit_symbol(self, box, frame, class_name=None):
         """Run the generic surface pipeline on one symbol box (fire/blood)."""
-        return self._fit_bbox(box.xyxy[0], frame, box.conf[0])
+        return self._fit_bbox(box.xyxy[0], frame, box.conf[0], class_name=class_name)
 
     ### Torpedo
     def _torpedo_add(self, name, box):
@@ -401,8 +402,8 @@ class DetectionProcessor:
     def process_torpedo_task(self, frame, detections):
         """Resolve the fire/blood torpedo board: publish the torpedo center and,
         when fully visible, the four labeled openings"""
-        fire = self._fit_symbol(self.torpedo_fire_box, frame) if self.torpedo_fire_box is not None else None
-        blood = self._fit_symbol(self.torpedo_blood_box, frame) if self.torpedo_blood_box is not None else None
+        fire = self._fit_symbol(self.torpedo_fire_box, frame, class_name='fire') if self.torpedo_fire_box is not None else None
+        blood = self._fit_symbol(self.torpedo_blood_box, frame, class_name='blood') if self.torpedo_blood_box is not None else None
 
         present = [f for f in (fire, blood) if f is not None]
         if not present:
@@ -554,7 +555,7 @@ class DetectionProcessor:
         union = self._union_bbox(boxes)
         conf = min(self._box_conf(b) for b in boxes)
 
-        fit = self._fit_boxes(boxes, frame, conf, center_bbox=union)
+        fit = self._fit_boxes(boxes, frame, conf, center_bbox=union, class_name=gate_name)
         if fit is None:
             return
         self.plane_normal = fit.normal # Stored for debug stuff
@@ -613,8 +614,8 @@ class DetectionProcessor:
             self.slalom_red_detections = []
 
     ### 3D / cloud
-    def _get_3d_points(self, frame, feature_points):
-        return self.cloud.extract(frame, feature_points, self._mask)
+    def _get_3d_points(self, frame, feature_points, class_name=None):
+        return self.cloud.extract(frame, feature_points, self._mask, class_name=class_name)
 
     ### Messages
     def _new_detection(self, frame):
