@@ -37,7 +37,7 @@
           y: 0.0
           z: -0.8
           yaw: 0.0
-      gate_shark:
+      gate_rescue:
         parent: gate_frame
         covar:
           x: 1.0
@@ -49,7 +49,7 @@
           y: 0.5
           z: 0.0
           yaw: 180.0
-      gate_saw:
+      gate_repair:
         parent: gate_frame
         covar:
           x: 1.0
@@ -125,7 +125,7 @@
           y: 4.0
           z: -3.0
           yaw: 180.0
-      torpedo_shark_hole:
+      fire_hole_large:
         parent: torpedo_frame
         covar:
           x: 0.5
@@ -137,7 +137,31 @@
           y: -0.029972
           z: 0.217424
           yaw: 0.0
-      torpedo_sawfish_hole:
+      fire_hole_small:
+        parent: torpedo_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.0
+          y: 0.11176
+          z: -0.0889
+          yaw: 0.0
+      blood_hole_large:
+        parent: torpedo_frame
+        covar:
+          x: 0.5
+          y: 0.5
+          z: 0.5
+          yaw: 0.5
+        pose:
+          x: 0.0
+          y: -0.029972
+          z: 0.217424
+          yaw: 0.0
+      blood_hole_small:
         parent: torpedo_frame
         covar:
           x: 0.001
@@ -198,7 +222,7 @@
           y: -8.0
           z: -3.25
           yaw: 180.0
-      table_reefshark:
+      pill:
         parent: table_frame
         covar:
           x: 0.001
@@ -206,11 +230,11 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.0
-          y: 0.0
-          z: 1.0
+          x: -0.25
+          y: 0.25
+          z: 0.0
           yaw: 180.0
-      table_sawfish:
+      bandage:
         parent: table_frame
         covar:
           x: 0.001
@@ -218,47 +242,11 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: -1.0
-          y: 0.0
-          z: 1.0
-          yaw: 180.0      
-      table_basket_pink:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.305
-          y: 0.0
+          x: -0.25
+          y: -0.25
           z: 0.0
-          yaw: 0.0
-      table_basket_yellow:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: -0.305
-          y: 0.0
-          z: 0.0
-          yaw: 0.0
-      table_spoon_pink:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.1
-          y: -0.036
-          z: 0.0
-          yaw: 0.0
-      table_bottle_yellow:
+          yaw: 180.0
+      nut_and_bolt:
         parent: table_frame
         covar:
           x: 0.001
@@ -270,7 +258,91 @@
           y: 0.25
           z: 0.0
           yaw: 0.0
-
+      plug:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.25
+          y: -0.25
+          z: 0.0
+          yaw: 0.0     
+      helmet:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.305
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      warning:
+        parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.305
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      compass:
+        parent: table_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 1.2
+          y: 0.0
+          z: 1.0
+          yaw: 180.0
+      hammer_and_wrench:
+        parent: table_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: -1.2
+          y: 0.0
+          z: 1.0
+          yaw: 0.0
+      buoy:
+        parent: table_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 0.0
+          y: 1.2
+          z: 1.0
+          yaw: 270.0
+      sos:
+        parent: table_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 0.0
+          y: -1.2
+          z: 1.0
+          yaw: 90.0
+          
       prequal_gate:
         parent: map
         covar:
