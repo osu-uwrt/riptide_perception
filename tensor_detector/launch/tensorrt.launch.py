@@ -16,6 +16,12 @@ def generate_launch_description():
             description="name of the robot"
         ),
         
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='false',
+            description='Use simulation (Gazebo/Clock) time'
+        ),
+        
         GroupAction([
             PushRosNamespace(LC("robot")),
             
@@ -26,7 +32,8 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     params_path,
-                    {"robot_namespace": LC("robot")}
+                    {"robot_namespace": LC("robot")},
+                    {"use_sim_time": LC("use_sim_time")}
                 ]
             )
         ], scoped=True)

@@ -10,7 +10,7 @@ import numpy as np
 from sensor_msgs.msg import PointCloud2, PointField
 
 import geometry
-from detection import COLOR_MAP
+from colors import COLOR_MAP
 
 MAX_POINTS = 10000
 DEFAULT_COLOR = (1.0, 1.0, 1.0)
@@ -60,7 +60,7 @@ class PointCloudBuilder:
             if mask[yi, xi] != 255:
                 continue
             z = frame.depth[yi, xi]
-            if np.isnan(z) or z == 0:
+            if np.isnan(z) or np.isinf(z) or z == 0:
                 continue
 
             pt = geometry.pixel_to_3d(xi, yi, z, frame.fx, frame.fy, frame.cx, frame.cy)
@@ -82,6 +82,14 @@ class PointCloudBuilder:
 
         # Outlier removal operates on xyz; apply the same index mask to rgb
         rgb_arr = np.array([p[3] for p in xyzrgb])
+
+        # Drop any NaN/infinite points so they don't poison the distance math
+        finite = np.isfinite(points_3d).all(axis=1)
+        points_3d = points_3d[finite]
+        rgb_arr = rgb_arr[finite]
+
+        if len(points_3d) == 0:
+            return None
 
         indices = self._outlier_indices(points_3d)
         points_3d = points_3d[indices]

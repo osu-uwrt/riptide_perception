@@ -22,46 +22,8 @@ import geometry
 import outputs
 from outputs import MarkerBuilder
 from pointcloud import PointCloudBuilder, CloudColorMode
+from colors import COLOR_MAP
 
-
-# Colors used for rviz markers, keyed by the published class name.
-COLOR_MAP = {
-    # Slaloms (slalom_name set by service)
-    'slalom_close': (1.0, 0.0, 0.0),
-    'slalom_middle': (1.0, 1.0, 0.0),
-    'slalom_far': (0.0, 1.0, 0.0),
-
-    # Slalom publishes under slalom_name, this is the default (not sure if we are using the service anymore)
-    'slalom_front': (0.0, 1.0, 0.4),
-
-    # Gate combinations
-    'gate_repair': (0.0, 1.0, 0.0),
-    'gate_rescue': (0.0, 0.5, 1.0),
-
-    # Torpedo stuff 
-    'torpedo': (0.0, 1.0, 1.0),
-    'fire_hole_large': (1.0, 0.4, 0.0),
-    'fire_hole_small': (1.0, 0.7, 0.0),
-    'blood_hole_large': (0.6, 0.0, 0.0),
-    'blood_hole_small': (1.0, 0.0, 0.4),
-
-    # FFC generic planar classes (when not merged into a gate pair)
-    'buoy': (0.2, 0.8, 1.0),
-    'compass': (0.9, 0.6, 0.1),
-    'hammer_and_wrench': (0.4, 0.4, 0.45),
-    'sos': (1.0, 0.1, 0.3),
-
-    # DFC generic planar classes
-    # fire/blood also fall here on dfc, as the torpedo task is disabled
-    'bandage': (0.95, 0.85, 0.70),
-    'blood': (0.80, 0.0, 0.0),
-    'fire': (1.0, 0.5, 0.0),
-    'helmet': (1.0, 1.0, 0.0),
-    'nut_and_bolt': (0.5, 0.5, 0.5),
-    'pill': (0.7, 0.2, 0.9),
-    'plug': (0.0, 0.4, 1.0),
-    'warning': (1.0, 0.0, 1.0),
-}
 
 # Published-name relabels (no class is currently relabeled on publish but good to have)
 RELABEL_MAP = {}
@@ -97,16 +59,14 @@ class ProcessorConfig:
     map_min_area: int = 50
     slalom_history_size: int = 10
     use_incoming_timestamp: bool = True
-    publish_interval: float = 0.1   # also drives marker lifetime
-    gftt_quality_level: float = 0.02   # goodFeaturesToTrack corner-score threshold
-    gftt_min_distance: float = 1.0     # goodFeaturesToTrack min px between corners
+    publish_interval: float = 0.1      # also drives marker lifetime
+    grid_step: int = 8                 # px spacing for the surface grid sample
     cloud_color_mode: CloudColorMode = CloudColorMode.CLASS
 
 @dataclass
 class Frame:
     """Everything the processor needs for a single image. Built by the node."""
     image: Any            # cv_image (bgr8); feature points get overlaid on it
-    gray: Any             # grayscale of image
     depth: Any            # depth image (passthrough)
     fx: float             # camera intrinsics (same values as K below, isolated for easy access)
     fy: float
@@ -319,7 +279,7 @@ class DetectionProcessor:
 
     ### Shared surface fitting
     def _extract_bbox_points(self, bbox, frame, class_name=None):
-        """Shrink + mask one bbox, run goodFeatures, back-project to 3D"""
+        """Shrink the bbox, grid-sample the masked region, back-project to 3D."""
         x_min, y_min, x_max, y_max = map(int, bbox)
         shrink_x = (x_max - x_min) * self.cfg.class_detect_shrink
         shrink_y = (y_max - y_min) * self.cfg.class_detect_shrink
@@ -329,26 +289,20 @@ class DetectionProcessor:
         y1 = int(y_max - shrink_y)
 
         mask_roi = self._mask[y0:y1, x0:x1]
-        cropped_gray_image = frame.gray[y0:y1, x0:x1]
-        masked_gray_image = cv2.bitwise_and(cropped_gray_image, cropped_gray_image, mask=mask_roi)
-
-        quality = self.cfg.gftt_quality_level
-        if quality <= 0.0:
-            self.log.warning(
-                f"gftt_quality_level={quality} invalid (must be > 0); using 0.02",
-                throttle_duration_sec=5.0)
-            quality = 0.02
-        min_dist = max(0.0, self.cfg.gftt_min_distance)
-
-        good_features = cv2.goodFeaturesToTrack(
-            masked_gray_image, maxCorners=0, qualityLevel=quality, minDistance=min_dist)
-        if good_features is None:
+        feature_points = self._grid_sample(mask_roi, x0, y0)
+        if not feature_points:
             return None
 
-        good_features[:, 0, 0] += x0
-        good_features[:, 0, 1] += y0
-        feature_points = [pt[0] for pt in good_features]
         return self._get_3d_points(frame, feature_points, class_name=class_name)
+
+    def _grid_sample(self, mask_roi, x0, y0):
+        """Regular pixel grid over the in-mask region of an ROI -> [(px, py), ...]."""
+        if mask_roi.size == 0:
+            return []
+        step = max(1, int(self.cfg.grid_step))
+        ys, xs = np.where(mask_roi[::step, ::step] == 255)
+        # Map back to full-image coords (account for the stride and ROI offset).
+        return [(float(x * step + x0), float(y * step + y0)) for y, x in zip(ys, xs)]
 
     def _plane_from_points(self, points_3d, frame, center_bbox, conf):
         """Pooled 3D points -> SVD plane -> camera-facing surface"""

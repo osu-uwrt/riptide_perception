@@ -16,7 +16,6 @@ from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from visualization_msgs.msg import MarkerArray
 from vision_msgs.msg import Detection3DArray
 from cv_bridge import CvBridge
-import cv2
 import numpy as np
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -58,8 +57,7 @@ class YOLONode(Node):
                 ('export', False),                  # Export model
                 ('print_camera_info', False),
                 ('torpedo_task_camera', 'ffc'),     # Determines which camera will do weird stuff with blood/fire for now (should only be ffc)
-                ('gftt_quality_level', 0.02),       # goodFeaturesToTrack: min corner score vs best (lower = more, noisier)
-                ('gftt_min_distance', 0.0),         # goodFeaturesToTrack: min px between corners (0 = no suppression). MUST BE A FLOAT HERE OR YAML WON'T WORK.
+                ('grid_step', 8),                   # Pixel spacing for the surface grid sample (smaller = denser)
                 ('cloud_color_mode', 'pixel'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
             ]
         )
@@ -112,8 +110,7 @@ class YOLONode(Node):
             slalom_history_size=self.get_parameter('slalom_history_size').get_parameter_value().integer_value,
             use_incoming_timestamp=self.use_incoming_timestamp,
             publish_interval=self.publish_interval,
-            gftt_quality_level=self.get_parameter('gftt_quality_level').get_parameter_value().double_value,
-            gftt_min_distance=self.get_parameter('gftt_min_distance').get_parameter_value().double_value,
+            grid_step=self.get_parameter('grid_step').get_parameter_value().integer_value,
             cloud_color_mode=color_mode,
         )
 
@@ -279,7 +276,6 @@ class YOLONode(Node):
 
         # Get the image
         cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
         if cv_image is None:
             return
 
@@ -289,7 +285,6 @@ class YOLONode(Node):
         # Store everything we need in the frame dataclass 🤌
         frame = Frame(
             image=cv_image,
-            gray=gray_image,
             depth=self.depth_image,
             fx=self.fx, fy=self.fy, cx=self.cx, cy=self.cy,
             K=self.intrinsic_matrix,
