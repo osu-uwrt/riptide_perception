@@ -12,7 +12,7 @@ class YoloModel:
 
     def _initialize(self, model_path):
         # Prefer a prebuilt .engine next to the .pt if one exists.
-        engine_model_path = model_path.replace('.pt', '.engine')
+        engine_model_path = os.path.splitext(model_path)[0] + '.engine'
         if model_path.endswith(".pt") and os.path.exists(engine_model_path):
             model_path = engine_model_path
 
