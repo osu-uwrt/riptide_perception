@@ -56,35 +56,64 @@ class MappingNode(Node):
         super().__init__('riptide_mapping2')
 
         self.objects = {
+            # Gate
             "gate": dict(),
-            "gate_shark": dict(),
-            "gate_saw": dict(),
+            "gate_repair": dict(),
+            "gate_rescue": dict(),
+
+            # Slalom (left the same for autonomy compatability)
             "slalom_parent": dict(),
             "slalom_front": dict(),
             "slalom_middle": dict(),
             "slalom_back": dict(),
+
+            # Torpedo
             "torpedo": dict(),
-            "torpedo_shark_hole": dict(),
-            "torpedo_sawfish_hole": dict(),
+            "fire_hole_large": dict(),
+            "fire_hole_small": dict(),
+            "blood_hole_large": dict(),
+            "blood_hole_small": dict(),
+
+            # Bin
+            "fire": dict(), # only here to match the class name for autonomy safety
+            "blood": dict(), # only here to match the class name for autonomy safety
             "bin": dict(),
             "bin_target1": dict(),
             "bin_target2": dict(),
+
+            # Octagon
+            "compass": dict(),
+            "hammer_and_wrench": dict(),
+            "buoy": dict(),
+            "sos": dict(),
+
+            # Table
             "table": dict(),
-            "table_reefshark": dict(),
-            "table_sawfish": dict(),
-            "table_basket_pink": dict(),
-            "table_basket_yellow": dict(),
-            "table_spoon_pink": dict(),
-            "table_bottle_yellow": dict(),
+            "pill": dict(),
+            "plug": dict(),
+            "nut_and_bolt": dict(),
+            "bandage": dict(),
+            "helmet": dict(),
+            "warning": dict(),
+
+            # Prequal
             "prequal_gate": dict(),
             "prequal_pole": dict(),
         }
-        
+
         self.downwards_objects = {
+            # Bin
+            "bin": dict(),
+            "bin_target1": dict(),
+            "bin_target2": dict(),
+
+            # Table
+            "pill": dict(),
+            "plug": dict(),
             "nut_and_bolt": dict(),
             "bandage": dict(),
-            "fire": dict(),
-            "blood": dict(),
+            "helmet": dict(),
+            "warning": dict(),
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []
