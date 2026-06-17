@@ -60,7 +60,7 @@ class YOLONode(Node):
                 ('torpedo_task_camera', 'ffc'),     # Determines which camera will do weird stuff with blood/fire for now (should only be ffc)
                 ('grid_step', 8),                   # Pixel spacing for the surface grid sample (smaller = denser)
                 ('max_sample_points', 50),          # Cap points per patch fed to SVD/cloud (0 = uncapped)
-                ('cloud_color_mode', 'pixel'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
+                ('cloud_color_mode', 'class'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
                 ('publish_box_markers', False),
             ]
         )
