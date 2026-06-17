@@ -55,7 +55,7 @@ class YOLONode(Node):
 		self.print_camera_info = False  # Print the camera info recieved
 		self.class_detect_shrink = 0.15  # Shrink the detection area around the class (% Between 0 and 1, 1 being full shrink)
 		self.min_points = 5  # Minimum number of points for SVD
-		self.publish_interval = 0.1  # 100 milliseconds
+		self.publish_interval = 0.05  # 100 milliseconds
 		self.history_size = 10  # Window size for rolling average smoothing
 		self.default_normal = np.array([0.0, 0.0, 1.0])  # Default normal for quaternion calculation
 		self.map_min_area = 50  # 130
@@ -1591,7 +1591,7 @@ class YOLONode(Node):
 		plane_marker.action = Marker.ADD
 		
 		# Set marker lifetime (auto-delete after this duration)
-		plane_marker.lifetime.nanosec = int(self.publish_interval * 2.0 * 1e9)
+		plane_marker.lifetime.nanosec = int(self.publish_interval * 4.0 * 1e9)
 		
 		# Set the position of the plane marker
 		plane_marker.pose.position.x = centroid[0]
@@ -1620,7 +1620,7 @@ class YOLONode(Node):
 		plane_marker.color.a = 0.8
 		
 		# Append the plane marker to publish all at once
-		self.temp_markers.append(plane_marker)
+		# self.temp_markers.append(plane_marker)
 		
 		# Create an arrow marker
 		arrow_marker = Marker()
@@ -1635,7 +1635,7 @@ class YOLONode(Node):
 		arrow_marker.action = Marker.ADD
 		
 		# Set marker lifetime (auto-delete after this duration)
-		arrow_marker.lifetime.nanosec = int(self.publish_interval * 2.0 * 1e9)
+		arrow_marker.lifetime.nanosec = int(self.publish_interval * 4.0 * 1e9)
 		
 		# Set the position of the arrow marker
 		arrow_marker.pose.position.x = centroid[0]

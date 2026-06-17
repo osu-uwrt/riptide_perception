@@ -14,8 +14,24 @@
       6: 'slalom',
       7: 'sos'
     }"
-    ffc_threshold: 0.75
-    ffc_iou: 0.9
+    # ffc_class_id_map: "{
+    #   0: 'ambulance',
+    #   1: 'bandage',
+    #   2: 'blood',
+    #   3: 'buoy',
+    #   4: 'compass',
+    #   5: 'fire',
+    #   6: 'fire_engine',
+    #   7: 'hammer_and_wrench',
+    #   8: 'helmet',
+    #   9: 'nut_and_bolt',
+    #   10: 'pill',
+    #   11: 'plug',
+    #   12: 'sos',
+    #   13: 'warning'
+    # }"
+    ffc_threshold: 0.5
+    ffc_iou: 0.7
 
     # ---------- DFC configuration ----------
     dfc_model: "dfc_rs_26.pt"

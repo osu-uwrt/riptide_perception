@@ -81,8 +81,6 @@ class MappingNode(Node):
         }
         
         self.downwards_objects = {
-            "pill": dict(),
-            "plug": dict(),
             "nut_and_bolt": dict(),
             "bandage": dict(),
             "fire": dict(),
