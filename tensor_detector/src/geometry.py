@@ -39,7 +39,7 @@ def fit_plane(points_3d):
     if len(points_3d) == 0:
         return None, None, None
     centroid = np.mean(points_3d, axis=0)
-    _, _, vh = np.linalg.svd(points_3d - centroid)
+    _, _, vh = np.linalg.svd(points_3d - centroid, full_matrices=False)
     normal = vh[-1]
     normal = normal / np.linalg.norm(normal)
     d = -np.dot(normal, centroid)

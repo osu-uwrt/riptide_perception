@@ -75,7 +75,8 @@ class PointCloudBuilder:
 
         points_3d = np.array([p[:3] for p in xyzrgb]) if xyzrgb else np.array([])
 
-        self._overlay(frame, points_3d, class_color)
+        if getattr(frame, "want_overlay_points", True):
+            self._overlay(frame, points_3d, class_color)
 
         if len(points_3d) == 0:
             return None
@@ -95,13 +96,16 @@ class PointCloudBuilder:
         points_3d = points_3d[indices]
         rgb_arr   = rgb_arr[indices]
 
-        if points_3d is not None and len(points_3d) > 0:
+        # Only accumulate for the viz cloud when someone actually wants it
+        want_cloud = getattr(frame, "want_cloud", True)
+        if want_cloud and len(points_3d) > 0:
             self.accumulated_points.extend(
                 (p[0], p[1], p[2], float(c)) for p, c in zip(points_3d, rgb_arr))
             if len(self.accumulated_points) > MAX_POINTS:
                 self.accumulated_points = self.accumulated_points[-MAX_POINTS:]
-            if len(points_3d) < self.min_points:
-                return None
+
+        if len(points_3d) < self.min_points:
+            return None
 
         return points_3d
 
@@ -118,9 +122,8 @@ class PointCloudBuilder:
         ]
         point_step = 16  # 4 floats x 4 bytes
 
-        data = bytearray()
-        for (x, y, z, rgb) in self.accumulated_points:
-            data += struct.pack('ffff', float(x), float(y), float(z), float(rgb))
+        arr = np.asarray(self.accumulated_points, dtype=np.float32)
+        data = arr.tobytes()
 
         cloud = PointCloud2()
         cloud.header.frame_id = frame_id
@@ -131,7 +134,7 @@ class PointCloudBuilder:
         cloud.is_bigendian = False
         cloud.point_step = point_step
         cloud.row_step = point_step * cloud.width
-        cloud.data = bytes(data)
+        cloud.data = data
         cloud.is_dense = True
 
         self.accumulated_points.clear()
@@ -141,6 +144,9 @@ class PointCloudBuilder:
 
     def _outlier_indices(self, points_3d):
         """Return the surviving index array after both outlier passes."""
+        # TEMP: outlier removal disabled for performance
+        return np.arange(len(points_3d))
+
         n = len(points_3d)
         k = min(10, int(n * 0.8))
         # radius pass

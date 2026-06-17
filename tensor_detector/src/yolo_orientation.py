@@ -12,8 +12,8 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2
-from visualization_msgs.msg import MarkerArray
+from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2, Image
+from visualization_msgs.msg import MarkerArray, Marker
 from vision_msgs.msg import Detection3DArray
 from cv_bridge import CvBridge
 import numpy as np
@@ -51,14 +51,17 @@ class YOLONode(Node):
                 ('class_detect_shrink', 0.0),       # Shrinks the mask around the class
                 ('min_points', 5),                  # Minimum points required for SVD
                 ('publish_interval', 0.1),          # For visualization markers (also drives lifetime)
+                ('marker_lifetime', 5.0),           # Marker lifetime in seconds (0 = persist until replaced/deleted)
                 ('slalom_history_size', 10),        # The closest slalom from history is published
                 ('use_incoming_timestamp', True),   # Timestamp for detection comes from image callback msg
                 ('log_processing_time', False),
-                ('export', False),                  # Export model
+                ('export', True),                   # Export model
                 ('print_camera_info', False),
                 ('torpedo_task_camera', 'ffc'),     # Determines which camera will do weird stuff with blood/fire for now (should only be ffc)
                 ('grid_step', 8),                   # Pixel spacing for the surface grid sample (smaller = denser)
+                ('max_sample_points', 50),          # Cap points per patch fed to SVD/cloud (0 = uncapped)
                 ('cloud_color_mode', 'pixel'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
+                ('publish_box_markers', False),
             ]
         )
 
@@ -110,13 +113,16 @@ class YOLONode(Node):
             slalom_history_size=self.get_parameter('slalom_history_size').get_parameter_value().integer_value,
             use_incoming_timestamp=self.use_incoming_timestamp,
             publish_interval=self.publish_interval,
+            marker_lifetime=self.get_parameter('marker_lifetime').get_parameter_value().double_value,
             grid_step=self.get_parameter('grid_step').get_parameter_value().integer_value,
+            max_sample_points=self.get_parameter('max_sample_points').get_parameter_value().integer_value,
             cloud_color_mode=color_mode,
+            publish_box_markers=self.get_parameter('publish_box_markers').get_parameter_value().bool_value,
         )
 
     def create_publishers(self):
         self.marker_array_publisher = self.create_publisher(MarkerArray, '~/visualization_marker_array', 10)
-        self.publisher = self.create_publisher(Image, '~/yolo', 10)
+        self.annotated_image_publisher = self.create_publisher(CompressedImage, '~/annotated/compressed', 10)
         self.point_cloud_publisher = self.create_publisher(PointCloud2, '~/point_cloud', 10)
         self.detection_publisher = self.create_publisher(Detection3DArray, 'detected_objects', 10)
 
@@ -174,7 +180,7 @@ class YOLONode(Node):
     def setup_camera(self):
         self.get_logger().info(f"Active camera: {self.active_camera}")
         self.camera_prefix = self.active_camera
-        self.frame_id = f'{self.robot_ns}/{self.camera_prefix}_left_camera_optical_frame'
+        self.frame_id = f'{self.robot_ns}/{self.camera_prefix}_left_camera_frame_optical'
 
         yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
         class_id_map_str = self.get_parameter(f'{self.active_camera}_class_id_map').get_parameter_value().string_value
@@ -195,7 +201,7 @@ class YOLONode(Node):
         weights_dir = os.path.join(get_package_share_directory("tensor_detector"), 'weights')
         model_path = os.path.join(weights_dir, yolo_model)
         self.get_logger().info(f"Loading model path: {model_path}")
-        self.model = YoloModel(model_path, export=self.export)
+        self.model = YoloModel(model_path=model_path, export=self.export)
 
         self.reset_collection_variables()
         self.destroy_subscriptions()
@@ -226,19 +232,23 @@ class YOLONode(Node):
                 self.get_logger().info(f"Destroying subscription: {topic}")
 
     def create_subscriptions(self):
+        #TODO: Move these to config file, but it's type dependent
         base = f'/{self.robot_ns}/{self.camera_prefix}/zed_node'
 
+        info_topic = f'{base}/left/camera_info'
         self.zed_info_subscription = self.create_subscription(
-            CameraInfo, f'{base}/left/camera_info', self.camera_info_callback, 1)
-        self.get_logger().info(f"Creating camera info subcription: {base}/left/camera_info")
+            CameraInfo, info_topic, self.camera_info_callback, 1)
+        self.get_logger().info(f"Creating camera info subcription: {info_topic}")
 
+        image_topic = f'{base}/left/image_rect_color/compressed'
         self.image_subscription = self.create_subscription(
-            Image, f'{base}/left/image_rect_color', self.image_callback, 10)
-        self.get_logger().info(f"Creating image subcription: {base}/left/image_rect_color")
+            CompressedImage, image_topic, self.image_callback, 1)
+        self.get_logger().info(f"Creating image subcription: {image_topic}")
 
+        depth_topic = f'{base}/depth/depth_registered'
         self.depth_subscription = self.create_subscription(
-            Image, f'{base}/depth/depth_registered', self.depth_callback, 10)
-        self.get_logger().info(f"Creating depth subcription: {base}/depth/depth_registered")
+            Image, depth_topic, self.depth_callback, 1)
+        self.get_logger().info(f"Creating depth subcription: {depth_topic}")
 
     ### Callbacks
     def has_subscribers(self, publisher):
@@ -264,9 +274,8 @@ class YOLONode(Node):
         return self.get_clock().now().to_msg()
 
     ### THE MEAT
-    def image_callback(self, msg: Image):
-        if self.log_processing_time:
-            start_time = time.time()
+    def image_callback(self, msg: CompressedImage):
+        start_time = time.perf_counter() if self.log_processing_time else None
 
         if self.depth_image is None or not self.camera_info_gathered:
             self.get_logger().warning(
@@ -274,8 +283,8 @@ class YOLONode(Node):
                 throttle_duration_sec=1)
             return
 
-        # Get the image
-        cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        # Get the image from the msg
+        cv_image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
         if cv_image is None:
             return
 
@@ -294,27 +303,32 @@ class YOLONode(Node):
             conf=self.conf,
             want_markers=self.has_subscribers(self.marker_array_publisher),
             want_cloud=self.has_subscribers(self.point_cloud_publisher),
+            want_overlay_points=self.has_subscribers(self.annotated_image_publisher)
         )
 
         # The generic planar and task specific detection logic
         detections, markers = self.detector.process(results, frame)
 
-        # Publish markers for visualization
-        if markers and self.has_subscribers(self.marker_array_publisher):
+        # Publish markers: clear the previous set, then add the current one
+        if self.has_subscribers(self.marker_array_publisher):
             marker_array = MarkerArray()
-            marker_array.markers = markers
+            clear = Marker()
+            clear.action = Marker.DELETEALL
+            marker_array.markers.append(clear)
+            if markers:
+                marker_array.markers.extend(markers)
             self.marker_array_publisher.publish(marker_array)
 
-        # Publish GFTT Point cloud for visualization
+        # Publish point cloud for visualization
         if self.has_subscribers(self.point_cloud_publisher):
             cloud = self.detector.take_point_cloud(self.frame_id, self._stamp(msg))
             if cloud is not None:
                 self.point_cloud_publisher.publish(cloud)
 
         # Publish annotated frame for visualization
-        if self.has_subscribers(self.publisher):
+        if self.has_subscribers(self.annotated_image_publisher):
             annotated_frame = results[0].plot()
-            self.publisher.publish(self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8"))
+            self.annotated_image_publisher.publish(self.bridge.cv2_to_compressed_imgmsg(annotated_frame))
 
         # Publish detections for mapping
         if self.has_subscribers(self.detection_publisher):
@@ -322,9 +336,9 @@ class YOLONode(Node):
 
         # Debug log
         if self.log_processing_time:
-            elapsed = time.time() - start_time
-            self.get_logger().info(f"Total time (ms): {elapsed * 1000}")
-            self.get_logger().info(f"FPS: {1 / elapsed}")
+            elapsed = time.perf_counter() - start_time
+            self.get_logger().info(f"total={elapsed * 1000:.0f}ms ({1 / elapsed:.1f} fps)")
+
 
 
 def main(args=None):

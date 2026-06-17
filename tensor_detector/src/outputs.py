@@ -49,32 +49,36 @@ class MarkerBuilder:
 
     def build(self, frame_id, stamp, quat, centroid, color, scale_x, scale_y, flat=False):
         """Return [plane_marker, arrow_marker]. Caller appends to its buffer."""
-        lifetime = int(self.cfg.publish_interval * 2.0 * 1e9)
+        lifetime_s = max(0.0, float(self.cfg.marker_lifetime))
+        lt_sec = int(lifetime_s)
+        lt_nsec = int((lifetime_s - lt_sec) * 1e9)
         markers = []
 
-        plane_marker = Marker()
-        plane_marker.header.frame_id = frame_id
-        plane_marker.header.stamp = stamp
-        plane_marker.ns = "detection_markers"
-        plane_marker.id = self._next_id()
-        plane_marker.type = Marker.CUBE
-        plane_marker.action = Marker.ADD
-        plane_marker.lifetime.nanosec = lifetime
-        plane_marker.pose.position.x = float(centroid[0])
-        plane_marker.pose.position.y = float(centroid[1])
-        plane_marker.pose.position.z = float(centroid[2])
-        plane_marker.pose.orientation.x = float(quat[0])
-        plane_marker.pose.orientation.y = float(quat[1])
-        plane_marker.pose.orientation.z = float(quat[2])
-        plane_marker.pose.orientation.w = float(quat[3])
-        plane_marker.scale.x = float(scale_x)
-        plane_marker.scale.y = float(scale_y)
-        plane_marker.scale.z = 0.01 if flat else 0.05
-        plane_marker.color.r = color[0]
-        plane_marker.color.g = color[1]
-        plane_marker.color.b = color[2]
-        plane_marker.color.a = 0.8
-        markers.append(plane_marker)
+        if getattr(self.cfg, 'publish_box_markers', True):
+            plane_marker = Marker()
+            plane_marker.header.frame_id = frame_id
+            plane_marker.header.stamp = stamp
+            plane_marker.ns = "detection_markers"
+            plane_marker.id = self._next_id()
+            plane_marker.type = Marker.CUBE
+            plane_marker.action = Marker.ADD
+            plane_marker.lifetime.sec = lt_sec
+            plane_marker.lifetime.nanosec = lt_nsec
+            plane_marker.pose.position.x = float(centroid[0])
+            plane_marker.pose.position.y = float(centroid[1])
+            plane_marker.pose.position.z = float(centroid[2])
+            plane_marker.pose.orientation.x = float(quat[0])
+            plane_marker.pose.orientation.y = float(quat[1])
+            plane_marker.pose.orientation.z = float(quat[2])
+            plane_marker.pose.orientation.w = float(quat[3])
+            plane_marker.scale.x = float(scale_x)
+            plane_marker.scale.y = float(scale_y)
+            plane_marker.scale.z = 0.01 if flat else 0.05
+            plane_marker.color.r = color[0]
+            plane_marker.color.g = color[1]
+            plane_marker.color.b = color[2]
+            plane_marker.color.a = 0.8
+            markers.append(plane_marker)
 
         arrow_marker = Marker()
         arrow_marker.header.frame_id = frame_id
@@ -83,7 +87,8 @@ class MarkerBuilder:
         arrow_marker.id = self._next_id()
         arrow_marker.type = Marker.ARROW
         arrow_marker.action = Marker.ADD
-        arrow_marker.lifetime.nanosec = lifetime
+        arrow_marker.lifetime.sec = lt_sec
+        arrow_marker.lifetime.nanosec = lt_nsec
         arrow_marker.pose.position.x = float(centroid[0])
         arrow_marker.pose.position.y = float(centroid[1])
         arrow_marker.pose.position.z = float(centroid[2])

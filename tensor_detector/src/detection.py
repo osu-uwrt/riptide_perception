@@ -59,9 +59,12 @@ class ProcessorConfig:
     map_min_area: int = 50
     slalom_history_size: int = 10
     use_incoming_timestamp: bool = True
-    publish_interval: float = 0.1      # also drives marker lifetime
-    grid_step: int = 8                 # px spacing for the surface grid sample
+    publish_interval: float = 0.1       # marker publish interval
+    marker_lifetime: float = 5.0        # seconds; 0 = persist until replaced/deleted
+    grid_step: int = 8                  # px spacing for the surface grid sample
+    max_sample_points: int = 50         # cap points per patch fed to the SVD/cloud (0 = uncapped)
     cloud_color_mode: CloudColorMode = CloudColorMode.CLASS
+    publish_box_markers: bool = True
 
 @dataclass
 class Frame:
@@ -79,6 +82,7 @@ class Frame:
     conf: float
     want_markers: bool = True
     want_cloud: bool = True
+    want_overlay_points: bool = True
 
 
 class DetectionProcessor:
@@ -301,6 +305,12 @@ class DetectionProcessor:
             return []
         step = max(1, int(self.cfg.grid_step))
         ys, xs = np.where(mask_roi[::step, ::step] == 255)
+
+        cap = int(self.cfg.max_sample_points)
+        if cap > 0 and len(xs) > cap:
+            sel = np.linspace(0, len(xs) - 1, cap).astype(int)
+            xs, ys = xs[sel], ys[sel]
+
         # Map back to full-image coords (account for the stride and ROI offset).
         return [(float(x * step + x0), float(y * step + y0)) for y, x in zip(ys, xs)]
 
