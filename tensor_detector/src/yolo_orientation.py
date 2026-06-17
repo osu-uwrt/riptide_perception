@@ -298,7 +298,7 @@ class YOLONode(Node):
             fx=self.fx, fy=self.fy, cx=self.cx, cy=self.cy,
             K=self.intrinsic_matrix,
             frame_id=self.frame_id,
-            timestamp=msg.header.stamp,
+            timestamp=self._stamp(msg),
             class_id_map=self.class_id_map,
             conf=self.conf,
             want_markers=self.has_subscribers(self.marker_array_publisher),
