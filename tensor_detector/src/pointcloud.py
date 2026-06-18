@@ -144,26 +144,22 @@ class PointCloudBuilder:
 
     def _outlier_indices(self, points_3d):
         """Return the surviving index array after both outlier passes."""
-        # TEMP: outlier removal disabled for performance
-        return np.arange(len(points_3d))
-
         n = len(points_3d)
-        k = min(10, int(n * 0.8))
-        # radius pass
-        tmp = geometry.radius_outlier_removal(points_3d, min_neighbors=k)
-        if len(tmp) == 0:
+        if n == 0:
             return np.array([], dtype=int)
-        # find which original indices survived the radius pass
-        radius_idx = np.array([i for i, p in enumerate(points_3d)
-                                if any(np.allclose(p, t) for t in tmp)])
-        # statistical pass on the survivors
-        k2 = min(10, int(len(tmp) * 0.8))
-        tmp2 = geometry.statistical_outlier_removal(tmp, k=k2)
-        if len(tmp2) == 0:
-            return np.array([], dtype=int)
-        stat_mask = np.array([any(np.allclose(p, t) for t in tmp2) for p in tmp])
-        return radius_idx[stat_mask]
 
+        # radius pass
+        k = min(10, max(1, int(n * 0.8)))
+        radius_idx = np.where(geometry.radius_outlier_mask(points_3d, min_neighbors=k))[0]
+        if len(radius_idx) == 0:
+            return radius_idx
+
+        # statistical pass on the survivors, then map back through radius_idx
+        survivors = points_3d[radius_idx]
+        k2 = min(10, max(1, int(len(survivors) * 0.8)))
+        stat_mask = geometry.statistical_outlier_mask(survivors, k=k2)
+        return radius_idx[stat_mask]
+    
     def _overlay(self, frame, points, color):
         if len(points) == 0:
             return

@@ -2,6 +2,8 @@
 """Pure geometry helpers for yolo_orientation."""
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial import cKDTree 
+
 
 # The camera-frame normal a flat, front-facing surface would have
 # Don't touch this unless you know what you're doing
@@ -95,27 +97,28 @@ def is_inside_bbox(inner_bbox, outer_bbox):
             inner_y_min >= outer_y_min and inner_y_max <= outer_y_max)
 
 
-def statistical_outlier_removal(points_3d, k=10, std_ratio=1.0):
-    """Remove points whose mean distance to k nearest neighbors is an outlier."""
-    mean_distances = np.zeros(len(points_3d))
-    for i, point in enumerate(points_3d):
-        distances = np.linalg.norm(points_3d - point, axis=1)
-        sorted_distances = np.sort(distances)
-        mean_distances[i] = np.mean(sorted_distances[1:k + 1])
-
-    mean_dist_global = np.mean(mean_distances)
-    std_dev = np.std(mean_distances)
-
-    threshold = mean_dist_global + std_ratio * std_dev
-    filtered_indices = np.where(mean_distances < threshold)[0]
-    return points_3d[filtered_indices]
+def radius_outlier_mask(points_3d, radius=1.0, min_neighbors=10):
+    """Boolean mask: True for points with more than min_neighbors others within radius."""
+    n = len(points_3d)
+    if n == 0:
+        return np.zeros(0, dtype=bool)
+    tree = cKDTree(points_3d)
+    # count includes the point itself, matching the original > min_neighbors semantics
+    counts = tree.query_ball_point(points_3d, r=radius, return_length=True)
+    return counts > min_neighbors
 
 
-def radius_outlier_removal(points_3d, radius=1.0, min_neighbors=10):
-    """Keep points that have more than min_neighbors others within radius."""
-    filtered_indices = []
-    for i, point in enumerate(points_3d):
-        distances = np.linalg.norm(points_3d - point, axis=1)
-        if len(np.where(distances <= radius)[0]) > min_neighbors:
-            filtered_indices.append(i)
-    return points_3d[filtered_indices]
+def statistical_outlier_mask(points_3d, k=10, std_ratio=1.0):
+    """Boolean mask: True for inliers, based on mean distance to k nearest neighbors."""
+    n = len(points_3d)
+    if n == 0:
+        return np.zeros(0, dtype=bool)
+    k_eff = min(k, n - 1)
+    if k_eff < 1:
+        return np.ones(n, dtype=bool)
+    tree = cKDTree(points_3d)
+    # k_eff + 1 because the nearest neighbor is the point itself (distance 0)
+    dists, _ = tree.query(points_3d, k=k_eff + 1)
+    mean_distances = dists[:, 1:].mean(axis=1)  # drop the self column
+    threshold = mean_distances.mean() + std_ratio * mean_distances.std()
+    return mean_distances < threshold

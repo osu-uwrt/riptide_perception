@@ -59,7 +59,7 @@ class YOLONode(Node):
                 ('print_camera_info', False),
                 ('torpedo_task_camera', 'ffc'),     # Determines which camera will do weird stuff with blood/fire for now (should only be ffc)
                 ('grid_step', 8),                   # Pixel spacing for the surface grid sample (smaller = denser)
-                ('max_sample_points', 50),          # Cap points per patch fed to SVD/cloud (0 = uncapped)
+                ('max_sample_points', 500),          # Cap points per patch fed to SVD/cloud (0 = uncapped)
                 ('cloud_color_mode', 'class'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
                 ('publish_box_markers', False),
             ]
@@ -180,7 +180,7 @@ class YOLONode(Node):
     def setup_camera(self):
         self.get_logger().info(f"Active camera: {self.active_camera}")
         self.camera_prefix = self.active_camera
-        self.frame_id = f'{self.robot_ns}/{self.camera_prefix}_left_camera_frame_optical'
+        self.frame_id = f'{self.robot_ns}/{self.camera_prefix}_left_camera_optical_frame'
 
         yolo_model = self.get_parameter(f'{self.active_camera}_model').get_parameter_value().string_value
         class_id_map_str = self.get_parameter(f'{self.active_camera}_class_id_map').get_parameter_value().string_value
