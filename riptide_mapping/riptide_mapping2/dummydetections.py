@@ -52,8 +52,8 @@ class DummyDetectionNode(Node):
         self.pubs        = [ ]
         self.srv = self.create_service(SetBool, 'set_camera_is_dfc', self.setActiveCameraCb)
 
-        for object in self.objects:
-            self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{object}", 10))
+        for objectName in self.objects:
+            self.pubs.append(self.create_publisher(PoseWithCovarianceStamped, f"dummydetections/{objectName}", 10))
 
         self.smoothed_slalom_dist = 3.0
         
@@ -76,16 +76,16 @@ class DummyDetectionNode(Node):
         self.declare_parameter("downward_camera_frame", "downward_link")
         self.declare_parameter("downward_camera_pub_frame", "downward_link")
         
-        for object in self.objects:
-            self.declare_parameter(f"detection_data.{object}.class_id", object)
-            self.declare_parameter(f"detection_data.{object}.pose", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-            self.declare_parameter(f"detection_data.{object}.noise", 0.0)
-            self.declare_parameter(f"detection_data.{object}.score", 0.0)
-            self.declare_parameter(f"detection_data.{object}.downward", False)
-            self.declare_parameter(f"detection_data.{object}.publish_invalid_orientation", False)
-            self.declare_parameter(f"detection_data.{object}.pub_invalid_orientation", False)
-            self.declare_parameter(f"detection_data.{object}.min_dist", 0.0)
-            self.declare_parameter(f"detection_data.{object}.max_dist", 0.0)   
+        for objectName in self.objects:
+            self.declare_parameter(f"detection_data.{objectName}.class_id", objectName)
+            self.declare_parameter(f"detection_data.{objectName}.pose", [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            self.declare_parameter(f"detection_data.{objectName}.noise", 0.0)
+            self.declare_parameter(f"detection_data.{objectName}.score", 0.0)
+            self.declare_parameter(f"detection_data.{objectName}.downward", False)
+            self.declare_parameter(f"detection_data.{objectName}.publish_invalid_orientation", False)
+            self.declare_parameter(f"detection_data.{objectName}.pub_invalid_orientation", False)
+            self.declare_parameter(f"detection_data.{objectName}.min_dist", 0.0)
+            self.declare_parameter(f"detection_data.{objectName}.max_dist", 0.0)   
 
 
     #TODO: UPDATE ALL THE OTHER NON OBJECT PARAMS LIKE SIMULATE_POOL
