@@ -2,25 +2,27 @@
   ros__parameters:
     timer_period: 0.05
     objects:
-      - gate
-      - gate_shark
-      - gate_saw
-      - slalom_front
+      - gate #gate
+      - gate_repair
+      - gate_rescue
+      - slalom_front #slalom
       - slalom_middle
       - slalom_back
-      - torpedo
-      - torpedo_shark_hole
-      - torpedo_sawfish_hole
-      - bin_target
-      - blood_1
-      - blood_2
-      - table
-      - table_reefshark
-      - table_sawfish
-      - table_basket_pink
-      - table_basket_yellow
-      - table_spoon_pink
-      - table_bottle_yellow
+      - torpedo # torps
+      - blood_hole_large
+      - blood_hole_small
+      - fire_hole_large
+      - fire_hole_small
+      - bin_target #bin
+      - bin_target1
+      - bin_target2
+      - table #table
+      - helmet
+      - warning
+      - pill
+      - plug
+      - nut_and_bolt
+      - bandage
     detection_data:
       gate:
         pose: [2.0, 0.0, -0.8, 0.0, 0.0, 0.0]
@@ -30,7 +32,7 @@
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
         max_dist: 4.5 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      gate_shark:
+      gate_repair:
         pose: [2.0, 0.5, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
@@ -38,7 +40,7 @@
         pub_invalid_orientation: false
         min_dist: 0.25
         max_dist: 3.5
-      gate_saw:
+      gate_rescue:
         pose: [2.0, -0.5, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
@@ -78,7 +80,7 @@
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 3.5
-      torpedo_shark_hole:
+      blood_hole_large:
         pose: [12.0, -3.970028, -2.782576, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
@@ -86,8 +88,24 @@
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      torpedo_sawfish_hole:
+      blood_hole_small:
+        pose: [12.0, -3.970028, -3.0889, 0.0, 0.0, 3.1415]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      fire_hole_large:
         pose: [12.0, 4.11176, -3.0889, 0.0, 0.0, 3.1415]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      fire_hole_small:
+        pose: [12.0, 4.11176, -2.782576, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
         downward: false
@@ -102,7 +120,7 @@
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      blood_1:
+      bin_target1:
         class_id: blood
         pose: [4.0, -3.0, -3.25, 0.0, 0.0, 0.0]
         noise: 0.05
@@ -111,7 +129,7 @@
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      blood_2:
+      bin_target2:
         class_id: blood
         pose: [4.7, -3.5, -3.25, 0.0, 0.0, 0.0]
         noise: 0.05
@@ -128,7 +146,7 @@
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 4.0
-      table_reefshark:
+      helmet:
         pose: [9.5, 4.0, -0.8, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
@@ -136,7 +154,7 @@
         pub_invalid_orientation: false
         min_dist: 0.12
         max_dist: 3.0
-      table_sawfish:
+      warning:
         pose: [10.5, 4.0, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
@@ -144,7 +162,7 @@
         pub_invalid_orientation: false
         min_dist: 0.12
         max_dist: 3.0
-      table_basket_pink:
+      pill:
         pose: [0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
@@ -152,7 +170,7 @@
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-      table_basket_yellow:
+      plug:
         pose: [-0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
@@ -160,7 +178,7 @@
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-      table_spoon_pink:
+      nut_and_bolt:
         pose: [0.2, 0.3, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
@@ -168,7 +186,7 @@
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-      table_bottle_yellow:
+      bandage:
         pose: [-0.2, -0.3, -2.0, 0.0, -1.5707, 0.0]
         noise: 0.05
         score: 0.8
