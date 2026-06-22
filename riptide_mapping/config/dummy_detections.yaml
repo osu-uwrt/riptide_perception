@@ -159,7 +159,7 @@
         pose: [10.5, 4.0, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
-        downwward: false
+        downward: false
         pub_invalid_orientation: false
         min_dist: 0.12
         max_dist: 3.0
