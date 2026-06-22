@@ -23,6 +23,7 @@
       - plug
       - nut_and_bolt
       - bandage
+      - compass #octagon
     detection_data:
       gate:
         pose: [2.0, 0.0, -0.8, 0.0, 0.0, 0.0]
@@ -194,6 +195,14 @@
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
+      compass:
+        pose: [10.5, 4.0, -0.8, 0.0, 0.0, 3.1415]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
   
 /talos/dummydetections:
   ros__parameters:
