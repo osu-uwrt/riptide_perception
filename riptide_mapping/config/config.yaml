@@ -21,6 +21,14 @@
     quantile: [0.01, 0.99]
     minimum_distance: 1.0
 
+    # Cursed ah bin geometry fit thresholds
+    bin_fit:
+      residual_tol_m: 0.10  # max reprojection error of the two vinyls to accept a fit
+      baseline_tol_m: 0.10  # |measured baseline - model baseline| for a bad detection or incorrect vinyl map
+      min_baseline_m: 0.20  # model xy baseline floor, if the CAD geometry is wrong this will catch it (CAD min is ~0.52m)
+      cov_floor_m2: 0.0025  # published bin position variance floor (~0.05m std)
+      z_consistency_tol_m: 0.10  # if the two targets bin z disagree by more than this, use config z
+
 # TALOS SETTINGS
 /talos/riptide_mapping2:
   ros__parameters:
@@ -184,7 +192,7 @@
           x: 1.0
           y: 0.0
           z: -1.2
-          yaw: 0.0
+          yaw: 0.0 # Needs to be fairly accurate for bin fit to work
       bin_target1:
         parent: bin_frame
         covar:
@@ -208,6 +216,126 @@
           x: 0.0
           y: 0.0
           z: 0.0
+          yaw: 0.0
+
+      # DO NOT CHANGE THIS OR IT'S CHILDREN'S POSE! DIRECTLY FROM BIN CAD FILE.
+      bin_cad_geometry:
+        parent: bin_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      magnet_target1: #NO TOUCH
+        parent: bin_cad_geometry_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.76512
+          y: 0.37018
+          z: 0.15975
+          yaw: 0.0
+      magnet_target2: #NO TOUCH
+        parent: bin_cad_geometry_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.70442
+          y: -0.37018
+          z: 0.56615
+          yaw: 180.0
+      magnet1: #NO TOUCH
+        parent: bin_cad_geometry_frame
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.76512
+          y: 0.37018
+          z: 0.15975
+          yaw: 0.0
+      magnet2: #NO TOUCH
+        parent: bin_cad_geometry_frame
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.70442
+          y: -0.37018
+          z: 0.56615
+          yaw: 180.0
+      bin_vinyl1: #NO TOUCH POSE ONLY CLASS
+        parent: bin_cad_geometry_frame
+        class: fire   # SET PER RUN
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.47372
+          y: -0.12206
+          z: 0.30103
+          yaw: 0.0
+      bin_vinyl2: #NO TOUCH POSE ONLY CLASS
+        parent: bin_cad_geometry_frame
+        class: blood   # SET PER RUN
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.23686
+          y: 0.34660
+          z: 0.33489
+          yaw: 0.0
+      bin_vinyl3: #NO TOUCH POSE ONLY CLASS
+        parent: bin_cad_geometry_frame
+        class: blood   # SET PER RUN
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.21663
+          y: -0.34660
+          z: 0.47036
+          yaw: 0.0
+      bin_vinyl4: #NO TOUCH POSE ONLY CLASS
+        parent: bin_cad_geometry_frame
+        class: fire   # SET PER RUN
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: -0.43325
+          y: 0.12206
+          z: 0.57196
           yaw: 0.0
       # table locations
       table:

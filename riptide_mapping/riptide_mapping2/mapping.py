@@ -21,12 +21,14 @@ from transforms3d.euler import euler2quat
 
 from location import Location
 from binary_classifier import BinaryClassifier, DetectionSample
+from bin_geometry import BinGeometryFitter
 
 from tf2_msgs.msg import TFMessage
 import math
 from typing import cast
 
 STALE_TIME = 2 #seconds
+BINARY_CLASSIFIER_CLASSES = {"fire", "blood", "magnet"}
 
 class TransformListenerWithHook(tf2_ros.TransformListener):
     def __init__(self, buffer: tf2_ros.buffer.Buffer, node: Node, hook):
@@ -75,8 +77,6 @@ class MappingNode(Node):
             "blood_hole_small": dict(),
 
             # Bin
-            "fire": dict(), # only here to match the class name for autonomy safety
-            "blood": dict(), # only here to match the class name for autonomy safety
             "bin": dict(),
             "bin_target1": dict(),
             "bin_target2": dict(),
@@ -100,6 +100,9 @@ class MappingNode(Node):
             "prequal_gate": dict(),
             "prequal_pole": dict(),
         }
+
+        # Bin fit cursed ah objects left out of mapping so we can get rid of this bunk code after comp
+        self.objects.update({name: dict() for name in BinGeometryFitter.EXTRA_OBJECTS})
 
         self.downwards_objects = {
             # Bin
@@ -133,6 +136,9 @@ class MappingNode(Node):
                     ('init_data.{}.covar.z'.format(object), 1.0),
                     ('init_data.{}.covar.yaw'.format(object), 1.0),
                     ('init_data.{}.lock_orientation_to_config'.format(object), False),
+                    
+                    # Only the bin vinyls use it, everything else stays ""
+                    ('init_data.{}.class'.format(object), ""),
                 ]
             )
         
@@ -158,6 +164,9 @@ class MappingNode(Node):
         self.lock_map = False
         self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
         self.binary_classifier = BinaryClassifier(self)
+
+        # Bin geometry shitter cursed ah subsystem
+        self.bin_fitter = BinGeometryFitter(self)
 
         # Store seeds (which move tf and reset cov once we enter tracking)
         self.instance1_seeded = False
@@ -186,6 +195,8 @@ class MappingNode(Node):
         # This also clears each Location's internal sample buffer because create_location() constructs a new Location object
         for object_name in self.objects.keys():
             self.create_location(object_name)
+            # Drop any stale bin fit cov override
+            self.objects[object_name].pop("fit_covar", None)
 
         # Reset global map drift/offset buffer
         self.offset = Location(
@@ -295,7 +306,7 @@ class MappingNode(Node):
             response.message = "class_name cannot be empty"
             return response
 
-        if class_name not in self.objects.keys() and class_name not in self.downwards_objects.keys():
+        if class_name not in BINARY_CLASSIFIER_CLASSES:
             response.success = False
             response.message = f"Unknown class_name {class_name}"
             return response
@@ -715,7 +726,14 @@ class MappingNode(Node):
                 pose.pose.covariance[0] = offset_covar[0]
                 pose.pose.covariance[7] = offset_covar[7]
                 pose.pose.covariance[14] = offset_covar[14]
-            
+
+            # Cov stuff for cursed ah bin fit, won't touch other objects since they dont have "fit_covar"
+            fit_covar = self.objects[object].get("fit_covar")
+            if fit_covar is not None:
+                pose.pose.covariance[0] = fit_covar
+                pose.pose.covariance[7] = fit_covar
+                pose.pose.covariance[14] = fit_covar
+
             self.objects[object]["publisher"].publish(pose)
 
             transform = TransformStamped()

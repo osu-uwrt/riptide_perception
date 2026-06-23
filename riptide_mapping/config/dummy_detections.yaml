@@ -2,28 +2,45 @@
   ros__parameters:
     timer_period: 0.05
     objects:
-      - gate #gate
-      - gate_repair
-      - gate_rescue
-      - slalom_front #slalom
+      # Gate
+      - gate
+      - gate_shark
+      - gate_saw
+
+      # Slalom
+      - slalom_front
       - slalom_middle
       - slalom_back
-      - torpedo # torps
+
+      # Torpedo
+      - torpedo
       - blood_hole_large
       - blood_hole_small
       - fire_hole_large
       - fire_hole_small
-      - bin_target #bin
-      - bin_target1
-      - bin_target2
-      - table #table
+
+      # Bin
+      - bin_target
+      - bin_vinyl1
+      - bin_vinyl2
+      - bin_vinyl3
+      - bin_vinyl4
+      - magnet_1
+      - magnet_2
+
+      # Table/Octagon
+      - table
       - helmet
       - warning
       - pill
       - plug
       - nut_and_bolt
       - bandage
-      - compass #octagon
+      - compass
+      # - sos
+      # - buoy
+      # - hammer_and_wrench # These 3 need added/tested too for autonomy
+
     detection_data:
       gate:
         pose: [2.0, 0.0, -0.8, 0.0, 0.0, 0.0]
@@ -105,40 +122,64 @@
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      fire_hole_small:
-        pose: [12.0, 4.11176, -2.782576, 0.0, 0.0, 3.1415]
-        noise: 0.01
+      # These should match the bin CAD + mapping config offsets (bust out the calculator)
+      # Begin bin CAD shenanigans
+      bin_vinyl1:
+        class_id: blood
+        pose: [4.0318, -2.5814, -1.9151, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_vinyl2:
+        class_id: blood
+        pose: [3.9857, -3.4085, -1.7796, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_vinyl3:
+        class_id: fire
+        pose: [4.4713, -2.8688, -1.9490, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_vinyl4:
+        class_id: fire
+        pose: [3.5638, -3.1109, -1.6780, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      magnet_1:
+        class_id: magnet
+        pose: [4.4775, -2.2968, -2.0902, 0.0, 0.0, 0.5236]
+        noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      bin_target:
-        pose: [11.0, -6.0, -3.25, 0.0, 0.0, 0.0]
+      magnet_2:
+        class_id: magnet
+        pose: [3.5750, -3.6728, -1.6838, 0.0, 0.0, 3.6652]
         noise: 0.05
         score: 0.8
-        downward: true
+        downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      bin_target1:
-        class_id: blood
-        pose: [4.0, -3.0, -3.25, 0.0, 0.0, 0.0]
-        noise: 0.05
-        score: 0.8
-        downward: true
-        pub_invalid_orientation: false
-        min_dist: 0.5
-        max_dist: 3.0
-      bin_target2:
-        class_id: blood
-        pose: [4.7, -3.5, -3.25, 0.0, 0.0, 0.0]
-        noise: 0.05
-        score: 0.8
-        downward: true
-        pub_invalid_orientation: false
-        min_dist: 0.5
-        max_dist: 3.0
+      # End bin CAD shenanigans
+
       table:
         pose: [4.0, 8.0, -3.25, 0.0, 0.0, 0.0]
         noise: 0.05
