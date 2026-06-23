@@ -201,7 +201,7 @@ class YOLONode(Node):
         weights_dir = os.path.join(get_package_share_directory("tensor_detector"), 'weights')
         model_path = os.path.join(weights_dir, yolo_model)
         self.get_logger().info(f"Loading model path: {model_path}")
-        self.model = YoloModel(model_path=model_path, export=self.export)
+        self.model = YoloModel(model_path=model_path, export=self.export, logger=self.get_logger())
 
         self.reset_collection_variables()
         self.destroy_subscriptions()
