@@ -235,11 +235,10 @@ class BinGeometryFitter:
             node.publish_pose()
 
             response.success = True
-            response.residual_m = fit["residual_m"]
-            response.fitted_yaw_deg = degrees(fit["yaw"])
             response.message = (f"bin_cad_geometry fit ok (in bin frame): x={fit['x']:.3f} y={fit['y']:.3f} "
                                 f"z={z:.3f} ({z_source}) yaw={degrees(fit['yaw']):.1f}deg "
                                 f"residual={fit['residual_m']:.3f}m corr=[{vinyl_a},{vinyl_b}]")
+
             log.info(response.message)
             return response
 
