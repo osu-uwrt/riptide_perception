@@ -4,8 +4,8 @@
     objects:
       # Gate
       - gate
-      - gate_shark
-      - gate_saw
+      - gate_repar
+      - gate_rescue
 
       # Slalom
       - slalom_front
