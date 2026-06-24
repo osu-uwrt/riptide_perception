@@ -189,9 +189,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.0
-          y: 0.0
-          z: -1.2
+          x: 3.0
+          y: 3.0
+          z: -2.1
           yaw: 0.0 # Needs to be fairly accurate for bin fit to work
       bin_target1:
         parent: bin_frame
@@ -340,6 +340,7 @@
       # table locations
       table:
         parent: map
+        lock_orientation_to_config: true
         covar:
           x: 0.001
           y: 0.001
@@ -348,10 +349,11 @@
         pose:
           x: 6.0
           y: -4.0
-          z: -3.25
+          z: -1.5
           yaw: 180.0
       pill:
         parent: table_frame
+        point_yaw_at_parent: true
         covar:
           x: 0.001
           y: 0.001
@@ -364,6 +366,7 @@
           yaw: 180.0
       bandage:
         parent: table_frame
+        point_yaw_at_parent: true
         covar:
           x: 0.001
           y: 0.001
@@ -376,6 +379,7 @@
           yaw: 180.0
       nut_and_bolt:
         parent: table_frame
+        point_yaw_at_parent: true
         covar:
           x: 0.001
           y: 0.001
@@ -388,6 +392,7 @@
           yaw: 0.0
       plug:
         parent: table_frame
+        point_yaw_at_parent: true
         covar:
           x: 0.001
           y: 0.001
@@ -400,6 +405,7 @@
           yaw: 0.0     
       helmet:
         parent: table_frame
+        point_yaw_at_parent: true
         covar:
           x: 0.001
           y: 0.001
@@ -412,6 +418,7 @@
           yaw: 0.0
       warning:
         parent: table_frame
+        point_yaw_at_parent: true
         covar:
           x: 0.001
           y: 0.001

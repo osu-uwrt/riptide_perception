@@ -31,13 +31,16 @@ RELABEL_MAP = {}
 # Classes intercepted by the Torpedo task when it is enabled (ffc)
 TORPEDO_CLASSES = {'fire', 'blood', 'circle'}
 
-# Pairs that, when both are seen in a frame, are merged into one combined detection (union bbox -> centroid) (Gate)
-# When only one member is present, it runs through the normal planar path (Octagon)
-GATE_PAIRS = [
+# Pairs that, when both are seen in a frame, are merged into one combined detection (union bbox -> centroid)
+# When only one member is present, it runs through the normal planar path
+DETECTION_PAIRS = [
     (('compass', 'hammer_and_wrench'), 'gate_repair'),
     (('buoy', 'sos'), 'gate_rescue'),
 ]
-GATE_PAIR_CLASSES = {c for pair, _ in GATE_PAIRS for c in pair} # This way we dont have to type them twice (python moment)
+PAIR_CLASSES = {c for pair, _ in DETECTION_PAIRS for c in pair}
+
+# Toggle-able pair: warning + helmet -> table center (togglable via set_table_pair_enabled)
+TABLE_PAIR = (('warning', 'helmet'), 'table')
 
 SLALOM_CLASS = "slalom" #magic 🪄
 
@@ -118,8 +121,10 @@ class DetectionProcessor:
         # (So blood/fire work for bins)
         self.torpedo_enabled = False
 
-        # Gate pairs: class_name -> list of boxes seen this frame
-        self.gate_pair_boxes = {}
+        # Pairs: active pair list and per-frame box accumulator
+        self.active_pairs = list(DETECTION_PAIRS)
+        self.pair_classes = PAIR_CLASSES.copy()
+        self.pair_boxes = {}
 
 
     ### API
@@ -127,8 +132,17 @@ class DetectionProcessor:
         self.slalom_name = name
 
     def set_torpedo_enabled(self, enabled):
-        """Turn the Task04 fire/blood torpedo logic on (ffc) or off (dfc)."""
+        """Turn the fire/blood torpedo logic on (ffc) or off (dfc)."""
         self.torpedo_enabled = bool(enabled)
+
+    def set_table_pair_enabled(self, enabled):
+        """When enabled, warning+helmet seen together emit a table detection"""
+        if enabled:
+            if TABLE_PAIR not in self.active_pairs:
+                self.active_pairs.append(TABLE_PAIR)
+        else:
+            self.active_pairs = [p for p in self.active_pairs if p is not TABLE_PAIR]
+        self.pair_classes = {c for pair, _ in self.active_pairs for c in pair}
 
     def process(self, results, frame):
         """Run one image through the pipeline.
@@ -176,8 +190,8 @@ class DetectionProcessor:
 
                     if self.torpedo_enabled and name in TORPEDO_CLASSES:
                         self._torpedo_add(name, box)
-                    elif name in GATE_PAIR_CLASSES:
-                        self.gate_pair_boxes.setdefault(name, []).append(box)
+                    elif name in self.pair_classes:
+                        self.pair_boxes.setdefault(name, []).append(box)
                     elif name == SLALOM_CLASS:
                         detection_temp = self.create_detection3d_message(box, frame, conf)
                         if detection_temp and detection_temp.results:
@@ -188,7 +202,7 @@ class DetectionProcessor:
                             detections.detections.append(detection)
 
         # Resolve grouped detections that need the whole frame first
-        self._resolve_gate_pairs(frame, detections)
+        self._resolve_pairs(frame, detections)
 
         # Torpedo fire/blood (ffc)
         if self.torpedo_enabled:
@@ -212,7 +226,7 @@ class DetectionProcessor:
         self.torpedo_fire_box = None
         self.torpedo_blood_box = None
         self.torpedo_circles = []
-        self.gate_pair_boxes = {}
+        self.pair_boxes = {}
 
     def _stamp(self, frame):
         if self.cfg.use_incoming_timestamp:
@@ -489,7 +503,7 @@ class DetectionProcessor:
     def _box_conf(self, box):
         return box.conf[0]
 
-    ### Gate pairs
+    ### Paired detections
     def _union_bbox(self, boxes):
         """Axis-aligned union of several boxes"""
         xs0, ys0, xs1, ys1 = [], [], [], []
@@ -498,36 +512,35 @@ class DetectionProcessor:
             xs0.append(x_min); ys0.append(y_min); xs1.append(x_max); ys1.append(y_max)
         return (min(xs0), min(ys0), max(xs1), max(ys1))
 
-    def _resolve_gate_pairs(self, frame, detections):
-        """If both were seen this frame, publish ONE combined detection 
-        If only one is present, publish each present box
-        normally (its own class, standard planar path)."""
-        for (a, b), gate_name in GATE_PAIRS:
-            boxes_a = self.gate_pair_boxes.get(a, [])
-            boxes_b = self.gate_pair_boxes.get(b, [])
+    def _resolve_pairs(self, frame, detections):
+        """If both members of a pair were seen this frame, publish ONE combined detection.
+        If only one is present, publish each present box normally (its own class, standard planar path)."""
+        for (a, b), pair_name in self.active_pairs:
+            boxes_a = self.pair_boxes.get(a, [])
+            boxes_b = self.pair_boxes.get(b, [])
             if boxes_a and boxes_b:
-                self._emit_combined_gate(frame, detections, boxes_a + boxes_b, gate_name)
+                self._emit_combined_pair(frame, detections, boxes_a + boxes_b, pair_name)
             else:
                 for box in boxes_a + boxes_b:
                     det = self.create_detection3d_message(box, frame, box.conf[0])
                     if det:
                         detections.detections.append(det)
 
-    def _emit_combined_gate(self, frame, detections, boxes, gate_name):
+    def _emit_combined_pair(self, frame, detections, boxes, pair_name):
         """Union the member bboxes, fit one plane over the combined region, and
-        publish it under gate_name (conf = min of the members)"""
+        publish it under pair_name (conf = min of the members)."""
         union = self._union_bbox(boxes)
         conf = min(self._box_conf(b) for b in boxes)
 
-        fit = self._fit_boxes(boxes, frame, conf, center_bbox=union, class_name=gate_name)
+        fit = self._fit_boxes(boxes, frame, conf, center_bbox=union, class_name=pair_name)
         if fit is None:
             return
-        self.plane_normal = fit.normal # Stored for debug stuff
+        self.plane_normal = fit.normal
         bbox_width = union[2] - union[0]
         bbox_height = union[3] - union[1]
-        self._build_marker(frame, fit.quat, fit.centroid, gate_name, bbox_width, bbox_height)
+        self._build_marker(frame, fit.quat, fit.centroid, pair_name, bbox_width, bbox_height)
         detection = self._new_detection(frame)
-        detection.results.append(self._make_hypothesis(gate_name, fit.centroid, fit.quat, conf))
+        detection.results.append(self._make_hypothesis(pair_name, fit.centroid, fit.quat, conf))
         detections.detections.append(detection)
 
     ### Slalom

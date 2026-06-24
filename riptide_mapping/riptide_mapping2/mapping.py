@@ -111,6 +111,7 @@ class MappingNode(Node):
             "bin_target2": dict(),
 
             # Table
+            "table": dict(),
             "pill": dict(),
             "plug": dict(),
             "nut_and_bolt": dict(),
@@ -136,6 +137,7 @@ class MappingNode(Node):
                     ('init_data.{}.covar.z'.format(object), 1.0),
                     ('init_data.{}.covar.yaw'.format(object), 1.0),
                     ('init_data.{}.lock_orientation_to_config'.format(object), False),
+                    ('init_data.{}.point_yaw_at_parent'.format(object), False),
                     
                     # Only the bin vinyls use it, everything else stays ""
                     ('init_data.{}.class'.format(object), ""),
@@ -719,6 +721,15 @@ class MappingNode(Node):
             pose.header.stamp = now
             pose.header.frame_id = parent
 
+            # point yaw at parent on the PUBLISHED pose too, so the cov arrow matches the tf.
+            # only applies to non-map parents; position here is in parent frame.
+            if parent != "map" and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value):
+                yaw = math.atan2(-pose.pose.pose.position.y, -pose.pose.pose.position.x)
+                (pose.pose.pose.orientation.w,
+                pose.pose.pose.orientation.x,
+                pose.pose.pose.orientation.y,
+                pose.pose.pose.orientation.z) = euler2quat(0.0, 0.0, yaw)
+            
             # If the object is the target object the translational covariance will be in the offset object.
             if object == self.target_object and parent == "map":
                 offset_covar = self.offset.get_pose().covariance

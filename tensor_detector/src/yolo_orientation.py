@@ -96,6 +96,7 @@ class YOLONode(Node):
 
         self.create_switch_service()
         self.create_slalom_switch_service()
+        self.create_table_pair_service()
 
         self.setup_camera()
 
@@ -135,6 +136,10 @@ class YOLONode(Node):
         self.slalom_srv = self.create_service(SetString, 'set_slalom_type', self.switch_slalom_callback)
         self.get_logger().info("Slalom switch service created. Call to change name of pubbed slalom det")
 
+    def create_table_pair_service(self):
+        self.table_pair_srv = self.create_service(SetBool, 'set_table_pair_enabled', self.table_pair_callback)
+        self.get_logger().info("Table pair service created. True=warning+helmet->table, False=individual")
+
     def switch_camera_callback(self, request, response):
         if getattr(self, 'camera_switch_in_progress', False):
             response.success = False
@@ -167,6 +172,13 @@ class YOLONode(Node):
         self.detector.set_slalom_name(request.data)
         response.success = True
         response.message = f"Successfully set slalom type to {request.data}"
+        return response
+
+    def table_pair_callback(self, request, response):
+        self.detector.set_table_pair_enabled(request.data)
+        state = "enabled" if request.data else "disabled"
+        response.success = True
+        response.message = f"Table pair mode {state}"
         return response
 
     def delayed_setup(self):
