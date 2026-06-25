@@ -54,8 +54,8 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.5
-          z: 0.0
+          y: 0.75
+          z: 0.4
           yaw: 180.0
       gate_repair:
         parent: gate_frame
@@ -66,8 +66,8 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: -0.5
-          z: 0.0
+          y: -0.75
+          z: 0.4
           yaw: 180.0
       slalom_parent:
         parent: map
@@ -412,9 +412,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.305
+          x: 0.40168
           y: 0.0
-          z: 0.0
+          z: 0.021457
           yaw: 0.0
       warning:
         parent: table_frame
@@ -425,9 +425,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: -0.305
+          x: -0.40168
           y: 0.0
-          z: 0.0
+          z: 0.021457
           yaw: 0.0
       compass:
         parent: table_frame
