@@ -28,8 +28,12 @@ from colors import COLOR_MAP
 # Published-name relabels (no class is currently relabeled on publish but good to have)
 RELABEL_MAP = {}
 
+# Optional torpedo plane symbols: when seen they add points to the board-plane
+# fit and to the torpedo-center extent, but they are not required (fire/blood gate the board).
+TORPEDO_EXTRA_CLASSES = {'ambulance', 'fire_engine'}
+
 # Classes intercepted by the Torpedo task when it is enabled (ffc)
-TORPEDO_CLASSES = {'fire', 'blood', 'circle'}
+TORPEDO_CLASSES = {'fire', 'blood', 'circle'} | TORPEDO_EXTRA_CLASSES
 
 # Pairs that, when both are seen in a frame, are merged into one combined detection (union bbox -> centroid)
 # When only one member is present, it runs through the normal planar path
@@ -94,6 +98,7 @@ class DetectionProcessor:
         self.log = logger
         self._now_stamp = now_stamp        # callable lambda (ƛ🍾) -> builtin_interfaces/Time msg 
         self.tf_buffer = tf_buffer
+        self._camera_normal = -geometry.DEFAULT_NORMAL
         self._default_normal = geometry.DEFAULT_NORMAL
 
         # Output things
@@ -115,6 +120,7 @@ class DetectionProcessor:
         self.torpedo_fire_box = None
         self.torpedo_blood_box = None
         self.torpedo_circles = []
+        self.torpedo_extra_boxes = []      # optional plane symbols, e.g. (name, box)
 
         # When enabled, the torpedo classes are intercepted and
         # resolved by process_torpedo_task instead of the default plane-fit path.
@@ -226,6 +232,7 @@ class DetectionProcessor:
         self.torpedo_fire_box = None
         self.torpedo_blood_box = None
         self.torpedo_circles = []
+        self.torpedo_extra_boxes = []
         self.pair_boxes = {}
 
     def _stamp(self, frame):
@@ -343,10 +350,11 @@ class DetectionProcessor:
                                         frame.fx, frame.fy, frame.cx, frame.cy)
         if normal[2] > 0:
             normal = -normal
-        quat, _ = geometry.normal_to_quaternion(normal, self._default_normal)
+        self.plane_normal = normal
+        board_quat, _ = geometry.normal_to_quaternion(normal, self._camera_normal)
 
         return SurfaceFit(points=points_3d, normal=normal, centroid=centroid,
-                          quat=quat, center2d=(bbox_center_x, bbox_center_y), conf=conf)
+                          quat=board_quat, center2d=(bbox_center_x, bbox_center_y), conf=conf)
 
     def _fit_bbox(self, bbox, frame, conf, class_name=None):
         """Generic planar surface fit over a single bbox: sample -> SVD."""
@@ -376,6 +384,8 @@ class DetectionProcessor:
             self.torpedo_blood_box = box
         elif name == "circle":
             self.torpedo_circles.append(box)
+        elif name in TORPEDO_EXTRA_CLASSES:
+            self.torpedo_extra_boxes.append((name, box))
 
     def process_torpedo_task(self, frame, detections):
         """Resolve the fire/blood torpedo board: publish the torpedo center and,
@@ -383,13 +393,21 @@ class DetectionProcessor:
         fire = self._fit_symbol(self.torpedo_fire_box, frame, class_name='fire') if self.torpedo_fire_box is not None else None
         blood = self._fit_symbol(self.torpedo_blood_box, frame, class_name='blood') if self.torpedo_blood_box is not None else None
 
+        # Optional extra symbols (ambulance, fire_engine): add plane points + centers when seen.
+        extras = []
+        for name, box in self.torpedo_extra_boxes:
+            extra_fit = self._fit_symbol(box, frame, class_name=name)
+            if extra_fit is not None:
+                extras.append(extra_fit)
+
         present = [f for f in (fire, blood) if f is not None]
         if not present:
-            return  # no reliable symbol plane this frame; publish nothing
+            return  # no reliable required symbol plane this frame; publish nothing
 
-        # Board plane normal (pool both patches when available)
-        if fire is not None and blood is not None:
-            pooled = np.vstack([fire.points, blood.points])
+        # Board plane normal: pool every available symbol patch (fire/blood + optional extras).
+        plane_fits = present + extras
+        if len(plane_fits) > 1:
+            pooled = np.vstack([f.points for f in plane_fits])
             normal, _, _ = geometry.fit_plane(pooled)
             if normal is None:
                 normal = present[0].normal
@@ -399,13 +417,15 @@ class DetectionProcessor:
         if normal[2] > 0:
             normal = -normal
         self.plane_normal = normal
-        board_quat, _ = geometry.normal_to_quaternion(normal, self._default_normal)
+        board_quat = geometry.quat_from_normal_stable(normal)
 
         # Plane anchor: midpoint of visible symbol centroids (any on-plane point).
         anchor = np.mean(np.array([f.centroid for f in present]), axis=0)
 
         # Torpedo center via in-plane extent of all visible shapes
         centers_2d = [f.center2d for f in present]
+        for extra_fit in extras:
+            centers_2d.append(extra_fit.center2d)
         for cbox in self.torpedo_circles:
             centers_2d.append(self._box_center(cbox))
 

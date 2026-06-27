@@ -124,9 +124,9 @@ class Location:
             cov[0] = numpy.nanvar(self.position["x"])
             cov[7] = numpy.nanvar(self.position["y"])
             cov[14] = numpy.nanvar(self.position["z"])
-            cov[21] = circvar(self.orientation["x"])
-            cov[28] = circvar(self.orientation["y"])
-            cov[35] = circvar(self.orientation["z"])
+            cov[21] = circvar(self.orientation["x"], nan_policy="omit")
+            cov[28] = circvar(self.orientation["y"], nan_policy="omit")
+            cov[35] = circvar(self.orientation["z"], nan_policy="omit")
         else:
             #publish initial covariances
             cov[0] =  1.0

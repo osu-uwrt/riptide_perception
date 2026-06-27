@@ -10,12 +10,15 @@ The processor returns detections + markers, which this node publishes.
 import os
 import time
 
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2, Image
 from visualization_msgs.msg import MarkerArray, Marker
 from vision_msgs.msg import Detection3DArray
 from cv_bridge import CvBridge
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 import numpy as np
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -62,8 +65,13 @@ class YOLONode(Node):
                 ('max_sample_points', 500),          # Cap points per patch fed to SVD/cloud (0 = uncapped)
                 ('cloud_color_mode', 'class'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
                 ('publish_box_markers', False),
+                ('max_depth_age', 1.0)
             ]
         )
+        
+        # Run image/depth callback threads in parallel so one isn't starved
+        self.image_cb_group = MutuallyExclusiveCallbackGroup()
+        self.depth_cb_group = MutuallyExclusiveCallbackGroup()
 
         self.robot_ns = self.get_parameter('robot_namespace').get_parameter_value().string_value
         self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
@@ -75,12 +83,12 @@ class YOLONode(Node):
         self.print_camera_info = self.get_parameter('print_camera_info').get_parameter_value().bool_value
         self.publish_interval = self.get_parameter('publish_interval').get_parameter_value().double_value
         self.torpedo_task_camera = self.get_parameter('torpedo_task_camera').get_parameter_value().string_value
-
+        self.max_depth_age = self.get_parameter('max_depth_age').get_parameter_value().double_value
         self.create_publishers()
 
         self.bridge = CvBridge()
-        self.depth_image = None
         self.camera_info_gathered = False
+        self._depth = None
 
         # tf
         self.tf_buffer = Buffer()
@@ -99,6 +107,7 @@ class YOLONode(Node):
         self.create_table_pair_service()
 
         self.setup_camera()
+
 
     def _build_processor_config(self):
         mode_str = self.get_parameter('cloud_color_mode').get_parameter_value().string_value
@@ -229,7 +238,7 @@ class YOLONode(Node):
         self.get_logger().info(f"Class id map: {self.class_id_map}")
 
     def reset_collection_variables(self):
-        self.depth_image = None
+        self._depth = None
         self.camera_info_gathered = False
 
     def destroy_subscriptions(self):
@@ -249,19 +258,18 @@ class YOLONode(Node):
 
         info_topic = f'{base}/left/camera_info'
         self.zed_info_subscription = self.create_subscription(
-            CameraInfo, info_topic, self.camera_info_callback, 1)
-        self.get_logger().info(f"Creating camera info subcription: {info_topic}")
+            CameraInfo, info_topic, self.camera_info_callback, 1,
+            callback_group=self.depth_cb_group)
 
         image_topic = f'{base}/left/image_rect_color/compressed'
         self.image_subscription = self.create_subscription(
-            CompressedImage, image_topic, self.image_callback, 1)
-        self.get_logger().info(f"Creating image subcription: {image_topic}")
+            CompressedImage, image_topic, self.image_callback, 1,
+            callback_group=self.image_cb_group)
 
         depth_topic = f'{base}/depth/depth_registered'
         self.depth_subscription = self.create_subscription(
-            Image, depth_topic, self.depth_callback, 1)
-        self.get_logger().info(f"Creating depth subcription: {depth_topic}")
-
+            Image, depth_topic, self.depth_callback, 1,
+            callback_group=self.depth_cb_group)
     ### Callbacks
     def has_subscribers(self, publisher):
         return publisher.get_subscription_count() > 0
@@ -278,8 +286,15 @@ class YOLONode(Node):
             self.camera_info_gathered = True
 
     def depth_callback(self, msg):
-        self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
-
+        now = self.get_clock().now()
+        if hasattr(self, '_last_depth_t'):
+            dt = (now - self._last_depth_t).nanoseconds * 1e-9
+            self.get_logger().info(f"depth dt={dt*1000:.0f}ms", throttle_duration_sec=2)
+        self._last_depth_t = now
+        # depth_callback:
+        self._depth = (self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough'),
+                    msg.header.stamp)
+        
     def _stamp(self, msg):
         if self.use_incoming_timestamp:
             return msg.header.stamp
@@ -289,7 +304,9 @@ class YOLONode(Node):
     def image_callback(self, msg: CompressedImage):
         start_time = time.perf_counter() if self.log_processing_time else None
 
-        if self.depth_image is None or not self.camera_info_gathered:
+        snapshot = self._depth
+    
+        if snapshot is None or not self.camera_info_gathered:
             self.get_logger().warning(
                 "Skipping image because either no depth image or camera info is available.",
                 throttle_duration_sec=1)
@@ -299,6 +316,16 @@ class YOLONode(Node):
         cv_image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
         if cv_image is None:
             return
+        
+        depth_image, depth_stamp = snapshot
+        
+        img_t  = rclpy.time.Time.from_msg(msg.header.stamp)
+        dep_t  = rclpy.time.Time.from_msg(depth_stamp)
+        dt = abs((img_t - dep_t).nanoseconds) * 1e-9
+        if dt > self.max_depth_age:
+            self.get_logger().warning(f"Skipping frame, depth is {dt*1000:.0f}ms stale",
+                                    throttle_duration_sec=1)
+            return
 
         # Run inference
         results = self.model.infer(cv_image, conf=self.conf, iou=self.iou)
@@ -306,7 +333,7 @@ class YOLONode(Node):
         # Store everything we need in the frame dataclass 🤌
         frame = Frame(
             image=cv_image,
-            depth=self.depth_image,
+            depth=depth_image,
             fx=self.fx, fy=self.fy, cx=self.cx, cy=self.cy,
             K=self.intrinsic_matrix,
             frame_id=self.frame_id,
@@ -356,9 +383,13 @@ class YOLONode(Node):
 def main(args=None):
     rclpy.init(args=args)
     yolo_node = YOLONode()
-    rclpy.spin(yolo_node)
-    yolo_node.destroy_node()
-    rclpy.shutdown()
+    executor = MultiThreadedExecutor()
+    executor.add_node(yolo_node)
+    try:
+        executor.spin()
+    finally:
+        yolo_node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

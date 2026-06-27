@@ -75,7 +75,7 @@
 
       # Slalom
       slalom_front:
-        pose: [4.5, 0.0, -2.25, 0.0, 0.0, 3.1415]
+        pose: [4.5, 0.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         downward: false
@@ -83,7 +83,7 @@
         min_dist: 0.5
         max_dist: 3.0
       slalom_middle:
-        pose: [6.5, 1.0, -2.25, 0.0, 0.0, 3.1415]
+        pose: [6.5, 1.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         downward: false
@@ -91,7 +91,7 @@
         min_dist: 0.5
         max_dist: 3.0
       slalom_back:
-        pose: [8.5, 0.0, -2.25, 0.0, 0.0, 3.1415]
+        pose: [8.5, 0.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         downward: false
@@ -231,7 +231,7 @@
       table_helmet:
         class_id: helmet
         parent: table
-        pose: [0.305, 0.0, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.40168, 0.0, 0.021457, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
@@ -241,7 +241,7 @@
       table_warning:
         class_id: warning
         parent: table
-        pose: [-0.305, 0.0, 0.0, 0.0, 0.0, 0.0]
+        pose: [-0.40168, 0.0, 0.021457, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
