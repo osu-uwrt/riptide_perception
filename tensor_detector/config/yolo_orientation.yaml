@@ -1,6 +1,7 @@
 /**/yolo_orientation:
   ros__parameters:
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
+    export: false
 
     # ---------- FFC configuration ----------
     ffc_model: "rs26_ffc.pt"

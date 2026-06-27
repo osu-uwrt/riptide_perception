@@ -555,7 +555,7 @@ class MappingNode(Node):
             return False, None, None, str(ex)
 
         trans_pose = do_transform_pose_stamped(pose, transform)
-        if result.hypothesis.class_id in self.downwards_objects.keys():
+        if child in self.downwards_objects.keys():
             trans_pose.pose.orientation.x = 0.0
             trans_pose.pose.orientation.y = 0.0
             trans_pose.pose.orientation.z = 0.0
@@ -715,6 +715,8 @@ class MappingNode(Node):
         # For every object send the covariance and transform
         for object in self.objects.keys():
             parent = str(self.get_parameter("init_data.{}.parent".format(object)).value)
+            lock_orientation = bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(object)).value)
+            is_downward = object in self.downwards_objects
             pose = PoseWithCovarianceStamped()
 
             pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
@@ -723,7 +725,9 @@ class MappingNode(Node):
 
             # point yaw at parent on the PUBLISHED pose too, so the cov arrow matches the tf.
             # only applies to non-map parents; position here is in parent frame.
-            if parent != "map" and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value):
+            if parent != "map" and not lock_orientation and not is_downward \
+                and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value):
+                
                 yaw = math.atan2(-pose.pose.pose.position.y, -pose.pose.pose.position.x)
                 (pose.pose.pose.orientation.w,
                 pose.pose.pose.orientation.x,
@@ -767,7 +771,7 @@ class MappingNode(Node):
                 init_pose: Pose = self.objects[object]["init_pose"]
 
                 # check init pose for nans and infs
-                if not (math.isfinite(init_pose.position.x) or math.isfinite(init_pose.position.y) or math.isfinite(init_pose.position.z)):
+                if not (math.isfinite(init_pose.position.x) and math.isfinite(init_pose.position.y) and math.isfinite(init_pose.position.z)):
                     frame_valid = False
 
                 transform.transform.translation.x = init_pose.position.x # need to assign individual components because a vector3 is not a point

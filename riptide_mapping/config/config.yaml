@@ -36,8 +36,8 @@
       gate:
         parent: map
         covar:
-          x: 1.0
-          y: 1.0
+          x: 20.0
+          y: 20.0
           z: 1.0
           yaw: 50.0
         pose:
@@ -129,10 +129,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 12.0
-          y: 4.0
-          z: -3.0
-          yaw: 180.0
+          x: -1.0
+          y: 0.0
+          z: -0.5
+          yaw: 0.0
       fire_hole_large:
         parent: torpedo_frame
         covar:
@@ -189,12 +189,13 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 3.0
-          y: 3.0
-          z: -2.1
+          x: 1.0
+          y: 0.0
+          z: -1.0
           yaw: 0.0 # Needs to be fairly accurate for bin fit to work
       bin_target1:
         parent: bin_frame
+        lock_orientation_to_config: true
         covar:
           x: 0.001
           y: 0.001
@@ -207,6 +208,7 @@
           yaw: 0.0
       bin_target2:
         parent: bin_frame
+        lock_orientation_to_config: true
         covar:
           x: 0.001
           y: 0.001

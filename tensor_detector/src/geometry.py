@@ -47,19 +47,32 @@ def fit_plane(points_3d):
     d = -np.dot(normal, centroid)
     return normal, d, centroid
 
+# geometry.py
+def quat_from_normal_stable(normal, default_normal=DEFAULT_NORMAL):
+    """Body +z = normal, deterministic roll. No singularity near anti-parallel."""
+    n = np.asarray(normal, float)
+    n = n / np.linalg.norm(n)
+    u, v = inplane_basis(n)
+    Rm = np.column_stack((u, v, n))      # columns = body x, y, z in camera frame
+    if np.linalg.det(Rm) < 0:            # keep it right-handed
+        Rm = np.column_stack((-u, v, n))
+    return R.from_matrix(Rm).as_quat()
 
 def rotation_from_normal(normal, default_normal=DEFAULT_NORMAL):
-    """Rotation that maps default_normal onto normal (scipy Rotation)."""
-    axis = np.cross(default_normal, normal)
-    axis_length = np.linalg.norm(axis)
-    if axis_length == 0:
-        # Normal is parallel/anti-parallel, rotate 180 deg about an arbitrary axis (goofy ahh rotation)
-        axis = np.array([1, 0, 0])
-        angle = np.pi
-    else:
-        axis = axis / axis_length
-        angle = np.arccos(np.dot(default_normal, normal))
-    return R.from_rotvec(axis * angle)
+    a = default_normal / np.linalg.norm(default_normal)
+    b = normal / np.linalg.norm(normal)
+    d = float(np.clip(np.dot(a, b), -1.0, 1.0))   # clamp guards arccos
+    if d > 1.0 - 1e-9:
+        return R.identity()
+    if d < -1.0 + 1e-6:                            # near anti-parallel
+        axis = np.cross(a, [1.0, 0.0, 0.0])
+        if np.linalg.norm(axis) < 1e-6:
+            axis = np.cross(a, [0.0, 1.0, 0.0])
+        axis /= np.linalg.norm(axis)
+        return R.from_rotvec(axis * np.pi)        # deterministic, not noise-driven
+    axis = np.cross(a, b)
+    axis /= np.linalg.norm(axis)
+    return R.from_rotvec(axis * np.arccos(d))
 
 
 def normal_to_quaternion(normal, default_normal=DEFAULT_NORMAL):

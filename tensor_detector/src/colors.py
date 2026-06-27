@@ -21,6 +21,8 @@ COLOR_MAP = {
     'fire_hole_small': (1.0, 0.7, 0.0),
     'blood_hole_large': (0.6, 0.0, 0.0),
     'blood_hole_small': (1.0, 0.0, 0.4),
+    'ambulance': (1.0, 0.0, 1.0),
+    'fire_engine': (1.0, 0.2, 0.2),
 
     # FFC generic planar classes (when not merged into a gate pair)
     'buoy': (0.2, 0.8, 1.0),
