@@ -3,7 +3,7 @@
     active_camera: "ffc"  # Change to "dfc" or "ffc" to switch cameras
 
     # ---------- FFC configuration ----------
-    ffc_model: "ffc_rs_26.pt"
+    ffc_model: "rs26_ffc.pt"
     ffc_class_id_map: "{
       0: 'blood',
       1: 'buoy',
@@ -12,7 +12,9 @@
       4: 'fire',
       5: 'hammer_and_wrench',
       6: 'slalom',
-      7: 'sos'
+      7: 'sos',
+      8: 'ambulance',
+      9: 'fire_engine'
     }"
     # ffc_class_id_map: "{
     #   0: 'ambulance',
