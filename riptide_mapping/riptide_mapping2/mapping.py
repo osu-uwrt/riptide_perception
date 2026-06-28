@@ -112,12 +112,12 @@ class MappingNode(Node):
 
             # Table
             "table": dict(),
-            "pill": dict(),
-            "plug": dict(),
-            "nut_and_bolt": dict(),
-            "bandage": dict(),
-            "helmet": dict(),
-            "warning": dict(),
+            # "pill": dict(),
+            # "plug": dict(),
+            # "nut_and_bolt": dict(),
+            # "bandage": dict(),
+            # "helmet": dict(),
+            # "warning": dict(),
         }
                 
         self.outstanding_detections: list[OutstandingDetectionInfo] = []

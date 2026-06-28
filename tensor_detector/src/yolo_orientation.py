@@ -9,6 +9,8 @@ The processor returns detections + markers, which this node publishes.
 """
 import os
 import time
+import threading
+from collections import deque
 
 
 import rclpy
@@ -19,6 +21,7 @@ from vision_msgs.msg import Detection3DArray
 from cv_bridge import CvBridge
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.qos import qos_profile_sensor_data
 import numpy as np
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -64,8 +67,11 @@ class YOLONode(Node):
                 ('grid_step', 8),                   # Pixel spacing for the surface grid sample (smaller = denser)
                 ('max_sample_points', 500),          # Cap points per patch fed to SVD/cloud (0 = uncapped)
                 ('cloud_color_mode', 'class'),      # Point cloud coloring: 'class' (flat COLOR_MAP color) or 'pixel' (sampled from image)
+                ('depth_mad_scale', 3.0),           # Robust depth-gate width in MAD stddevs; culls edge points that bleed onto the background (<=0 disables)
+                ('depth_min_spread', 0.05),         # Min depth spread (m) so flat, head-on patches aren't over-pruned
                 ('publish_box_markers', False),
-                ('max_depth_age', 1.0)
+                ('max_depth_age', 1.0),
+                ('depth_buffer_size', 60),          # Depth frames kept for timestamp matching (covers depth-vs-image transport lag)
             ]
         )
         
@@ -84,11 +90,17 @@ class YOLONode(Node):
         self.publish_interval = self.get_parameter('publish_interval').get_parameter_value().double_value
         self.torpedo_task_camera = self.get_parameter('torpedo_task_camera').get_parameter_value().string_value
         self.max_depth_age = self.get_parameter('max_depth_age').get_parameter_value().double_value
+        self.depth_buffer_size = self.get_parameter('depth_buffer_size').get_parameter_value().integer_value
         self.create_publishers()
 
         self.bridge = CvBridge()
         self.camera_info_gathered = False
-        self._depth = None
+        # Time-ordered ring of recent depth frames, matched to each image by
+        # header stamp. depth_registered is heavy and arrives well after the
+        # compressed RGB frame, so "newest depth" is always stale; buffering lets
+        # us pair an image with the depth captured closest to it.
+        self._depth_lock = threading.Lock()
+        self._depth_buffer = deque(maxlen=self.depth_buffer_size)
 
         # tf
         self.tf_buffer = Buffer()
@@ -127,6 +139,8 @@ class YOLONode(Node):
             grid_step=self.get_parameter('grid_step').get_parameter_value().integer_value,
             max_sample_points=self.get_parameter('max_sample_points').get_parameter_value().integer_value,
             cloud_color_mode=color_mode,
+            depth_mad_scale=self.get_parameter('depth_mad_scale').get_parameter_value().double_value,
+            depth_min_spread=self.get_parameter('depth_min_spread').get_parameter_value().double_value,
             publish_box_markers=self.get_parameter('publish_box_markers').get_parameter_value().bool_value,
         )
 
@@ -238,7 +252,8 @@ class YOLONode(Node):
         self.get_logger().info(f"Class id map: {self.class_id_map}")
 
     def reset_collection_variables(self):
-        self._depth = None
+        with self._depth_lock:
+            self._depth_buffer.clear()
         self.camera_info_gathered = False
 
     def destroy_subscriptions(self):
@@ -256,19 +271,19 @@ class YOLONode(Node):
         #TODO: Move these to config file, but it's type dependent
         base = f'/{self.robot_ns}/{self.camera_prefix}/zed_node'
 
-        info_topic = f'{base}/left/camera_info'
+        info_topic = f'{base}/rgb/camera_info'
         self.zed_info_subscription = self.create_subscription(
             CameraInfo, info_topic, self.camera_info_callback, 1,
             callback_group=self.depth_cb_group)
 
-        image_topic = f'{base}/left/image_rect_color/compressed'
+        image_topic = f'{base}/rgb/image_rect_color/compressed'
         self.image_subscription = self.create_subscription(
-            CompressedImage, image_topic, self.image_callback, 1,
+            CompressedImage, image_topic, self.image_callback, qos_profile_sensor_data,
             callback_group=self.image_cb_group)
 
         depth_topic = f'{base}/depth/depth_registered'
         self.depth_subscription = self.create_subscription(
-            Image, depth_topic, self.depth_callback, 1,
+            Image, depth_topic, self.depth_callback, qos_profile_sensor_data,
             callback_group=self.depth_cb_group)
     ### Callbacks
     def has_subscribers(self, publisher):
@@ -289,11 +304,26 @@ class YOLONode(Node):
         now = self.get_clock().now()
         if hasattr(self, '_last_depth_t'):
             dt = (now - self._last_depth_t).nanoseconds * 1e-9
-            self.get_logger().info(f"depth dt={dt*1000:.0f}ms", throttle_duration_sec=2)
+            self.get_logger().debug(f"depth dt={dt*1000:.0f}ms", throttle_duration_sec=2)
         self._last_depth_t = now
-        # depth_callback:
-        self._depth = (self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough'),
-                    msg.header.stamp)
+
+        depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        t_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
+        with self._depth_lock:
+            self._depth_buffer.append((t_ns, depth_image, msg.header.stamp))
+
+    def _match_depth(self, img_t_ns):
+        """Nearest buffered depth frame to img_t_ns by header stamp.
+
+        Returns (depth_image, depth_stamp, dt_seconds) for the closest match, or
+        None when the buffer is empty. The caller decides whether dt is tolerable.
+        """
+        with self._depth_lock:
+            if not self._depth_buffer:
+                return None
+            t_ns, depth_image, stamp = min(
+                self._depth_buffer, key=lambda e: abs(e[0] - img_t_ns))
+        return depth_image, stamp, abs(t_ns - img_t_ns) * 1e-9
         
     def _stamp(self, msg):
         if self.use_incoming_timestamp:
@@ -304,27 +334,25 @@ class YOLONode(Node):
     def image_callback(self, msg: CompressedImage):
         start_time = time.perf_counter() if self.log_processing_time else None
 
-        snapshot = self._depth
-    
-        if snapshot is None or not self.camera_info_gathered:
+        img_t_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
+        match = self._match_depth(img_t_ns)
+
+        if match is None or not self.camera_info_gathered:
             self.get_logger().warning(
                 "Skipping image because either no depth image or camera info is available.",
+                throttle_duration_sec=1)
+            return
+
+        depth_image, _, dt = match
+        if dt > self.max_depth_age:
+            self.get_logger().warning(
+                f"Skipping frame, closest depth is {dt*1000:.0f}ms away",
                 throttle_duration_sec=1)
             return
 
         # Get the image from the msg
         cv_image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
         if cv_image is None:
-            return
-        
-        depth_image, depth_stamp = snapshot
-        
-        img_t  = rclpy.time.Time.from_msg(msg.header.stamp)
-        dep_t  = rclpy.time.Time.from_msg(depth_stamp)
-        dt = abs((img_t - dep_t).nanoseconds) * 1e-9
-        if dt > self.max_depth_age:
-            self.get_logger().warning(f"Skipping frame, depth is {dt*1000:.0f}ms stale",
-                                    throttle_duration_sec=1)
             return
 
         # Run inference

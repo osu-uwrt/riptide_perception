@@ -31,10 +31,17 @@ def _pack_rgb(r, g, b):
 
 
 class PointCloudBuilder:
-    def __init__(self, min_points, logger, color_mode=CloudColorMode.CLASS):
+    def __init__(self, min_points, logger, color_mode=CloudColorMode.CLASS,
+                 depth_mad_scale=3.0, depth_min_spread=0.05):
         self.min_points = min_points
         self.log = logger
         self.color_mode = color_mode
+        # Robust depth-gate tuning. depth_mad_scale is how many robust stddevs
+        # (MAD-derived) from the median depth a point may sit before it's culled;
+        # <= 0 disables the gate. depth_min_spread (meters) floors the spread so a
+        # near-planar patch (MAD ~ 0) isn't pruned down to nothing.
+        self.depth_mad_scale = depth_mad_scale
+        self.depth_min_spread = depth_min_spread
         # Each entry is (x, y, z, rgb_packed_float)
         self.accumulated_points = []
 
@@ -92,6 +99,13 @@ class PointCloudBuilder:
         if len(points_3d) == 0:
             return None
 
+        # Depth gate first: edge pixels that straddle the object boundary read
+        # the background depth and land far behind the object, poisoning the
+        # plane fit and the radius/statistical passes below.
+        points_3d, rgb_arr = self._depth_filter(points_3d, rgb_arr)
+        if len(points_3d) == 0:
+            return None
+
         indices = self._outlier_indices(points_3d)
         points_3d = points_3d[indices]
         rgb_arr   = rgb_arr[indices]
@@ -141,6 +155,32 @@ class PointCloudBuilder:
         return cloud
 
     # --- internals ---
+
+    def _depth_filter(self, points_3d, rgb_arr):
+        """Cull points whose depth (z) is a robust outlier from the bulk.
+
+        Uses a median/MAD gate so it adapts to the object's distance and scale
+        rather than relying on a fixed depth window. Two-sided, so a stray point
+        in front of the object is dropped too, though the far-behind background
+        bleed at detection edges is the case this exists for.
+        """
+        if self.depth_mad_scale <= 0 or len(points_3d) < 3:
+            return points_3d, rgb_arr
+
+        z = points_3d[:, 2]
+        med = np.median(z)
+        mad = np.median(np.abs(z - med))
+        # 1.4826 rescales MAD to a Gaussian-equivalent stddev; floor it so a flat,
+        # head-on patch (mad ~ 0) doesn't collapse the gate onto the median.
+        spread = max(mad * 1.4826, self.depth_min_spread)
+        keep = np.abs(z - med) <= self.depth_mad_scale * spread
+
+        dropped = len(z) - int(np.count_nonzero(keep))
+        if dropped:
+            self.log.debug(
+                f"depth filter dropped {dropped}/{len(z)} points "
+                f"(median {med:.2f}m, spread {spread:.2f}m)")
+        return points_3d[keep], rgb_arr[keep]
 
     def _outlier_indices(self, points_3d):
         """Return the surviving index array after both outlier passes."""

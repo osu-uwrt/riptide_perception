@@ -72,6 +72,8 @@ class ProcessorConfig:
     max_sample_points: int = 50         # cap points per patch fed to the SVD/cloud (0 = uncapped)
     cloud_color_mode: CloudColorMode = CloudColorMode.CLASS
     publish_box_markers: bool = True
+    depth_mad_scale: float = 3.0        # robust depth-gate width (MAD stddevs); <=0 disables
+    depth_min_spread: float = 0.05      # min depth spread (m) so flat patches aren't over-pruned
 
 @dataclass
 class Frame:
@@ -103,7 +105,10 @@ class DetectionProcessor:
 
         # Output things
         self.markers = MarkerBuilder(config)
-        self.cloud = PointCloudBuilder(config.min_points, logger, color_mode=config.cloud_color_mode)
+        self.cloud = PointCloudBuilder(
+            config.min_points, logger, color_mode=config.cloud_color_mode,
+            depth_mad_scale=config.depth_mad_scale,
+            depth_min_spread=config.depth_min_spread)
 
         # Persistant states (stuff that lives across frames)
         self.plane_normal = None           # last fitted plane normal (debug/use)
