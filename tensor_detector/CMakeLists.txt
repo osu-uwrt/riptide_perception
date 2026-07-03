@@ -37,11 +37,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 	endif()
 endif()
 
-# Install the Python node
-install(PROGRAMS
-  src/yolo_orientation.py 
-  DESTINATION lib/${PROJECT_NAME}  
-)
+# yoink python programs from src directory
+file(GLOB src_py_files RELATIVE ${PROJECT_SOURCE_DIR} src/*.py)
+install(PROGRAMS ${src_py_files}
+  DESTINATION lib/${PROJECT_NAME})
 
 #install launch
 install(

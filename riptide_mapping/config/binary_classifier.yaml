@@ -1,0 +1,13 @@
+/**:
+  ros__parameters:
+    binary_classifier:
+      buffer_size: 500 # max detections held in the rolling buffer used for clustering
+      buffer_ttl_sec: 8.0 # detections older than this are dropped, so a target we've left behind stops contributing
+      min_cluster_detections: 6 # how many nearby detections it takes to lock an instance
+      cluster_radius_m: 0.15 # neighbors within this radius count as the same cluster when finding an instance
+      assignment_gate_m: 0.20 # once an instance is locked, a new detection farther than this from its centroid is rejected as not belonging to it
+      exclusion_radius_m: 0.30 # while hunting for the second instance, detections within this radius of the first are thrown out so the first can't bleed into the second
+      min_instance_separation_m: 0.40 # a candidate second instance must be at least this far from the first to be accepted
+      max_cluster_variance_m2: 0.02 # reject a cluster whose spread exceeds this. 0 disables the check
+      centroid_ema_alpha: 0.15 # Exponential Moving Average (EMA) rate for a locked centroid chasing new detections. lower = steadier & slower, higher = faster & noisier
+      use_3d_distance: false # cluster/measure distance in 3D (x,y,z) vs 2D (x,y). Keep False for top-down flat targets where z is the noisy axis

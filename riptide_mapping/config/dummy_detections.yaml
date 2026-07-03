@@ -1,41 +1,89 @@
 /**/dummydetections:
   ros__parameters:
     timer_period: 0.05
+    objects:
+      # Gate
+      - gate
+      - gate_repair
+      - gate_rescue
+
+      # Slalom
+      - slalom_front
+      - slalom_middle
+      - slalom_back
+
+      # Torpedo
+      - torpedo
+      - torpedo_blood_hole_large
+      - torpedo_blood_hole_small
+      - torpedo_fire_hole_large
+      - torpedo_fire_hole_small
+
+      # Bin
+      - bin
+      - bin_target
+      - bin_vinyl1
+      - bin_vinyl2
+      - bin_vinyl3
+      - bin_vinyl4
+      - bin_magnet_1
+      - bin_magnet_2
+
+      # Table/Octagon
+      - table
+      - table_helmet
+      - table_warning
+      - table_pill
+      - table_plug
+      - table_nut_and_bolt
+      - table_bandage
+      - table_compass
+      - table_sos
+      - table_buoy
+      - table_hammer_and_wrench
+
     detection_data:
+      # Gate
       gate:
-        pose: [2.0, 0.0, -0.8, 0.0, 0.0, 0.0]
+        publish: false
+        parent: map
+        pose: [2.0, 0.0, -0.8, 0.0, 0.0, 3.1415]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5 #meters. if simulate_pool is true, object will not be published if the robot is closer to the object than this value
         max_dist: 4.5 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
-      gate_shark:
-        pose: [2.0, 0.5, -0.8, 0.0, 0.0, 3.1415]
+      gate_repair:
+        parent: gate
+        pose: [0.0, 0.75, 0.4, 0.0, 0.0, 0.0]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.25
         max_dist: 3.5
-      gate_saw:
-        pose: [2.0, -0.5, -0.8, 0.0, 0.0, 3.1415]
+      gate_rescue:
+        parent: gate
+        pose: [0.0, -0.75, 0.4, 0.0, 0.0, 0.0]
         noise: 0.001
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.25
         max_dist: 3.5
+
+      # Slalom
       slalom_front:
-        pose: [4.5, 0.0, -2.25, 0.0, 0.0, 3.1415]
+        pose: [4.5, 0.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         downward: false
-        pub_invalid_orientation: false
+        pub_invalid_orientation: true
         min_dist: 0.5
         max_dist: 3.0
       slalom_middle:
-        pose: [6.5, 1.0, -2.25, 0.0, 0.0, 3.1415]
+        pose: [6.5, 1.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         downward: false
@@ -43,14 +91,17 @@
         min_dist: 0.5
         max_dist: 3.0
       slalom_back:
-        pose: [8.5, 0.0, -2.25, 0.0, 0.0, 3.1415]
+        pose: [8.5, 0.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.1
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
+
+      # Torpedo
       torpedo:
+        parent: map
         pose: [12.0, 4.0, -3.0, 0.0, 0.0, 3.1415]
         noise: 0.01
         score: 0.8
@@ -58,87 +109,226 @@
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 3.5
-      torpedo_shark_hole:
-        pose: [12.0, -3.970028, -2.782576, 0.0, 0.0, 3.1415]
+      torpedo_blood_hole_large:
+        parent: torpedo
+        class_id: blood_hole_large
+        pose: [0.2, 0.2, 0.0, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      torpedo_sawfish_hole:
-        pose: [12.0, 4.11176, -3.0889, 0.0, 0.0, 3.1415]
+      torpedo_blood_hole_small:
+        parent: torpedo
+        class_id: blood_hole_small
+        pose: [0.2, -0.2, 0.0, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
-      bin_target:
-        pose: [11.0, -6.0, -3.25, 0.0, 0.0, 0.0]
+      torpedo_fire_hole_large:
+        parent: torpedo
+        class_id: fire_hole_large
+        pose: [-0.2, 0.2, 0.0, 0.0, 0.0, 0.0]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      torpedo_fire_hole_small:
+        parent: torpedo
+        class_id: fire_hole_small
+        pose: [-0.2, 0.2, 0.0, 0.0, 0.0, 0.0]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+
+      # Bin
+      # Begin bin CAD shenanigans
+      bin: # Not published, just here to move entire prop+children
+        publish: false
+        parent: map
+        pose: [3.0, 3.0, -2.1, 0.0, 0.0, 0.0]
+      bin_vinyl1:
+        class_id: fire
+        parent: bin
+        pose: [0.47372, -0.12206, 0.30103, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
         pub_invalid_orientation: false
         min_dist: 0.5
         max_dist: 3.0
+      bin_vinyl2:
+        class_id: blood
+        parent: bin
+        pose: [0.23686, 0.34660, 0.33489, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_vinyl3:
+        class_id: blood
+        parent: bin
+        pose: [-0.21663, -0.34660, 0.47036, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_vinyl4:
+        class_id: fire
+        parent: bin
+        pose: [-0.43325, 0.12206, 0.57196, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: true
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_magnet_1:
+        class_id: magnet
+        parent: bin
+        pose: [0.76512, 0.37018, 0.15975, 0.0, 0.0, 0.0]
+        noise: 0.05
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      bin_magnet_2:
+        class_id: magnet
+        parent: bin
+        pose: [-0.70442, -0.37018, 0.56615, 0.0, 0.0, 3.1415]
+        noise: 0.05
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      # End bin CAD shenanigans
+
+      # table is the anchor, its children are offsets
       table:
-        pose: [4.0, 8.0, -3.25, 0.0, 0.0, 0.0]
+        parent: map
+        pose: [6.0, -4.0, -1.25, 0.0, 0.0, 3.1415]
         noise: 0.05
         score: 0.8
         downward: true
         pub_invalid_orientation: false
         min_dist: 1.0
         max_dist: 4.0
-      table_reefshark:
-        pose: [9.5, 4.0, -0.8, 0.0, 0.0, 0.0]
+      table_helmet:
+        class_id: helmet
+        parent: table
+        pose: [0.40168, 0.0, 0.021457, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.12
         max_dist: 3.0
-      table_sawfish:
-        pose: [10.5, 4.0, -0.8, 0.0, 0.0, 3.1415]
+      table_warning:
+        class_id: warning
+        parent: table
+        pose: [-0.40168, 0.0, 0.021457, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
-        downwward: false
+        downward: false
         pub_invalid_orientation: false
         min_dist: 0.12
         max_dist: 3.0
-      table_basket_pink:
-        pose: [0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
+      table_pill:
+        class_id: pill
+        parent: table
+        pose: [-0.25, 0.25, 0.0, 0.0, 0.0, 3.1415]
         noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-      table_basket_yellow:
-        pose: [-0.35, 0.0, -2.0, 0.0, -1.5707, 0.0]
+      table_plug:
+        class_id: plug
+        parent: table
+        pose: [0.25, -0.25, 0.0, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-      table_spoon_pink:
-        pose: [0.2, 0.3, -2.0, 0.0, -1.5707, 0.0]
+      table_nut_and_bolt:
+        class_id: nut_and_bolt
+        parent: table
+        pose: [0.25, 0.25, 0.0, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-      table_bottle_yellow:
-        pose: [-0.2, -0.3, -2.0, 0.0, -1.5707, 0.0]
+      table_bandage:
+        class_id: bandage
+        parent: table
+        pose: [-0.25, -0.25, 0.0, 0.0, 0.0, 3.1415]
         noise: 0.05
         score: 0.8
         downward: false
         pub_invalid_orientation: false
         min_dist: 0.01
         max_dist: 4.0
-  
+      table_compass:
+        class_id: compass
+        parent: table
+        pose: [1.2, 0.0, 1.0, 0.0, 0.0, 3.1415]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      table_hammer_and_wrench:
+        class_id: hammer_and_wrench
+        parent: table
+        pose: [-1.2, 0.0, 1.0, 0.0, 0.0, 0.0]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      table_buoy:
+        class_id: buoy
+        parent: table
+        pose: [0.0, 1.2, 1.0, 0.0, 0.0, 4.71239]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+      table_sos:
+        class_id: sos
+        parent: table
+        pose: [0.0, -1.2, 1.0, 0.0, 0.0, 1.5708]
+        noise: 0.01
+        score: 0.8
+        downward: false
+        pub_invalid_orientation: false
+        min_dist: 0.5
+        max_dist: 3.0
+
 /talos/dummydetections:
   ros__parameters:
     #POOL SIMULATION SETTINGS
