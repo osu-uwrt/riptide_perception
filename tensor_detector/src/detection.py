@@ -100,7 +100,6 @@ class DetectionProcessor:
         self.log = logger
         self._now_stamp = now_stamp        # callable lambda (ƛ🍾) -> builtin_interfaces/Time msg 
         self.tf_buffer = tf_buffer
-        self._camera_normal = -geometry.DEFAULT_NORMAL
         self._default_normal = geometry.DEFAULT_NORMAL
 
         # Output things
@@ -356,7 +355,7 @@ class DetectionProcessor:
         if normal[2] > 0:
             normal = -normal
         self.plane_normal = normal
-        board_quat, _ = geometry.normal_to_quaternion(normal, self._camera_normal)
+        board_quat = geometry.quat_from_normal_stable(normal)
 
         return SurfaceFit(points=points_3d, normal=normal, centroid=centroid,
                           quat=board_quat, center2d=(bbox_center_x, bbox_center_y), conf=conf)
