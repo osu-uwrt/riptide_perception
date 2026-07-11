@@ -46,8 +46,8 @@ PAIR_CLASSES = {c for pair, _ in DETECTION_PAIRS for c in pair}
 # Toggle-able pair: warning + helmet -> table center (togglable via set_table_pair_enabled)
 TABLE_PAIR = (('warning', 'helmet'), 'table')
 
-# Fixed frame the table-pair orientation is flattened in (matches mapping's parent frame)
-WORLD_FRAME = 'world'
+# Fixed frame the table-pair orientation is flattened in
+WORLD_FRAME = 'map'
 
 SLALOM_CLASS = "slalom" #magic 🪄
 
