@@ -33,7 +33,7 @@
     #   12: 'sos',
     #   13: 'warning'
     # }"
-    ffc_threshold: 0.6
+    ffc_threshold: 0.75
     ffc_iou: 0.7
 
     # ---------- DFC configuration ----------
@@ -49,7 +49,7 @@
       7: 'warning'
     }"
 
-    dfc_threshold: 0.75
+    dfc_threshold: 0.8
     dfc_iou: 0.9
 
 # Full map from CVAT for reference
