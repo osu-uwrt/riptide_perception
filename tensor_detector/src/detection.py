@@ -46,6 +46,9 @@ PAIR_CLASSES = {c for pair, _ in DETECTION_PAIRS for c in pair}
 # Toggle-able pair: warning + helmet -> table center (togglable via set_table_pair_enabled)
 TABLE_PAIR = (('warning', 'helmet'), 'table')
 
+# Fixed frame the table-pair orientation is flattened in (matches mapping's parent frame)
+WORLD_FRAME = 'world'
+
 SLALOM_CLASS = "slalom" #magic 🪄
 
 @dataclass
@@ -576,9 +579,18 @@ class DetectionProcessor:
         detections.detections.append(detection)
 
     def _table_pair_quat(self, frame, fit, warning_boxes, helmet_boxes):
-        """Table orientation from the warning/helmet geometry: +z stays the plane
-        normal, +x lies in the table plane perpendicular to the warning->helmet
-        line, i.e. pointing at one of the two free edges of the square."""
+        """Table orientation, flat in the world frame: +z straight up, +x horizontal
+        and perpendicular to the warning->helmet line (toward a free edge of the
+        square table). Returned in the camera frame; None (caller keeps the
+        plane-fit quat) if the world tf is unavailable."""
+        try:
+            tf_q = self.tf_buffer.lookup_transform(
+                frame.frame_id, WORLD_FRAME, Time()).transform.rotation
+        except Exception:
+            self.log.warning(f'Table pair: {WORLD_FRAME} tf not found, using plane-fit orientation')
+            return None
+        cam_from_world = [tf_q.x, tf_q.y, tf_q.z, tf_q.w]
+
         member_pts = []
         for member in (warning_boxes, helmet_boxes):
             centers = [self._box_center(b) for b in member]
@@ -588,8 +600,13 @@ class DetectionProcessor:
             if pt is None:
                 return None
             member_pts.append(np.asarray(pt, dtype=float))
-        across = np.cross(fit.normal, member_pts[1] - member_pts[0])
-        return geometry.quat_from_normal_and_inplane_dir(fit.normal, across)
+
+        wh_world = geometry.quat_rotate(cam_from_world, member_pts[1] - member_pts[0],
+                                        inverse=True)
+        across_world = np.cross([0.0, 0.0, 1.0], wh_world)  # horizontal, perp to W->H
+        table_in_world = geometry.quat_from_normal_and_inplane_dir([0.0, 0.0, 1.0],
+                                                                   across_world)
+        return quaternion_multiply(cam_from_world, table_in_world)
 
     ### Slalom
     def _process_slalom(self, frame, detections_array):

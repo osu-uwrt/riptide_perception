@@ -77,6 +77,14 @@ def quat_from_normal_and_inplane_dir(normal, direction):
     return R.from_matrix(Rm).as_quat()
 
 
+def quat_rotate(quat, vec, inverse=False):
+    """Rotate a 3-vector by a quaternion (x, y, z, w); inverse applies q^-1."""
+    r = R.from_quat(quat)
+    if inverse:
+        r = r.inv()
+    return r.apply(np.asarray(vec, dtype=float))
+
+
 def rotation_from_normal(normal, default_normal=DEFAULT_NORMAL):
     a = default_normal / np.linalg.norm(default_normal)
     b = normal / np.linalg.norm(normal)
