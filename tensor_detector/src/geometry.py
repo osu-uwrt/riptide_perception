@@ -58,6 +58,25 @@ def quat_from_normal_stable(normal, default_normal=DEFAULT_NORMAL):
         Rm = np.column_stack((-u, v, n))
     return R.from_matrix(Rm).as_quat()
 
+def quat_from_normal_and_inplane_dir(normal, direction):
+    """Body +z = normal, body +x = direction projected into the plane.
+
+    Falls back to quat_from_normal_stable when the direction is (near)
+    parallel to the normal, where the in-plane heading is undefined.
+    """
+    n = np.asarray(normal, dtype=float)
+    n = n / np.linalg.norm(n)
+    d = np.asarray(direction, dtype=float)
+    d = d - np.dot(d, n) * n
+    d_norm = np.linalg.norm(d)
+    if d_norm < 1e-9:
+        return quat_from_normal_stable(n)
+    x = d / d_norm
+    y = np.cross(n, x)
+    Rm = np.column_stack((x, y, n))
+    return R.from_matrix(Rm).as_quat()
+
+
 def rotation_from_normal(normal, default_normal=DEFAULT_NORMAL):
     a = default_normal / np.linalg.norm(default_normal)
     b = normal / np.linalg.norm(normal)

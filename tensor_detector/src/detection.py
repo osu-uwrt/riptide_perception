@@ -543,16 +543,17 @@ class DetectionProcessor:
             boxes_a = self.pair_boxes.get(a, [])
             boxes_b = self.pair_boxes.get(b, [])
             if boxes_a and boxes_b:
-                self._emit_combined_pair(frame, detections, boxes_a + boxes_b, pair_name)
+                self._emit_combined_pair(frame, detections, boxes_a, boxes_b, pair_name)
             else:
                 for box in boxes_a + boxes_b:
                     det = self.create_detection3d_message(box, frame, box.conf[0])
                     if det:
                         detections.detections.append(det)
 
-    def _emit_combined_pair(self, frame, detections, boxes, pair_name):
+    def _emit_combined_pair(self, frame, detections, boxes_a, boxes_b, pair_name):
         """Union the member bboxes, fit one plane over the combined region, and
         publish it under pair_name (conf = min of the members)."""
+        boxes = boxes_a + boxes_b
         union = self._union_bbox(boxes)
         conf = min(self._box_conf(b) for b in boxes)
 
@@ -560,12 +561,35 @@ class DetectionProcessor:
         if fit is None:
             return
         self.plane_normal = fit.normal
+
+        quat = fit.quat
+        if pair_name == TABLE_PAIR[1]:
+            table_quat = self._table_pair_quat(frame, fit, boxes_a, boxes_b)
+            if table_quat is not None:
+                quat = table_quat
+
         bbox_width = union[2] - union[0]
         bbox_height = union[3] - union[1]
-        self._build_marker(frame, fit.quat, fit.centroid, pair_name, bbox_width, bbox_height)
+        self._build_marker(frame, quat, fit.centroid, pair_name, bbox_width, bbox_height)
         detection = self._new_detection(frame)
-        detection.results.append(self._make_hypothesis(pair_name, fit.centroid, fit.quat, conf))
+        detection.results.append(self._make_hypothesis(pair_name, fit.centroid, quat, conf))
         detections.detections.append(detection)
+
+    def _table_pair_quat(self, frame, fit, warning_boxes, helmet_boxes):
+        """Table orientation from the warning/helmet geometry: +z stays the plane
+        normal, +x lies in the table plane perpendicular to the warning->helmet
+        line, i.e. pointing at one of the two free edges of the square."""
+        member_pts = []
+        for member in (warning_boxes, helmet_boxes):
+            centers = [self._box_center(b) for b in member]
+            px = float(np.mean([c[0] for c in centers]))
+            py = float(np.mean([c[1] for c in centers]))
+            pt = self._project_center(px, py, frame, fit.normal, fit.centroid)
+            if pt is None:
+                return None
+            member_pts.append(np.asarray(pt, dtype=float))
+        across = np.cross(fit.normal, member_pts[1] - member_pts[0])
+        return geometry.quat_from_normal_and_inplane_dir(fit.normal, across)
 
     ### Slalom
     def _process_slalom(self, frame, detections_array):
