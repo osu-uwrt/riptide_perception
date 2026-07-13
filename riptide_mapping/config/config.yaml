@@ -352,7 +352,7 @@
         pose:
           x: 19.48336
           y: 0.825047
-          z: -0.85
+          z: -1.54
           yaw: 179.555423
       pill:
         parent: table_frame
@@ -432,53 +432,65 @@
           y: 0.0
           z: 0.021457
           yaw: 0.0
-      compass:
+      octagon:
         parent: table_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.0
+          y: 0.0
+          z: 1.54
+          yaw: 0.0
+      compass:
+        parent: octagon_frame
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 1.0
         pose:
-          x: -0.53754
-          y: 0.848547
-          z: 1.0
+          x: 1.38
+          y: 0.0
+          z: 0.0
           yaw: 180.0
       hammer_and_wrench:
-        parent: table_frame
+        parent: octagon_frame
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 1.0
         pose:
-          x: 0.787673
-          y: 0.718224
-          z: 1.0
+          x: -1.38
+          y: 0.0
+          z: 0.0
           yaw: 0.0
       buoy:
-        parent: table_frame
+        parent: octagon_frame
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 1.0
         pose:
-          x: -0.611521
-          y: -0.866719
-          z: 1.0
+          x: 0.0
+          y: 1.38
+          z: 0.0
           yaw: -90.0
       sos:
-        parent: table_frame
+        parent: octagon_frame
         covar:
           x: 1.0
           y: 1.0
           z: 1.0
           yaw: 1.0
         pose:
-          x: 0.818941
-          y: -0.862193
-          z: 1.0
+          x: 0.0
+          y: -1.38
+          z: 0.0
           yaw: 90.0
           
       prequal_gate:

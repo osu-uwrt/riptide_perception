@@ -4,7 +4,7 @@
     export: true
 
     # ---------- FFC configuration ----------
-    ffc_model: "rs26_ffc.pt"
+    ffc_model: "rs26_ffc_woollett.pt"
     ffc_class_id_map: "{
       0: 'blood',
       1: 'buoy',
@@ -15,7 +15,8 @@
       6: 'slalom',
       7: 'sos',
       8: 'ambulance',
-      9: 'fire_engine'
+      9: 'fire_engine',
+      10: 'magnet'
     }"
     # ffc_class_id_map: "{
     #   0: 'ambulance',
