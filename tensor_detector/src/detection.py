@@ -568,8 +568,10 @@ class DetectionProcessor:
         quat = fit.quat
         if pair_name == TABLE_PAIR[1]:
             table_quat = self._table_pair_quat(frame, fit, boxes_a, boxes_b)
+            
             if table_quat is not None:
                 quat = table_quat
+            self.log.info("using table pair quat")
 
         bbox_width = union[2] - union[0]
         bbox_height = union[3] - union[1]
@@ -603,8 +605,8 @@ class DetectionProcessor:
 
         wh_world = geometry.quat_rotate(cam_from_world, member_pts[1] - member_pts[0],
                                         inverse=True)
-        across_world = np.cross([0.0, 0.0, 1.0], wh_world)  # horizontal, perp to W->H
-        table_in_world = geometry.quat_from_normal_and_inplane_dir([0.0, 0.0, 1.0],
+        across_world = np.cross([0.0, 1.0, 0.0], wh_world)  # horizontal, perp to W->H
+        table_in_world = geometry.quat_from_normal_and_inplane_dir([0.0, 1.0, 0.0],
                                                                    across_world)
         return quaternion_multiply(cam_from_world, table_in_world)
 

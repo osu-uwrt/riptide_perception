@@ -82,6 +82,7 @@ class MappingNode(Node):
             "bin_target2": dict(),
 
             # Octagon
+            "octagon": dict(),
             "compass": dict(),
             "hammer_and_wrench": dict(),
             "buoy": dict(),
