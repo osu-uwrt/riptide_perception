@@ -41,10 +41,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 2.0
-          y: 0.0
-          z: -0.8
-          yaw: 0.0
+          x: 4.558694
+          y: 0.006747
+          z: -0.6
+          yaw: -179.639407
       gate_rescue:
         parent: gate_frame
         covar:
@@ -55,8 +55,8 @@
         pose:
           x: 0.0
           y: 0.75
-          z: 0.4
-          yaw: 180.0
+          z: 0.0
+          yaw: 0.0
       gate_repair:
         parent: gate_frame
         covar:
@@ -67,8 +67,8 @@
         pose:
           x: 0.0
           y: -0.75
-          z: 0.4
-          yaw: 180.0
+          z: 0.0
+          yaw: 0.0
       slalom_parent:
         parent: map
         lock_orientation_to_config: true
@@ -78,10 +78,10 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: 4.5
-          y: 0.0
-          z: -2.25
-          yaw: 180.0
+          x: 8.77245
+          y: -0.076841
+          z: -1.0
+          yaw: 178.939581
       slalom_front:
         parent: slalom_parent_frame
         lock_orientation_to_config: true
@@ -104,8 +104,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -2.0
-          y: -1.0
+          x: -1.973663
+          y: 1.406694
           z: 0.0
           yaw: 0.0
       slalom_back:
@@ -117,8 +117,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -4.0
-          y: 0.0
+          x: -4.104796
+          y: -0.145397
           z: 0.0
           yaw: 0.0
       torpedo:
@@ -129,10 +129,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: -10.0
-          y: 0.0
-          z: -0.5
-          yaw: 0.0
+          x: 18.492056
+          y: 4.060816
+          z: -0.6
+          yaw: -159.8208
       fire_hole_large:
         parent: torpedo_frame
         covar:
@@ -183,16 +183,17 @@
           yaw: 0.0
       bin:
         parent: map
+        class: fire
         covar:
           x: 0.001
           y: 0.001
           z: 0.001
           yaw: 0.001
         pose:
-          x: 1.0
-          y: 0.0
+          x: 15.424177
+          y: -4.856851
           z: -1.0
-          yaw: 0.0 # Needs to be fairly accurate for bin fit to work
+          yaw: -161.894168 # Needs to be fairly accurate for bin fit to work
       bin_target1:
         parent: bin_frame
         lock_orientation_to_config: true
@@ -202,8 +203,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.0
-          y: 0.0
+          x: 0.474
+          y: -0.122
           z: 0.0
           yaw: 0.0
       bin_target2:
@@ -215,9 +216,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.0
-          y: 0.0
-          z: 0.0
+          x: 0.237
+          y: 0.347
+          z: 0.335
           yaw: 0.0
 
       # DO NOT CHANGE THIS OR IT'S CHILDREN'S POSE! DIRECTLY FROM BIN CAD FILE.
@@ -285,20 +286,6 @@
           yaw: 180.0
       bin_vinyl1: #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: fire   # SET PER RUN
-        lock_orientation_to_config: true
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.47372
-          y: -0.12206
-          z: 0.30103
-          yaw: 0.0
-      bin_vinyl2: #NO TOUCH POSE ONLY CLASS
-        parent: bin_cad_geometry_frame
         class: blood   # SET PER RUN
         lock_orientation_to_config: true
         covar:
@@ -307,9 +294,23 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.23686
-          y: 0.34660
-          z: 0.33489
+          x: 0.474
+          y: -0.122
+          z: 0.301
+          yaw: 0.0
+      bin_vinyl2: #NO TOUCH POSE ONLY CLASS
+        parent: bin_cad_geometry_frame
+        class: fire   # SET PER RUN
+        lock_orientation_to_config: true
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.237
+          y: 0.347
+          z: 0.335
           yaw: 0.0
       bin_vinyl3: #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
@@ -349,10 +350,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: -1.0
-          y: 0.0
-          z: -1.0
-          yaw: 180.0
+          x: 19.130755
+          y: -1.757041
+          z: -0.85
+          yaw: 89.762099
       pill:
         parent: table_frame
         point_yaw_at_parent: true
@@ -362,8 +363,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: -0.25
-          y: 0.25
+          x: -0.082859
+          y: 0.192053
           z: 0.0
           yaw: 180.0
       bandage:
@@ -375,8 +376,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: -0.25
-          y: -0.25
+          x: -0.068547
+          y: -0.133469
           z: 0.0
           yaw: 180.0
       nut_and_bolt:
