@@ -59,6 +59,7 @@ class MappingNode(Node):
 
         self.objects = {
             # Gate
+            "pre_return_home": dict(),
             "gate": dict(),
             "gate_repair": dict(),
             "gate_rescue": dict(),
@@ -70,6 +71,7 @@ class MappingNode(Node):
             "slalom_back": dict(),
 
             # Torpedo
+            "pre_torpedo_pose": dict(),
             "torpedo": dict(),
             "fire_hole_large": dict(),
             "fire_hole_small": dict(),
@@ -77,6 +79,8 @@ class MappingNode(Node):
             "blood_hole_small": dict(),
 
             # Bin
+            "pre_bin_pose": dict(),
+            "post_bin_pose": dict(),
             "bin": dict(),
             "bin_target1": dict(),
             "bin_target2": dict(),
@@ -96,6 +100,8 @@ class MappingNode(Node):
             "bandage": dict(),
             "helmet": dict(),
             "warning": dict(),
+            "pre_table_pose": dict(),
+            "post_table_pose": dict(),
 
             # Prequal
             "prequal_gate": dict(),

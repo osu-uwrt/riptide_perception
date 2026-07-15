@@ -2,7 +2,6 @@
 # riptide_mapping configuration file.
 #
 
-
 # BOTH-ROBOTS SETTTINGS
 /**/riptide_mapping2:
   ros__parameters:
@@ -17,17 +16,17 @@
     confidence_cutoff: 0.2
 
     # location tracking settings NOTE: buffer size is a per-robot setting.
-    
-    quantile: [0.01, 0.99]
+
+    quantile: [ 0.01, 0.99 ]
     minimum_distance: 1.0
 
     # Cursed ah bin geometry fit thresholds
     bin_fit:
-      residual_tol_m: 0.10  # max reprojection error of the two vinyls to accept a fit
-      baseline_tol_m: 0.10  # |measured baseline - model baseline| for a bad detection or incorrect vinyl map
-      min_baseline_m: 0.20  # model xy baseline floor, if the CAD geometry is wrong this will catch it (CAD min is ~0.52m)
-      cov_floor_m2: 0.0025  # published bin position variance floor (~0.05m std)
-      z_consistency_tol_m: 0.10  # if the two targets bin z disagree by more than this, use config z
+      residual_tol_m: 0.10 # max reprojection error of the two vinyls to accept a fit
+      baseline_tol_m: 0.10 # |measured baseline - model baseline| for a bad detection or incorrect vinyl map
+      min_baseline_m: 0.20 # model xy baseline floor, if the CAD geometry is wrong this will catch it (CAD min is ~0.52m)
+      cov_floor_m2: 0.0025 # published bin position variance floor (~0.05m std)
+      z_consistency_tol_m: 0.10 # if the two targets bin z disagree by more than this, use config z
 
 # TALOS SETTINGS
 /talos/riptide_mapping2:
@@ -41,8 +40,8 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.608705
-          y: -1.272919
+          x: 4.95703
+          y: -0.330565
           z: -0.75
           yaw: -179.853561
       gate_rescue:
@@ -54,7 +53,7 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: -0.75
+          y: 0.75
           z: 0.5
           yaw: 0.0
       gate_repair:
@@ -66,9 +65,21 @@
           yaw: 50.0
         pose:
           x: 0.0
-          y: 0.75
+          y: -0.75
           z: 0.5
           yaw: 0.0
+      pre_return_home:
+        parent: map
+        covar:
+          x: 0.5
+          y: 0.5
+          z: 0.5
+          yaw: 0.5
+        pose:
+          x: 12.493063
+          y: -5.023776
+          z: -1.372
+          yaw: 90.226263
       slalom_parent:
         parent: map
         lock_orientation_to_config: true
@@ -78,8 +89,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: 8.5028
-          y: 1.600047
+          x: 8.479354
+          y: 0.048303
           z: -1.0
           yaw: -179.343231
       slalom_front:
@@ -96,7 +107,7 @@
           z: 0.0
           yaw: 0.0
       slalom_middle:
-        parent: slalom_parent_frame
+        parent: slalom_front_frame
         lock_orientation_to_config: true
         covar:
           x: 1.0
@@ -104,12 +115,12 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -2.037432
-          y: 0.257667
+          x: -2.546058
+          y: -0.950942
           z: 0.0
           yaw: 0.0
       slalom_back:
-        parent: slalom_parent_frame
+        parent: slalom_front_frame
         lock_orientation_to_config: true
         covar:
           x: 1.0
@@ -117,10 +128,22 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -4.364189
-          y: -0.228458
+          x: -4.337688
+          y: 0.121502
           z: 0.0
           yaw: 0.0
+      pre_torpedo_pose:
+        parent: map
+        covar:
+          x: 0.5
+          y: 0.5
+          z: 0.5
+          yaw: 0.5
+        pose:
+          x: 15.531414
+          y: 3.52688
+          z: -1.372
+          yaw: 10.150229
       torpedo:
         parent: map
         covar:
@@ -130,9 +153,9 @@
           yaw: 0.5
         pose:
           x: 17.006036
-          y: 4.55928
+          y: 3.619979
           z: -1.372
-          yaw: -164.532802
+          yaw: -174.154804
       fire_hole_large:
         parent: torpedo_frame
         covar:
@@ -181,6 +204,30 @@
           y: 0.11176
           z: -0.0889
           yaw: 0.0
+      pre_bin_pose:
+        parent: map
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 13.491649
+          y: -5.031538
+          z: -1.3
+          yaw: 0.0
+      post_bin_pose:
+        parent: pre_bin_pose_frame
+        covar:
+          x: 0.001
+          y: 0.001
+          z: 0.001
+          yaw: 0.001
+        pose:
+          x: 0.0
+          y: 0.0
+          z: 0.5
+          yaw: 0.0
       bin:
         parent: map
         class: fire
@@ -190,10 +237,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 18.835494
-          y: -2.392187
+          x: 15.271858
+          y: -4.906292
           z: -2.13
-          yaw: 144.601759 # Needs to be fairly accurate for bin fit to work
+          yaw: -178.035812 # Needs to be fairly accurate for bin fit to work
       bin_target1:
         parent: bin_frame
         lock_orientation_to_config: true
@@ -234,7 +281,8 @@
           y: 0.0
           z: 0.0
           yaw: 0.0
-      magnet_target1: #NO TOUCH
+      magnet_target1:
+        #NO TOUCH
         parent: bin_cad_geometry_frame
         covar:
           x: 0.001
@@ -246,7 +294,8 @@
           y: 0.37018
           z: 0.15975
           yaw: 0.0
-      magnet_target2: #NO TOUCH
+      magnet_target2:
+        #NO TOUCH
         parent: bin_cad_geometry_frame
         covar:
           x: 0.001
@@ -258,7 +307,8 @@
           y: -0.37018
           z: 0.56615
           yaw: 180.0
-      magnet1: #NO TOUCH
+      magnet1:
+        #NO TOUCH
         parent: bin_cad_geometry_frame
         lock_orientation_to_config: true
         covar:
@@ -271,7 +321,8 @@
           y: 0.37018
           z: 0.15975
           yaw: 0.0
-      magnet2: #NO TOUCH
+      magnet2:
+        #NO TOUCH
         parent: bin_cad_geometry_frame
         lock_orientation_to_config: true
         covar:
@@ -284,9 +335,10 @@
           y: -0.37018
           z: 0.56615
           yaw: 180.0
-      bin_vinyl1: #NO TOUCH POSE ONLY CLASS
+      bin_vinyl1:
+        #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: fire   # SET PER RUN
+        class: fire # SET PER RUN
         lock_orientation_to_config: true
         covar:
           x: 0.001
@@ -298,9 +350,10 @@
           y: -0.122
           z: 0.301
           yaw: 0.0
-      bin_vinyl2: #NO TOUCH POSE ONLY CLASS
+      bin_vinyl2:
+        #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: blood   # SET PER RUN
+        class: blood # SET PER RUN
         lock_orientation_to_config: true
         covar:
           x: 0.001
@@ -312,9 +365,10 @@
           y: 0.347
           z: 0.335
           yaw: 0.0
-      bin_vinyl3: #NO TOUCH POSE ONLY CLASS
+      bin_vinyl3:
+        #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: fire   # SET PER RUN
+        class: fire # SET PER RUN
         lock_orientation_to_config: true
         covar:
           x: 0.001
@@ -326,9 +380,10 @@
           y: -0.34660
           z: 0.47036
           yaw: 0.0
-      bin_vinyl4: #NO TOUCH POSE ONLY CLASS
+      bin_vinyl4:
+        #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: blood   # SET PER RUN
+        class: blood # SET PER RUN
         lock_orientation_to_config: true
         covar:
           x: 0.001
@@ -350,8 +405,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 19.48336
-          y: 0.825047
+          x: 19.24404
+          y: 0.012484
           z: -1.54
           yaw: 179.555423
       pill:
@@ -405,7 +460,7 @@
           x: 0.25
           y: -0.25
           z: 0.0
-          yaw: 0.0     
+          yaw: 0.0
       helmet:
         parent: table_frame
         point_yaw_at_parent: true
@@ -443,7 +498,7 @@
           x: 0.0
           y: 0.0
           z: 1.54
-          yaw: 0.0
+          yaw: -45.182648
       compass:
         parent: octagon_frame
         covar:
@@ -477,9 +532,9 @@
           yaw: 1.0
         pose:
           x: 0.0
-          y: 1.38
+          y: -1.38
           z: 0.0
-          yaw: -90.0
+          yaw: 90.0
       sos:
         parent: octagon_frame
         covar:
@@ -489,10 +544,35 @@
           yaw: 1.0
         pose:
           x: 0.0
-          y: -1.38
+          y: 1.38
           z: 0.0
-          yaw: 90.0
-          
+          yaw: -90.0
+      pre_table_pose:
+        parent: map
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 17.470406
+          y: -0.002702
+          z: -1.3
+          yaw: 0.0
+      post_table_pose:
+        parent: pre_table_pose_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 0.0
+          y: 0.0
+          z: 0.5
+          yaw: 0.0
+
+
       prequal_gate:
         parent: map
         covar:
@@ -561,7 +641,7 @@
           x: -1.0
           y: 0.0
           z: 1.0
-          yaw: 180.0      
+          yaw: 180.0
       table_basket_pink:
         parent: table_frame
         covar:
@@ -610,6 +690,6 @@
           y: 0.25
           z: 0.0
           yaw: 0.0
-    
+
     # location tracking settings
     buffer_size: 30
