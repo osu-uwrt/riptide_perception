@@ -34,7 +34,7 @@
     #   12: 'sos',
     #   13: 'warning'
     # }"
-    ffc_threshold: 0.65
+    ffc_threshold: 0.3
     ffc_iou: 0.7
 
     # ---------- DFC configuration ----------

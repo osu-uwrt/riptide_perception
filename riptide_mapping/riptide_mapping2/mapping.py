@@ -11,7 +11,7 @@ from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point, PoseStamped
 from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
-from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier
+from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier, SeedObjectPose
 from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 
 import tf2_ros
@@ -186,6 +186,7 @@ class MappingNode(Node):
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
         self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
+        self.create_service(SeedObjectPose, "mapping/seed_object_pose", self.seed_object_pose_callback)
 
         # binary classifier services (resolve under this nodes ns)
         self.create_service(StartBinaryClassifier, "mapping/start_binary_classifier", self.start_binary_classifier_callback)
@@ -402,6 +403,35 @@ class MappingNode(Node):
         response.message = message
         return response
 
+    def seed_object_pose_callback(self, request: SeedObjectPose.Request, response: SeedObjectPose.Response):
+        # Snap an object's estimate to an externally-measured position (e.g. autonomy's computed
+        # table center) using the same seeding logic as the binary classifier.
+        child = str(request.object_name).strip()
+
+        if child not in self.objects.keys():
+            response.success = False
+            response.message = f"Unknown mapping object {child}"
+            return response
+
+        parent = str(self.get_parameter("init_data.{}.parent".format(child)).value)
+        if parent != "map":
+            response.success = False
+            response.message = f"seed_object_pose only supports map-parented objects ({child} has parent {parent})"
+            return response
+
+        # keep the orientation from the init config; seeding only moves position
+        config_rpy_deg = Vector3()
+        config_rpy_deg.z = float(self.get_parameter("init_data.{}.pose.yaw".format(child)).value)
+
+        self.get_logger().info(f"Seeding {child} to externally measured position "
+                               f"({request.position.x}, {request.position.y}, {request.position.z})")
+        self.seed_object_estimate(child, (request.position.x, request.position.y, request.position.z), config_rpy_deg)
+        self.publish_pose()
+
+        response.success = True
+        response.message = f"Seeded {child}"
+        return response
+
     def maybe_seed_binary_instances(self):
         # Fire once on each aquire -> track transition
         # Rebuild the target's Location centered on the classifier centroid so the published pose snaps to the cluster instead of crawling
@@ -416,9 +446,10 @@ class MappingNode(Node):
             self.seed_object_estimate(bc.instance2_name, bc.instance2_centroid)
             self.instance2_seeded = True
             
-    def seed_object_estimate(self, child: str, centroid_map):
+    def seed_object_estimate(self, child: str, centroid_map, rpy_deg: Vector3 = None):
         # Seed a map-parented object's pose so both its Location and TF frame land on the same centroid.
         # Rebuilt Location stays soft/unwarmed (cov=1.0) until its buffer fills.
+        # rpy_deg (degrees) seeds the orientation buffer; zero rotation when omitted (classifier has no orientation info).
         if child not in self.objects.keys():
             self.get_logger().error(f"seed_object_estimate: unknown object {child}")
             return
@@ -431,7 +462,7 @@ class MappingNode(Node):
 
         # rebuild Location centered on the centroid -> topic position = centroid, cov = soft 1.0
         xyz = Point(x=cx, y=cy, z=cz)
-        rpy = Vector3()  # no orientation from the classifier, leave identity
+        rpy = rpy_deg if rpy_deg is not None else Vector3()
         self.objects[child]["location"] = Location(
             xyz, rpy,
             int(self.get_parameter("buffer_size").value),
@@ -443,7 +474,10 @@ class MappingNode(Node):
         init_pose.position.x = cx - offset_pos.x
         init_pose.position.y = cy - offset_pos.y
         init_pose.position.z = cz - offset_pos.z
-        init_pose.orientation.w = 1.0
+        (init_pose.orientation.w,
+         init_pose.orientation.x,
+         init_pose.orientation.y,
+         init_pose.orientation.z) = euler2quat(math.radians(rpy.x), math.radians(rpy.y), math.radians(rpy.z))
         self.objects[child]["init_pose"] = init_pose
 
     def vision_callback(self, detections: Detection3DArray):

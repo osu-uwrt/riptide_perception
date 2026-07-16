@@ -47,7 +47,7 @@
       gate:
         publish: false
         parent: map
-        pose: [-2.9, 0.0, -0.6, 0.0, 0.0, 0.0]
+        pose: [4.71859, 0.099349, -0.75, 0.0, 0.0, -3.139037]
         noise: 0.001
         score: 0.8
         downward: false
@@ -56,7 +56,7 @@
         max_dist: 4.5 #meters. if simulate_pool is true, object will not be published if the robot is farther from the object than this value
       gate_repair:
         parent: gate
-        pose: [0.0, 0.75, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.0, 0.75, 0.5, 0.0, 0.0, 0.0]
         noise: 0.001
         score: 0.8
         downward: false
@@ -65,7 +65,7 @@
         max_dist: 3.5
       gate_rescue:
         parent: gate
-        pose: [0.0, -0.75, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.0, -0.75, 0.5, 0.0, 0.0, 0.0]
         noise: 0.001
         score: 0.8
         downward: false
@@ -76,7 +76,7 @@
       # Slalom
       slalom_front:
         class: slalom_front
-        pose: [-7.2, 0.34, -1.0, 0.0, 0.0, 0.0]
+        pose: [8.715455, 1.817254, -1.0, 0.0, 0.0, -3.13013]
         noise: 0.1
         score: 0.8
         downward: false
@@ -84,7 +84,7 @@
         min_dist: 0.5
         max_dist: 3.0
       slalom_middle:
-        pose: [-9.0, 1.4, -1.0, 0.0, 0.0, 0.0]
+        pose: [10.837298, 1.057793, -1.0, 0.0, 0.0, -3.13013]
         noise: 0.1
         score: 0.8
         downward: false
@@ -92,7 +92,7 @@
         min_dist: 0.5
         max_dist: 3.0
       slalom_back:
-        pose: [-11.5, 0.0, -1.0, 0.0, 0.0, 0.0]
+        pose: [12.880799, 2.268664, -1.0, 0.0, 0.0, -3.13013]
         noise: 0.1
         score: 0.8
         downward: false
@@ -103,7 +103,7 @@
       # Torpedo
       torpedo:
         parent: map
-        pose: [-16.9, -3.5, -0.6, 0.0, 0.0, 0.0]
+        pose: [15.845364, 6.036963, -1.372, 0.0, 0.0, -1.845466]
         noise: 0.01
         score: 0.8
         downward: false
@@ -113,7 +113,7 @@
       torpedo_blood_hole_large:
         parent: torpedo
         class_id: blood_hole_large
-        pose: [0.2, 0.2, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.0, -0.029972, 0.217424, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
@@ -123,7 +123,7 @@
       torpedo_blood_hole_small:
         parent: torpedo
         class_id: blood_hole_small
-        pose: [0.2, -0.2, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.0, 0.11176, -0.0889, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
@@ -133,7 +133,7 @@
       torpedo_fire_hole_large:
         parent: torpedo
         class_id: fire_hole_large
-        pose: [-0.2, 0.2, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.0, -0.029972, 0.217424, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
@@ -143,7 +143,7 @@
       torpedo_fire_hole_small:
         parent: torpedo
         class_id: fire_hole_small
-        pose: [-0.2, 0.2, 0.0, 0.0, 0.0, 0.0]
+        pose: [0.0, 0.11176, -0.0889, 0.0, 0.0, 0.0]
         noise: 0.01
         score: 0.8
         downward: false
@@ -156,11 +156,11 @@
       bin: # Not published, just here to move entire prop+children
         publish: false
         parent: map
-        pose: [-13.4, 5.3, -2.3, 0.0, 0.0, 3.14]
+        pose: [19.140847, -2.647102, -2.13, 0.0, 0.0, 2.277797]
       bin_vinyl1:
-        class_id: fire
+        class_id: blood
         parent: bin
-        pose: [0.47372, -0.12206, 0.30103, 0.0, 0.0, 0.0]
+        pose: [0.474, -0.122, 0.301, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
@@ -168,9 +168,9 @@
         min_dist: 0.5
         max_dist: 3.0
       bin_vinyl2:
-        class_id: blood
+        class_id: fire
         parent: bin
-        pose: [0.23686, 0.34660, 0.33489, 0.0, 0.0, 0.0]
+        pose: [0.237, 0.347, 0.335, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
@@ -180,7 +180,7 @@
       bin_vinyl3:
         class_id: blood
         parent: bin
-        pose: [-0.21663, -0.34660, 0.47036, 0.0, 0.0, 0.0]
+        pose: [-0.21663, -0.3466, 0.47036, 0.0, 0.0, 0.0]
         noise: 0.05
         score: 0.8
         downward: true
@@ -210,7 +210,7 @@
       bin_magnet_2:
         class_id: magnet
         parent: bin
-        pose: [-0.70442, -0.37018, 0.56615, 0.0, 0.0, 3.1415]
+        pose: [-0.70442, -0.37018, 0.56615, 0.0, 0.0, 3.141593]
         noise: 0.05
         score: 0.8
         downward: false
@@ -222,7 +222,7 @@
       # table is the anchor, its children are offsets
       table:
         parent: map
-        pose: [6.0, -4.0, -1.25, 0.0, 0.0, 3.1415]
+        pose: [19.401135, 2.13321, -1.54, 0.0, 0.0, 3.133833]
         noise: 0.05
         score: 0.8
         downward: true
@@ -252,7 +252,7 @@
       table_pill:
         class_id: pill
         parent: table
-        pose: [-0.25, 0.25, 0.0, 0.0, 0.0, 3.1415]
+        pose: [-0.082859, 0.192053, 0.0, 0.0, 0.0, 3.141593]
         noise: 0.05
         score: 0.8
         downward: false
@@ -282,7 +282,7 @@
       table_bandage:
         class_id: bandage
         parent: table
-        pose: [-0.25, -0.25, 0.0, 0.0, 0.0, 3.1415]
+        pose: [-0.068547, -0.133469, 0.0, 0.0, 0.0, 3.141593]
         noise: 0.05
         score: 0.8
         downward: false
@@ -292,7 +292,7 @@
       table_compass:
         class_id: compass
         parent: table
-        pose: [1.2, 0.0, 1.0, 0.0, 0.0, 3.1415]
+        pose: [1.032903, -0.985749, 1.54, 0.0, 0.0, 2.368179]
         noise: 0.01
         score: 0.8
         downward: false
@@ -302,7 +302,7 @@
       table_hammer_and_wrench:
         class_id: hammer_and_wrench
         parent: table
-        pose: [-1.2, 0.0, 1.0, 0.0, 0.0, 0.0]
+        pose: [-0.941959, 0.942337, 1.54, 0.0, 0.0, -0.773414]
         noise: 0.01
         score: 0.8
         downward: false
@@ -312,7 +312,7 @@
       table_buoy:
         class_id: buoy
         parent: table
-        pose: [0.0, 1.2, 1.0, 0.0, 0.0, 4.71239]
+        pose: [1.009515, 0.965725, 1.54, 0.0, 0.0, -2.34421]
         noise: 0.01
         score: 0.8
         downward: false
@@ -322,7 +322,7 @@
       table_sos:
         class_id: sos
         parent: table
-        pose: [0.0, -1.2, 1.0, 0.0, 0.0, 1.5708]
+        pose: [-0.918571, -1.009137, 1.54, 0.0, 0.0, 0.797382]
         noise: 0.01
         score: 0.8
         downward: false
