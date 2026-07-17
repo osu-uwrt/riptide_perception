@@ -4,7 +4,7 @@
     export: true
 
     # ---------- FFC configuration ----------
-    ffc_model: "rs26_ffc_woollett.pt"
+    ffc_model: "rs26_ffc_finals.pt"
     ffc_class_id_map: "{
       0: 'blood',
       1: 'buoy',

@@ -40,10 +40,10 @@
           z: 1.0
           yaw: 50.0
         pose:
-          x: 4.95703
-          y: -0.330565
+          x: 4.810167
+          y: 0.525311
           z: -0.75
-          yaw: -179.853561
+          yaw: 170.645069
       gate_rescue:
         parent: gate_frame
         covar:
@@ -76,8 +76,8 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 12.493063
-          y: -5.023776
+          x: 16.410646
+          y: -1.31507
           z: -1.372
           yaw: 90.226263
       slalom_parent:
@@ -89,10 +89,10 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: 8.479354
-          y: 0.048303
+          x: 8.332382
+          y: 3.303995
           z: -1.0
-          yaw: -179.343231
+          yaw: -152.691724
       slalom_front:
         parent: slalom_parent_frame
         lock_orientation_to_config: true
@@ -115,8 +115,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -2.546058
-          y: -0.950942
+          x: -2.127361
+          y: 0.693981
           z: 0.0
           yaw: 0.0
       slalom_back:
@@ -128,8 +128,8 @@
           z: 1.0
           yaw: 0.001
         pose:
-          x: -4.337688
-          y: 0.121502
+          x: -4.231969
+          y: 0.117814
           z: 0.0
           yaw: 0.0
       pre_torpedo_pose:
@@ -140,10 +140,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 15.531414
-          y: 3.52688
+          x: 16.849613
+          y: 5.631254
           z: -1.372
-          yaw: 10.150229
+          yaw: -0.029345
       torpedo:
         parent: map
         covar:
@@ -152,10 +152,10 @@
           z: 0.5
           yaw: 0.5
         pose:
-          x: 17.006036
-          y: 3.619979
+          x: 18.35222
+          y: 5.223745
           z: -1.372
-          yaw: -174.154804
+          yaw: -169.835651
       fire_hole_large:
         parent: torpedo_frame
         covar:
@@ -212,8 +212,8 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 13.491649
-          y: -5.031538
+          x: 13.222851
+          y: 12.986017
           z: -1.3
           yaw: 0.0
       post_bin_pose:
@@ -237,10 +237,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 15.271858
-          y: -4.906292
+          x: 13.408019
+          y: 15.067913
           z: -2.13
-          yaw: -178.035812 # Needs to be fairly accurate for bin fit to work
+          yaw: -145.070841
       bin_target1:
         parent: bin_frame
         lock_orientation_to_config: true
@@ -250,9 +250,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.474
-          y: -0.122
-          z: 0.0
+          x: 0.0
+          y: 0.0
+          z: 0.3
           yaw: 0.0
       bin_target2:
         parent: bin_frame
@@ -263,9 +263,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.237
-          y: 0.347
-          z: 0.335
+          x: 0.0
+          y: 0.0
+          z: 0.3
           yaw: 0.0
 
       # DO NOT CHANGE THIS OR IT'S CHILDREN'S POSE! DIRECTLY FROM BIN CAD FILE.
@@ -305,7 +305,7 @@
         pose:
           x: -0.70442
           y: -0.37018
-          z: 0.56615
+          z: 0.466
           yaw: 180.0
       magnet1:
         #NO TOUCH
@@ -333,13 +333,12 @@
         pose:
           x: -0.70442
           y: -0.37018
-          z: 0.56615
+          z: 0.466
           yaw: 180.0
       bin_vinyl1:
         #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: fire # SET PER RUN
-        lock_orientation_to_config: true
+        class: blood # SET PER RUN
         covar:
           x: 0.001
           y: 0.001
@@ -353,7 +352,7 @@
       bin_vinyl2:
         #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
-        class: blood # SET PER RUN
+        class: fire # SET PER RUN
         lock_orientation_to_config: true
         covar:
           x: 0.001
@@ -384,7 +383,6 @@
         #NO TOUCH POSE ONLY CLASS
         parent: bin_cad_geometry_frame
         class: blood # SET PER RUN
-        lock_orientation_to_config: true
         covar:
           x: 0.001
           y: 0.001
@@ -405,10 +403,10 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 19.24404
-          y: 0.012484
+          x: 19.290761
+          y: 11.7502
           z: -1.54
-          yaw: 179.555423
+          yaw: 89.039804
       pill:
         parent: table_frame
         point_yaw_at_parent: true
@@ -495,47 +493,11 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.0
-          y: 0.0
+          x: 0.082085
+          y: -0.064919
           z: 1.54
-          yaw: -45.182648
+          yaw: -134.313351
       compass:
-        parent: octagon_frame
-        covar:
-          x: 1.0
-          y: 1.0
-          z: 1.0
-          yaw: 1.0
-        pose:
-          x: 1.38
-          y: 0.0
-          z: 0.0
-          yaw: 180.0
-      hammer_and_wrench:
-        parent: octagon_frame
-        covar:
-          x: 1.0
-          y: 1.0
-          z: 1.0
-          yaw: 1.0
-        pose:
-          x: -1.38
-          y: 0.0
-          z: 0.0
-          yaw: 0.0
-      buoy:
-        parent: octagon_frame
-        covar:
-          x: 1.0
-          y: 1.0
-          z: 1.0
-          yaw: 1.0
-        pose:
-          x: 0.0
-          y: -1.38
-          z: 0.0
-          yaw: 90.0
-      sos:
         parent: octagon_frame
         covar:
           x: 1.0
@@ -547,6 +509,42 @@
           y: 1.38
           z: 0.0
           yaw: -90.0
+      hammer_and_wrench:
+        parent: octagon_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 0.0
+          y: -1.38
+          z: 0.0
+          yaw: 90.0
+      buoy:
+        parent: octagon_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: -1.38
+          y: 0.0
+          z: 0.0
+          yaw: 0.0
+      sos:
+        parent: octagon_frame
+        covar:
+          x: 1.0
+          y: 1.0
+          z: 1.0
+          yaw: 1.0
+        pose:
+          x: 1.38
+          y: -0.0
+          z: 0.0
+          yaw: 180.0
       pre_table_pose:
         parent: map
         covar:
@@ -555,8 +553,8 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 17.470406
-          y: -0.002702
+          x: 17.889498
+          y: 11.190864
           z: -1.3
           yaw: 0.0
       post_table_pose:
@@ -571,7 +569,6 @@
           y: 0.0
           z: 0.5
           yaw: 0.0
-
 
       prequal_gate:
         parent: map
