@@ -182,7 +182,7 @@ class MappingNode(Node):
         self.instance2_seeded = False
 
         self.add_on_set_parameters_callback(self.param_callback)
-        self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
+        self.create_subscription(Detection3DArray, "detected_objects", self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
         self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
