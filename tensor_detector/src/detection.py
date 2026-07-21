@@ -580,10 +580,13 @@ class DetectionProcessor:
         detections.detections.append(detection)
 
     def _table_pair_quat(self, frame, fit, warning_boxes, helmet_boxes):
-        """Table orientation, flat in the world frame: +y horizontal, +x horizontal
-        and perpendicular to the warning->helmet line (toward a free edge of the
-        square table). Returned in the camera frame; None (caller keeps the
-        plane-fit quat) if the world tf is unavailable."""
+        """Table orientation parallel to the world floor.
+
+        Local +z follows world +z, while local +x points toward a basket-free
+        edge, perpendicular to the horizontal warning->helmet line. Returned
+        in the camera frame; None (caller keeps the plane-fit quat) if the
+        world tf is unavailable or the basket heading is degenerate.
+        """
         try:
             tf_q = self.tf_buffer.lookup_transform(
                 frame.frame_id, WORLD_FRAME, Time()).transform.rotation
@@ -604,8 +607,13 @@ class DetectionProcessor:
 
         wh_world = geometry.quat_rotate(cam_from_world, member_pts[1] - member_pts[0],
                                         inverse=True)
-        across_world = np.cross([0.0, 1.0, 0.0], wh_world)  # horizontal, perp to W->H
-        table_in_world = geometry.quat_from_normal_and_inplane_dir([0.0, 1.0, 0.0],
+        world_up = np.array([0.0, 0.0, 1.0])
+        wh_world[2] = 0.0
+        if np.linalg.norm(wh_world) < 1e-8:
+            return None
+
+        across_world = np.cross(world_up, wh_world)
+        table_in_world = geometry.quat_from_normal_and_inplane_dir(world_up,
                                                                    across_world)
         return quaternion_multiply(cam_from_world, table_in_world)
 

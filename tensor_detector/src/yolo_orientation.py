@@ -260,6 +260,7 @@ class YOLONode(Node):
         # YAML is the single source of truth for the class map
         class_id_map = yaml.safe_load(class_id_map_str) if class_id_map_str else {}
         if not class_id_map:
+            class_id_map = {}
             # Not crashing out here because there's if the other camera config is empty after switch the node would crash
             self.get_logger().warning("No class_id_map provided in params; no detections will be produced.")
 
@@ -269,7 +270,8 @@ class YOLONode(Node):
     def reset_collection_variables(self):
         with self._depth_lock:
             self._depth_buffer.clear()
-        self.camera_info_gathered = False
+        with self._camera_lock:
+            self.camera_info_gathered = False
 
     def destroy_subscriptions(self):
         for attr in ('zed_info_subscription', 'image_subscription', 'depth_subscription'):
@@ -308,12 +310,13 @@ class YOLONode(Node):
         if not self.camera_info_gathered:
             if self.print_camera_info:
                 self.get_logger().info(f"Camera info: {msg}")
-            self.intrinsic_matrix = np.array(msg.k).reshape((3, 3))
-            self.fx = msg.k[0]
-            self.cx = msg.k[2]
-            self.fy = msg.k[4]
-            self.cy = msg.k[5]
-            self.camera_info_gathered = True
+            with self._camera_lock:
+                self.intrinsic_matrix = np.array(msg.k).reshape((3, 3))
+                self.fx = msg.k[0]
+                self.cx = msg.k[2]
+                self.fy = msg.k[4]
+                self.cy = msg.k[5]
+                self.camera_info_gathered = True
 
     def depth_callback(self, msg):
         now = self.get_clock().now()
@@ -378,6 +381,8 @@ class YOLONode(Node):
             iou = self.iou
             class_id_map = self.class_id_map
             frame_id = self.frame_id
+            fx, fy, cx, cy = self.fx, self.fy, self.cx, self.cy
+            intrinsic_matrix = self.intrinsic_matrix
 
         # Run inference
         results = model.infer(cv_image, conf=conf, iou=iou)
@@ -386,8 +391,8 @@ class YOLONode(Node):
         frame = Frame(
             image=cv_image,
             depth=depth_image,
-            fx=self.fx, fy=self.fy, cx=self.cx, cy=self.cy,
-            K=self.intrinsic_matrix,
+            fx=fx, fy=fy, cx=cx, cy=cy,
+            K=intrinsic_matrix,
             frame_id=frame_id,
             timestamp=self._stamp(msg),
             class_id_map=class_id_map,
