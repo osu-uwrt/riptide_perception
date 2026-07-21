@@ -285,7 +285,7 @@ class DetectionProcessor:
         # Slalom: depth-sampled centroid, default-facing orientation (mapping overrides it now)
         if class_name == SLALOM_CLASS:
             depth_value = frame.depth[int(bbox_center_y), int(bbox_center_x)]
-            if (np.isnan(depth_value) or math.isinf(bbox_center_x)
+            if (np.isnan(depth_value) or depth_value == 0 or math.isinf(bbox_center_x)
                     or math.isinf(bbox_center_y) or math.isinf(depth_value)):
                 return None
             centroid = geometry.pixel_to_3d(bbox_center_x, bbox_center_y,
@@ -571,7 +571,6 @@ class DetectionProcessor:
             
             if table_quat is not None:
                 quat = table_quat
-            self.log.info("using table pair quat")
 
         bbox_width = union[2] - union[0]
         bbox_height = union[3] - union[1]
@@ -581,10 +580,13 @@ class DetectionProcessor:
         detections.detections.append(detection)
 
     def _table_pair_quat(self, frame, fit, warning_boxes, helmet_boxes):
-        """Table orientation, flat in the world frame: +z straight up, +x horizontal
-        and perpendicular to the warning->helmet line (toward a free edge of the
-        square table). Returned in the camera frame; None (caller keeps the
-        plane-fit quat) if the world tf is unavailable."""
+        """Table orientation parallel to the world floor.
+
+        Local +z follows world +z, while local +x points toward a basket-free
+        edge, perpendicular to the horizontal warning->helmet line. Returned
+        in the camera frame; None (caller keeps the plane-fit quat) if the
+        world tf is unavailable or the basket heading is degenerate.
+        """
         try:
             tf_q = self.tf_buffer.lookup_transform(
                 frame.frame_id, WORLD_FRAME, Time()).transform.rotation
@@ -605,8 +607,13 @@ class DetectionProcessor:
 
         wh_world = geometry.quat_rotate(cam_from_world, member_pts[1] - member_pts[0],
                                         inverse=True)
-        across_world = np.cross([0.0, 1.0, 0.0], wh_world)  # horizontal, perp to W->H
-        table_in_world = geometry.quat_from_normal_and_inplane_dir([0.0, 1.0, 0.0],
+        world_up = np.array([0.0, 0.0, 1.0])
+        wh_world[2] = 0.0
+        if np.linalg.norm(wh_world) < 1e-8:
+            return None
+
+        across_world = np.cross(world_up, wh_world)
+        table_in_world = geometry.quat_from_normal_and_inplane_dir(world_up,
                                                                    across_world)
         return quaternion_multiply(cam_from_world, table_in_world)
 
