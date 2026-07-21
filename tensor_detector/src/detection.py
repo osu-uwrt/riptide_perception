@@ -285,7 +285,7 @@ class DetectionProcessor:
         # Slalom: depth-sampled centroid, default-facing orientation (mapping overrides it now)
         if class_name == SLALOM_CLASS:
             depth_value = frame.depth[int(bbox_center_y), int(bbox_center_x)]
-            if (np.isnan(depth_value) or math.isinf(bbox_center_x)
+            if (np.isnan(depth_value) or depth_value == 0 or math.isinf(bbox_center_x)
                     or math.isinf(bbox_center_y) or math.isinf(depth_value)):
                 return None
             centroid = geometry.pixel_to_3d(bbox_center_x, bbox_center_y,
@@ -571,7 +571,6 @@ class DetectionProcessor:
             
             if table_quat is not None:
                 quat = table_quat
-            self.log.info("using table pair quat")
 
         bbox_width = union[2] - union[0]
         bbox_height = union[3] - union[1]
@@ -581,7 +580,7 @@ class DetectionProcessor:
         detections.detections.append(detection)
 
     def _table_pair_quat(self, frame, fit, warning_boxes, helmet_boxes):
-        """Table orientation, flat in the world frame: +z straight up, +x horizontal
+        """Table orientation, flat in the world frame: +y horizontal, +x horizontal
         and perpendicular to the warning->helmet line (toward a free edge of the
         square table). Returned in the camera frame; None (caller keeps the
         plane-fit quat) if the world tf is unavailable."""
