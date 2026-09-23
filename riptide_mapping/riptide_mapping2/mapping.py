@@ -17,7 +17,7 @@ from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
 
-from transforms3d.euler import euler2quat
+from transforms3d.euler import euler2quat, quat2euler
 
 from location import Location
 from binary_classifier import BinaryClassifier, DetectionSample
@@ -429,9 +429,13 @@ class MappingNode(Node):
         cy = float(centroid_map[1])
         cz = float(centroid_map[2])
 
+        # preserve the current orientation of the target before seeding
+        orientation = self.objects[child]["location"].get_pose().pose.orientation
+        roll, pitch, yaw = quat2euler((orientation.w, orientation.x, orientation.y, orientation.z))
+        rpy = Vector3(x=math.degrees(roll), y=math.degrees(pitch), z=math.degrees(yaw))
+
         # rebuild Location centered on the centroid -> topic position = centroid, cov = soft 1.0
         xyz = Point(x=cx, y=cy, z=cz)
-        rpy = Vector3()  # no orientation from the classifier, leave identity
         self.objects[child]["location"] = Location(
             xyz, rpy,
             int(self.get_parameter("buffer_size").value),
@@ -443,7 +447,7 @@ class MappingNode(Node):
         init_pose.position.x = cx - offset_pos.x
         init_pose.position.y = cy - offset_pos.y
         init_pose.position.z = cz - offset_pos.z
-        init_pose.orientation.w = 1.0
+        init_pose.orientation = orientation
         self.objects[child]["init_pose"] = init_pose
 
     def vision_callback(self, detections: Detection3DArray):
