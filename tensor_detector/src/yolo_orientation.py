@@ -20,6 +20,7 @@ from visualization_msgs.msg import MarkerArray, Marker
 from vision_msgs.msg import Detection3DArray
 from cv_bridge import CvBridge
 from rclpy.executors import MultiThreadedExecutor
+from rclpy._rclpy_pybind11 import InvalidHandle
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.qos import qos_profile_sensor_data
 import numpy as np
@@ -443,7 +444,12 @@ def main(args=None):
     executor = MultiThreadedExecutor()
     executor.add_node(yolo_node)
     try:
-        executor.spin()
+        # Same as executor.spin(), but race condition if sub is destroyed.
+        while rclpy.ok():
+            try:
+                executor.spin_once()
+            except InvalidHandle:
+                yolo_node.get_logger().debug("Dropped message for subscription destroyed mid-take")
     finally:
         yolo_node.destroy_node()
         rclpy.shutdown()
