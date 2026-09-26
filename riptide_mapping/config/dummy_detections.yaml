@@ -21,7 +21,6 @@
 
       # Bin
       - bin
-      - bin_target
       - bin_vinyl1
       - bin_vinyl2
       - bin_vinyl3

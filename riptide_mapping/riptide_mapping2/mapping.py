@@ -17,7 +17,7 @@ from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
 
-from transforms3d.euler import euler2quat
+from transforms3d.euler import euler2quat, quat2euler
 
 from location import Location
 from binary_classifier import BinaryClassifier, DetectionSample
@@ -29,6 +29,8 @@ from typing import cast
 
 STALE_TIME = 2 #seconds
 BINARY_CLASSIFIER_CLASSES = {"fire", "blood", "magnet"}
+TABLE_BASKETS = ("helmet", "warning")
+MAX_TABLE_YAW_CORRECTION = math.radians(30)
 
 class TransformListenerWithHook(tf2_ros.TransformListener):
     def __init__(self, buffer: tf2_ros.buffer.Buffer, node: Node, hook):
@@ -182,10 +184,11 @@ class MappingNode(Node):
         self.instance2_seeded = False
 
         self.add_on_set_parameters_callback(self.param_callback)
-        self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
+        self.create_subscription(Detection3DArray, "detected_objects", self.vision_callback, qos_profile_system_default)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
         self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
+        self.create_service(Trigger, "mapping/center_table_on_baskets", self.center_table_on_baskets_callback)
 
         # binary classifier services (resolve under this nodes ns)
         self.create_service(StartBinaryClassifier, "mapping/start_binary_classifier", self.start_binary_classifier_callback)
@@ -204,7 +207,7 @@ class MappingNode(Node):
         # This also clears each Location's internal sample buffer because create_location() constructs a new Location object
         for object_name in self.objects.keys():
             self.create_location(object_name)
-            # Drop any stale bin fit cov override
+            # Drop any stale basket fit cov override
             self.objects[object_name].pop("fit_covar", None)
 
         # Reset global map drift/offset buffer
@@ -240,7 +243,74 @@ class MappingNode(Node):
         response.success = True
         response.message = "Mapping reset to init_data"
         return response
-    
+
+    def center_table_on_baskets_callback(self, request: Trigger.Request, response: Trigger.Response):
+        # Move the table so the baskets sit at their config offsets from it. Other table children ride along with table_frame, the baskets get
+        # shifted back so they stay put in the world (point_yaw_at_parent then re-aims them at the new table center)
+        if str(self.get_parameter("init_data.table.parent").value) != "map":
+            response.success = False
+            response.message = "center_table_on_baskets only supports a map-parented table"
+            return response
+
+        # Midpoint of the baskets in table_frame
+        positions = [self.objects[basket]["location"].get_pose().pose.position for basket in TABLE_BASKETS]
+        mx = sum(p.x for p in positions) / len(positions)
+        my = sum(p.y for p in positions) / len(positions)
+        mz = sum(p.z for p in positions) / len(positions)
+
+        if not all(math.isfinite(v) for v in (mx, my, mz)):
+            response.success = False
+            response.message = f"Basket midpoint is not finite ({mx}, {my}, {mz})"
+            return response
+
+        # Yaw the table so the measured basket axis lines up with the config basket axis, that way the other children
+        # (which are fixed offsets in table_frame) land where they are relative to the baskets in config
+        cfg = [[float(self.get_parameter(f"init_data.{basket}.pose.{axis}").value) for axis in "xyz"] for basket in TABLE_BASKETS]
+        cfg_axis = math.atan2(cfg[0][1] - cfg[1][1], cfg[0][0] - cfg[1][0])
+        meas_axis = math.atan2(positions[0].y - positions[1].y, positions[0].x - positions[1].x)
+        dyaw = math.atan2(math.sin(meas_axis - cfg_axis), math.cos(meas_axis - cfg_axis))
+
+        yaw_msg = f"yawed table {math.degrees(dyaw):.1f} deg"
+        if abs(dyaw) > MAX_TABLE_YAW_CORRECTION:
+            # Probably a bad/unmapped basket, don't swing all the table objects around on it
+            yaw_msg = f"skipped yaw correction of {math.degrees(dyaw):.1f} deg (limit {math.degrees(MAX_TABLE_YAW_CORRECTION):.0f})"
+            dyaw = 0.0
+
+        # New table origin in the old table_frame: the measured basket midpoint minus the (yawed) config basket midpoint,
+        # so the baskets end up at their config offsets from the table
+        cmx = sum(c[0] for c in cfg) / len(cfg)
+        cmy = sum(c[1] for c in cfg) / len(cfg)
+        cmz = sum(c[2] for c in cfg) / len(cfg)
+        ox = mx - (cmx * math.cos(dyaw) - cmy * math.sin(dyaw))
+        oy = my - (cmx * math.sin(dyaw) + cmy * math.cos(dyaw))
+        oz = mz - cmz
+
+        # Rotate the origin shift into map using the table's yaw (offset frame is translation only)
+        table_orientation = self.objects["table"]["location"].get_pose().pose.orientation
+        _, _, table_yaw = quat2euler((table_orientation.w, table_orientation.x, table_orientation.y, table_orientation.z))
+        dx = ox * math.cos(table_yaw) - oy * math.sin(table_yaw)
+        dy = ox * math.sin(table_yaw) + oy * math.cos(table_yaw)
+        dz = oz
+
+        self.objects["table"]["location"].shift(dx, dy, dz)
+        self.objects["table"]["location"].add_yaw(dyaw)
+        init_pose: Pose = self.objects["table"]["init_pose"]
+        init_pose.position.x += dx
+        init_pose.position.y += dy
+        init_pose.position.z += dz
+
+        # Re-express the baskets in the new table_frame so they stay put in the world
+        for basket in TABLE_BASKETS:
+            self.objects[basket]["location"].shift(-ox, -oy, -oz)
+            self.objects[basket]["location"].rotate_position(-dyaw)
+
+        self.publish_pose()
+
+        response.success = True
+        response.message = f"Moved table by ({dx:.3f}, {dy:.3f}, {dz:.3f}) in map to fit the baskets, {yaw_msg}"
+        self.get_logger().info(response.message)
+        return response
+
     def pulse_detection_led(self, red=0, green=255, blue=0):
         # Pulse LEDs to indicate a detection was received
         ledPulse = LedCommand()
@@ -429,9 +499,13 @@ class MappingNode(Node):
         cy = float(centroid_map[1])
         cz = float(centroid_map[2])
 
+        # preserve the current orientation of the target before seeding
+        orientation = self.objects[child]["location"].get_pose().pose.orientation
+        roll, pitch, yaw = quat2euler((orientation.w, orientation.x, orientation.y, orientation.z))
+        rpy = Vector3(x=math.degrees(roll), y=math.degrees(pitch), z=math.degrees(yaw))
+
         # rebuild Location centered on the centroid -> topic position = centroid, cov = soft 1.0
         xyz = Point(x=cx, y=cy, z=cz)
-        rpy = Vector3()  # no orientation from the classifier, leave identity
         self.objects[child]["location"] = Location(
             xyz, rpy,
             int(self.get_parameter("buffer_size").value),
@@ -443,7 +517,7 @@ class MappingNode(Node):
         init_pose.position.x = cx - offset_pos.x
         init_pose.position.y = cy - offset_pos.y
         init_pose.position.z = cz - offset_pos.z
-        init_pose.orientation.w = 1.0
+        init_pose.orientation = orientation
         self.objects[child]["init_pose"] = init_pose
 
     def vision_callback(self, detections: Detection3DArray):
