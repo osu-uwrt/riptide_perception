@@ -59,7 +59,7 @@ class YOLONode(Node):
                 ('min_points', 5),                  # Minimum points required for SVD
                 ('publish_interval', 0.1),          # For visualization markers (also drives lifetime)
                 ('marker_lifetime', 5.0),           # Marker lifetime in seconds (0 = persist until replaced/deleted)
-                ('slalom_history_size', 10),        # The closest slalom from history is published
+                ('slalom_history_size', 1),         # The closest slalom from history is published
                 ('use_incoming_timestamp', True),   # Timestamp for detection comes from image callback msg
                 ('log_processing_time', False),
                 ('export', True),                   # Export model
