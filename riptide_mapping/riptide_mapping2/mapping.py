@@ -173,6 +173,8 @@ class MappingNode(Node):
 
         self.target_object = ""
         self.lock_map = False
+        # Set once the table is fit to the baskets, after that basket positions are frozen (yaw still points at the table)
+        self.table_centered = False
         self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
         self.binary_classifier = BinaryClassifier(self)
 
@@ -230,6 +232,7 @@ class MappingNode(Node):
         # Reset mapping mode
         self.target_object = ""
         self.lock_map = False
+        self.table_centered = False
         self.instance1_seeded = False
         self.instance2_seeded = False
 
@@ -304,6 +307,9 @@ class MappingNode(Node):
             self.objects[basket]["location"].shift(-ox, -oy, -oz)
             self.objects[basket]["location"].rotate_position(-dyaw)
 
+        # The table is now fit to these basket positions, stop detections from dragging them around
+        self.table_centered = True
+
         self.publish_pose()
 
         response.success = True
@@ -363,7 +369,10 @@ class MappingNode(Node):
         self.target_object = str(request.target_info.target_object)
         self.lock_map = bool(request.target_info.lock_map)
         
-        if self.target_object in self.objects.keys():
+        # Resetting a pinned basket would cool its buffer and swap the trimmed mean for the raw mean, which nudges its position
+        if self.table_centered and self.target_object in TABLE_BASKETS:
+            self.get_logger().info(f"{self.target_object} is pinned to the table, not resetting it")
+        elif self.target_object in self.objects.keys():
             self.get_logger().info(f"reset {self.target_object}")
             self.objects[self.target_object]["location"].reset()
             self.offset.cool_buffer()
@@ -654,7 +663,11 @@ class MappingNode(Node):
         # These objects keep their orientation from config (detection yaw is unreliable)
         if bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(child)).value):
             update_orientation = False
-        
+
+        # Baskets are pinned once the table has been fit to them
+        if self.table_centered and child in TABLE_BASKETS:
+            update_position = False
+
         object_location: Location = self.objects[child]["location"]
         object_location.add_pose(trans_pose.pose, update_position, update_orientation)
 
