@@ -403,9 +403,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 19.290761
-          y: 9.007
-          z: -1.54
+          x: 1.80328
+          y: 0.002247
+          z: -4.0
           yaw: 89.039804
       pill:
         parent: table_frame
@@ -553,10 +553,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 17.889498
-          y: 8.447664
+          x: 1.205305
+          y: 0.020372
           z: -1.3
-          yaw: 0.0
+          yaw: -0.609417
       post_table_pose:
         parent: pre_table_pose_frame
         covar:
@@ -565,10 +565,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 0.0
-          y: 0.0
+          x: -0.002639
+          y: 0.002639
           z: 0.5
-          yaw: 0.0
+          yaw: -0.626838
 
       prequal_gate:
         parent: map
