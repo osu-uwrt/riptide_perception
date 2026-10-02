@@ -39,7 +39,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             "config_yaml",
-            default_value=[LC('config'), ".yaml"]
+            default_value=os.path.join(config_dir, "config.yaml")
         ),
 
         DeclareLaunchArgument(
@@ -62,10 +62,7 @@ def generate_launch_description():
 
                 # use the parameters on the node
                 parameters=[
-                    PathJoinSubstitution([
-                        config_dir,
-                        LC("config_yaml")
-                    ]),
+                    LC("config_yaml"),
                     PathJoinSubstitution([
                         config_dir, 
                         LC("binary_classifier_yaml")

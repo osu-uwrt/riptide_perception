@@ -144,6 +144,29 @@ class Location:
     def cool_buffer(self):
         self.buffer_warm = False
 
+    # Translate every position sample (and the initial pose) so the estimate moves without losing its covariance
+    def shift(self, dx: float, dy: float, dz: float):
+        self.position["x"] += dx
+        self.position["y"] += dy
+        self.position["z"] += dz
+
+        self.initial_pose_xyz = Point(x=self.initial_pose_xyz.x + dx, y=self.initial_pose_xyz.y + dy, z=self.initial_pose_xyz.z + dz)
+
+    # Rotate every position sample about the parent frame's z axis (for when the parent frame yaws)
+    def rotate_position(self, dyaw: float):
+        c, s = numpy.cos(dyaw), numpy.sin(dyaw)
+        x, y = self.position["x"].copy(), self.position["y"].copy()
+        self.position["x"] = c * x - s * y
+        self.position["y"] = s * x + c * y
+
+        ix, iy = self.initial_pose_xyz.x, self.initial_pose_xyz.y
+        self.initial_pose_xyz = Point(x=c * ix - s * iy, y=s * ix + c * iy, z=self.initial_pose_xyz.z)
+
+    # Add to every yaw sample (and the initial yaw, which is in degrees)
+    def add_yaw(self, dyaw: float):
+        self.orientation["z"] += dyaw
+        self.initial_pose_rpy = Vector3(x=self.initial_pose_rpy.x, y=self.initial_pose_rpy.y, z=self.initial_pose_rpy.z + dyaw * 180.0 / pi)
+
 
 # Remove any outliers using quantiles
 def remove_outliers(arr: numpy.ndarray, quantile: 'tuple[float, float]') -> numpy.ndarray:
