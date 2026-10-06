@@ -72,14 +72,10 @@ class YOLONode(Node):
                 ('depth_min_spread', 0.05),         # Min depth spread (m) so flat, head-on patches aren't over-pruned
                 ('publish_box_markers', False),
                 ('max_depth_age', 1.0),
-                ('depth_buffer_size', 60),          # Depth frames kept for timestamp matching (covers depth-vs-image transport lag)
+                ('depth_buffer_size', 15),          # Most depth frames kept for timestamp matching; frames older than max_depth_age are dropped too
             ]
         )
         
-        # Run image/depth callback threads in parallel so one isn't starved
-        self.image_cb_group = MutuallyExclusiveCallbackGroup()
-        self.depth_cb_group = MutuallyExclusiveCallbackGroup()
-
         self.robot_ns = self.get_parameter('robot_namespace').get_parameter_value().string_value
         self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
@@ -289,6 +285,10 @@ class YOLONode(Node):
         #TODO: Move these to config file, but it's type dependent
         base = f'/{self.robot_ns}/{self.camera_prefix}/zed_node'
 
+        # Image and depth in their own groups, run in parallel so one isn't starved.
+        self.image_cb_group = MutuallyExclusiveCallbackGroup()
+        self.depth_cb_group = MutuallyExclusiveCallbackGroup()
+
         info_topic = f'{base}/rgb/camera_info'
         self.zed_info_subscription = self.create_subscription(
             CameraInfo, info_topic, self.camera_info_callback, 1,
@@ -328,8 +328,11 @@ class YOLONode(Node):
 
         depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         t_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
+        oldest_ns = t_ns - int(self.max_depth_age * 1e9)
         with self._depth_lock:
             self._depth_buffer.append((t_ns, depth_image, msg.header.stamp))
+            while self._depth_buffer and self._depth_buffer[0][0] < oldest_ns:
+                self._depth_buffer.popleft()
 
     def _match_depth(self, img_t_ns):
         """Nearest buffered depth frame to img_t_ns by header stamp.
