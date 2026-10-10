@@ -5,20 +5,41 @@
 # BOTH-ROBOTS SETTTINGS
 /**/riptide_mapping2:
   ros__parameters:
-    # Covariance filter parameters
-    cov_limit: 0.01 # Minimum value for the covariance matrix elements
-    k_value: 0.1 # Covariance step size (< 1.0) applied per detection
-    detection_cov_factor: 7.0
-
-    # relative position filter parameters
-    angle_cutoff: 15.0
-    distance_limit: 10.0
     confidence_cutoff: 0.2
 
-    # location tracking settings NOTE: buffer size is a per-robot setting.
+    # Map estimator (map_estimator.py). The init_data poses are a dead-reckoned layout; map objects sit at prior + offset + deviation
+    estimator:
+      offset_std_xy: 1.0 # m, where the course sits in odometry at the start
+      offset_std_z: 0.3
+      drift_var_per_m_xy: 0.002 # m^2 the offset can drift per m traveled
+      drift_var_per_m_z: 0.0002
+      drift_var_per_s_xy: 0.00001 # m^2 per s, even when holding still
+      drift_var_per_s_z: 0.000001
+      layout_std_xy: 0.25 # m, how far a map object can be from where the layout puts it
+      layout_std_z: 0.15
+      child_std_xy: 0.5 # m, prior of an object in its parent mapping frame
+      child_std_z: 0.3
+      yaw_std_deg: 30.0
+      gate_chi2: 16.27 # reject detections further than this (Mahalanobis^2, 3 dof 99.9 %)...
+      yaw_gate_chi2: 10.83
+      gate_min_updates: 10 # ...once the object has this many accepted detections
+      gate_max_rejects: 30 # this many rejections in a row reacquires the object from its prior covariance
 
-    quantile: [ 0.01, 0.99 ]
-    minimum_distance: 1.0
+    # Detection noise: std grows with range, across and (stereo depth) along the camera ray
+    noise:
+      base_std: 0.05
+      lateral_std_per_m: 0.02
+      range_std_per_m: 0.05
+      range_std_per_m2: 0.01
+      timing_std: 0.03 # s, stamp error; smears detections while the vehicle turns or moves
+      yaw_std_deg: 10.0
+      correlation_time: 0.3 # s, detections closer together than this count for less
+      max_inflation: 30.0
+
+    # Published frames chase the estimate at most this fast (<= 0: jump); the lag left is added to the published covariance
+    output:
+      max_speed: 0.3
+      max_yaw_rate_deg: 30.0
 
     # Cursed ah bin geometry fit thresholds
     bin_fit:
@@ -594,4 +615,3 @@
           y: 0.0
           z: -1.5
           yaw: 180.0
-    buffer_size: 30
