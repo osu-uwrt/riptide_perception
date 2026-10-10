@@ -50,7 +50,7 @@ def test_child_converges_and_reset_keeps_position():
 
 
 def test_sighting_one_map_object_moves_the_rest_of_the_map():
-    est = make_estimator()
+    est = make_estimator(course_yaw_std_deg=0.0)
     offset = np.array([0.8, -0.5, 0.1])
     feed(est, "gate", est.specs["gate"].position + offset, 200, std=0.02)
 
@@ -64,12 +64,13 @@ def test_sighting_one_map_object_moves_the_rest_of_the_map():
     share_z = s.offset_std_z ** 2 / (s.offset_std_z ** 2 + s.layout_std_z ** 2)
     torpedo_mean, torpedo_cov = est.position("torpedo")
     moved = torpedo_mean - est.specs["torpedo"].position
-    assert moved[0:2] == pytest.approx(share_xy * offset[0:2], abs=2e-3)
-    assert moved[2] == pytest.approx(share_z * offset[2], abs=2e-3)
+    # (the heavy-tailed layout prior leans slightly further toward the offset than a Gaussian split)
+    assert moved[0:2] == pytest.approx(share_xy * offset[0:2], abs=1e-2)
+    assert moved[2] == pytest.approx(share_z * offset[2], abs=1e-2)
 
     # ...and the unseen torpedo is still at least as uncertain as its layout
     assert torpedo_cov[0, 0] >= s.layout_std_xy ** 2
-    assert torpedo_cov[0, 0] == pytest.approx(share_xy * s.layout_std_xy ** 2 + s.layout_std_xy ** 2, rel=1e-2)
+    assert torpedo_cov[0, 0] == pytest.approx(share_xy * s.layout_std_xy ** 2 + s.layout_std_xy ** 2, rel=5e-2)
 
 
 def test_two_objects_pin_the_offset_below_the_layout_error():
@@ -190,3 +191,72 @@ def test_slew():
     # Across +-pi the short way round
     assert slew_angle(math.radians(170), math.radians(-170), math.radians(5), 1.0) == pytest.approx(math.radians(175))
     assert slew_angle(0.0, 1.0, 0.0, 0.0) == 1.0
+
+
+COURSE = {"gate": (5.0, 0.0, -1.0), "torpedo": (15.0, 3.0, -1.5), "bin": (10.0, -4.0, -2.0), "table": (20.0, -6.0, -1.5)}
+
+
+def fly(order, layout_err=None, yaw_deg=0.0, drift_at=None, drift=(0.0, 0.0, 0.0), **settings):
+    # Locks each prop in turn (15 m of travel between), the props sitting at R(yaw) * prior + offset + layout error
+    # (+ drift once it happens, as odometry sees them). Returns the estimator and where each prop really is now
+    est = MapEstimator({n: ObjectSpec("map", np.array(p), 0.0) for n, p in COURSE.items()},
+                       EstimatorSettings(**settings), NoiseSettings())
+    offset, layout_err, d = np.array([0.5, -0.3, 0.0]), layout_err or {}, np.zeros(3)
+    c, s = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
+
+    def truth(name):
+        x, y, z = COURSE[name]
+        return np.array([c * x - s * y, s * x + c * y, z]) + offset + np.asarray(layout_err.get(name, np.zeros(3))) + d
+
+    t = 0.0
+    for k, name in enumerate(order):
+        if k > 0:
+            est.predict(15.0, 30.0)
+        if drift_at == k:
+            d = np.asarray(drift, dtype=float)
+        est.reset(name)
+        for _ in range(60):
+            assert est.observe(name, t, truth(name), iso(0.1))[0]
+            t += 0.5
+    return est, truth
+
+
+def horizontal_error(est, truth, name):
+    return float(np.linalg.norm(est.position(name)[0][:2] - truth(name)[:2]))
+
+
+def test_a_bad_prior_is_released_instead_of_dragging_the_map():
+    # The torpedo's prior is 1.5 m off; the gate (seen first) says where the course is
+    est, truth = fly(("gate", "torpedo"), {"torpedo": (1.5, 0.0, 0.0)})
+    assert est.released("torpedo") and not est.released("gate")
+    assert horizontal_error(est, truth, "torpedo") < 0.02  # where it was seen
+    assert horizontal_error(est, truth, "bin") < 0.25      # the unseen bin isn't dragged 1.5 m
+
+
+def test_a_bad_first_prior_is_released_once_another_prop_disagrees():
+    # Seen alone, the gate's bad prior moves the whole map (one sighting can't tell drift from a bad prior)...
+    est, truth = fly(("gate",), {"gate": (1.5, 0.0, 0.0)})
+    assert horizontal_error(est, truth, "bin") > 1.0
+    # ...until the torpedo disagrees with it
+    est, truth = fly(("gate", "torpedo"), {"gate": (1.5, 0.0, 0.0)})
+    assert est.released("gate")
+    assert horizontal_error(est, truth, "gate") < 0.1
+    assert horizontal_error(est, truth, "bin") < 0.25
+
+
+def test_props_pin_the_course_yaw():
+    est, truth = fly(("gate", "torpedo", "bin"), yaw_deg=2.0)
+    yaw, var = est.course_yaw()
+    assert math.degrees(yaw) == pytest.approx(2.0, abs=1.0)
+    assert horizontal_error(est, truth, "table") < 0.25  # 20 m out, 0.7 m off before
+    without, truth = fly(("gate", "torpedo", "bin"), yaw_deg=2.0, course_yaw_std_deg=0.0)
+    assert horizontal_error(est, truth, "table") < horizontal_error(without, truth, "table")
+
+
+def test_retargeting_keeps_the_fix_and_a_revisit_measures_drift():
+    est, truth = fly(("gate", "torpedo", "gate"), drift_at=1, drift=(0.0, 1.0, 0.0))
+    # The first gate visit was frozen when the gate was retargeted; the torpedo and the new gate track are live fixes
+    assert [fix.name for fix in est.frozen] == ["gate"] and set(est.live) == {"gate", "torpedo"}
+    assert horizontal_error(est, truth, "gate") < 0.05
+    # The offset followed the drift
+    assert est.offset()[0][1] == pytest.approx(-0.3 + 1.0, abs=0.2)

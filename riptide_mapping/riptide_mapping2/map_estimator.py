@@ -4,18 +4,26 @@
 #
 # The prior map (config init_data) is a dead-reckoned layout of the course, and the odometry frame drifts away from it.
 # Every map-parented object is modeled as
-#     position = prior + offset + deviation
-# offset:    where the course sits in the odometry frame. Shared by every map object, random-walks with distance traveled.
-# deviation: how far the dead-reckoned layout is off for that one object. Constant, zero mean.
-# Both live in one Kalman filter, so a sighting of any map object refines the offset and through it every other object,
-# and a sighting from long ago (more drift since) counts for less than a fresh one.
+#     position = R(course yaw) * prior + offset + deviation
+# offset:      where the course sits in the odometry frame. Random-walks with distance traveled (dead-reckoning drift).
+# deviation:   how far the dead-reckoned layout is off for that one object. Heavy-tailed: mostly small, sometimes meters.
+# course yaw:  start-heading misalignment between the layout and odometry (small, the AprilTag calibration sets heading).
+#
+# Each map object is tracked from its detections (a 3-state filter in the odometry frame). Once a track has enough
+# detections it becomes a fix: where that object was, at the odometry distance it was last seen at. Retargeting the
+# object later freezes the fix and starts a new one, so revisits measure drift. A small robust least-squares solve over
+# all fixes then gives the offset history, every seen object's deviation and the course yaw:
+# - one sighting can't tell "this prior is off" from "the vehicle drifted", so it is split by their uncertainties;
+# - a prior that disagrees with the other fixes is released (Cauchy weight) instead of dragging the map;
+# - fixes that agree on a shift are drift, and the offset follows them.
+# Unseen objects are predicted at R * prior + offset now.
 #
 # Objects parented to another mapping frame (holes on the torpedo board, gate halves, ...) keep a 3-state filter in that
-# frame. Yaw is a scalar filter per object; the FOG holds heading so the offset has no yaw.
+# frame. Yaw is a scalar filter per object.
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -36,9 +44,16 @@ class EstimatorSettings:
     drift_var_per_m_z: float = 0.0002
     drift_var_per_s_xy: float = 1e-5
     drift_var_per_s_z: float = 1e-6
-    # How far a map object can be from where the dead-reckoned layout puts it (std, m)
+    # How far a map object can be from where the dead-reckoned layout puts it (std, m)...
     layout_std_xy: float = 0.25
     layout_std_z: float = 0.15
+    # ...with a heavy tail: a deviation this many stds out counts half as much as a Gaussian would (Cauchy scale),
+    # so a badly placed prior is released instead of dragging the map. <= 0: Gaussian
+    layout_robust_scale: float = 2.0
+    # Start-heading misalignment between the layout and odometry (std, deg; 0: not estimated)
+    course_yaw_std_deg: float = 2.0
+    # Fixes of one object closer together than this (m traveled) are merged into one
+    fix_merge_distance: float = 1.0
     # Prior std of an object parented to another mapping frame, in that frame (m)
     child_std_xy: float = 0.5
     child_std_z: float = 0.3
@@ -48,7 +63,7 @@ class EstimatorSettings:
     # distance are rejected (3 dof / 1 dof at 99.9 %). Catches wrong-class detections of a nearby lookalike.
     gate_chi2: float = 16.27
     yaw_gate_chi2: float = 10.83
-    gate_min_updates: int = 10
+    gate_min_updates: int = 10   # also the detections a map object's track needs to become a fix
     # This many position rejections in a row means the estimate locked onto the wrong thing: reacquire it
     gate_max_rejects: int = 30
 
@@ -78,6 +93,16 @@ class Track:
     updates: int = 0      # accepted detections since the last reset
     rejects: int = 0      # position rejections in a row
     last_stamp: Optional[float] = None
+
+
+@dataclass
+class Fix:
+    # Where a map object was found (odometry frame), and the odometry distance and time it was last seen at
+    name: str
+    mean: np.ndarray
+    cov: np.ndarray
+    distance: float
+    time: float
 
 
 def detection_covariance(position_camera, rotation_parent_camera, angular_speed: float, linear_speed: float,
@@ -131,23 +156,23 @@ class MapEstimator:
         self.specs = {name: ObjectSpec(spec.parent, np.array(spec.position, dtype=np.float64), float(spec.yaw),
                                        bool(spec.lock_yaw)) for name, spec in specs.items()}
 
-        # Joint state: [offset, deviation of each map object]
-        self.map_names = [name for name, spec in self.specs.items() if spec.parent == MAP_FRAME]
-        self._slot = {name: 3 + 3 * i for i, name in enumerate(self.map_names)}
-        size = 3 + 3 * len(self.map_names)
-        self.x = np.zeros(size)
-        self.P = np.zeros((size, size))
-        self.P[0:3, 0:3] = self._offset_prior()
-        for name in self.map_names:
-            s = self._slot[name]
-            self.P[s:s + 3, s:s + 3] = self._layout_prior()
+        # Odometry path length and time so far (predict()), the clocks fixes and drift are measured on
+        self.distance = 0.0
+        self.time = 0.0
 
-        self.child_mean: Dict[str, np.ndarray] = {}
-        self.child_P: Dict[str, np.ndarray] = {}
+        # Tracks: map objects in the odometry frame, the rest in their parent frame
+        self.track_mean: Dict[str, np.ndarray] = {}
+        self.track_cov: Dict[str, np.ndarray] = {}
         for name, spec in self.specs.items():
-            if spec.parent != MAP_FRAME:
-                self.child_mean[name] = spec.position.copy()
-                self.child_P[name] = self._child_prior()
+            self.track_mean[name] = spec.position.copy()
+            self.track_cov[name] = self._layout_prior() if self.is_map_object(name) else self._child_prior()
+        self.acquiring = set()  # map objects whose track is their estimate (detected or seeded, not a fix yet)
+        self.live: Dict[str, Tuple[float, float]] = {}  # map objects whose track is a fix: (distance, time) last seen
+        self.seen: Dict[str, Tuple[float, float]] = {}  # (distance, time) of each map track's last detection
+        self.frozen: List[Fix] = []
+        self._solution = None
+        self._structure = None  # fixes the last full (multi-start) solve ran on
+        self._warm = None
 
         self.yaw_mean = {name: wrap_angle(spec.yaw) for name, spec in self.specs.items()}
         self.yaw_var = {name: self._yaw_prior() for name in self.specs}
@@ -170,46 +195,86 @@ class MapEstimator:
     def _yaw_prior(self) -> float:
         return math.radians(self.settings.yaw_std_deg) ** 2
 
+    def _drift(self, distance: float, dt: float) -> np.ndarray:
+        s = self.settings
+        distance, dt = max(distance, 0.0), max(dt, 0.0)
+        xy = s.drift_var_per_m_xy * distance + s.drift_var_per_s_xy * dt
+        z = s.drift_var_per_m_z * distance + s.drift_var_per_s_z * dt
+        return np.diag([xy, xy, z])
+
     # ----- queries -----
 
     def is_map_object(self, name: str) -> bool:
-        return name in self._slot
+        return self.specs[name].parent == MAP_FRAME
 
     def position(self, name: str) -> Tuple[np.ndarray, np.ndarray]:
-        # Mean and covariance in the parent frame (map objects: in map, offset included)
-        if name in self._slot:
-            s = self._slot[name]
-            mean = self.specs[name].position + self.x[0:3] + self.x[s:s + 3]
-            P = self.P
-            cov = P[0:3, 0:3] + P[s:s + 3, s:s + 3] + P[0:3, s:s + 3] + P[s:s + 3, 0:3]
-            return mean, 0.5 * (cov + cov.T)
-        return self.child_mean[name].copy(), self.child_P[name].copy()
+        # Mean and covariance in the parent frame (map objects: in the odometry frame, offset included)
+        if not self.is_map_object(name) or name in self.acquiring:
+            return self.track_mean[name].copy(), self.track_cov[name].copy()
+        return self._predicted(name)
 
     def frame_translation(self, name: str) -> np.ndarray:
         # Translation of the object's frame from its TF parent (map objects hang off the offset frame)
-        if name in self._slot:
-            s = self._slot[name]
-            return self.specs[name].position + self.x[s:s + 3]
-        return self.child_mean[name].copy()
+        if not self.is_map_object(name):
+            return self.track_mean[name].copy()
+        return self.position(name)[0] - self.offset()[0]
 
     def offset(self) -> Tuple[np.ndarray, np.ndarray]:
-        return self.x[0:3].copy(), self.P[0:3, 0:3].copy()
+        # Where the course sits in the odometry frame now
+        sol = self._solve()
+        if sol is None:
+            return np.zeros(3), self._offset_prior() + self._drift(self.distance, self.time)
+        o = sol["o"]
+        cov = sol["cov"][o:o + 3, o:o + 3] + self._drift(self.distance - sol["distance"], self.time - sol["time"])
+        return sol["x"][o:o + 3].copy(), 0.5 * (cov + cov.T)
+
+    def course_yaw(self) -> Tuple[float, float]:
+        sol = self._solve()
+        if sol is None:
+            return 0.0, math.radians(self.settings.course_yaw_std_deg) ** 2
+        return float(sol["x"][0]), float(sol["cov"][0, 0])
 
     def yaw(self, name: str) -> Tuple[float, float]:
         if self.specs[name].lock_yaw:
             return self.yaw_mean[name], 0.0
         return self.yaw_mean[name], self.yaw_var[name]
 
+    def released(self, name: str) -> bool:
+        # Whether the fixes say this object's prior is off (its layout weight is mostly gone)
+        sol = self._solve()
+        return sol is not None and sol["weights"].get(name, 1.0) < 0.5
+
+    def _predicted(self, name: str) -> Tuple[np.ndarray, np.ndarray]:
+        # The map's estimate of a map object: R(course yaw) * prior + offset now + its deviation
+        prior = self.specs[name].position
+        sol = self._solve()
+        if sol is None:
+            cov = self._offset_prior() + self._drift(self.distance, self.time) + self._layout_prior()
+            return prior.copy(), cov
+        x, P = sol["x"], sol["cov"]
+        rotated, g = _rotate(x[0], prior)
+        o = sol["o"]
+        idx = [0, o, o + 1, o + 2]
+        J = np.zeros((3, 7 if name in sol["d"] else 4))
+        J[:, 0] = g
+        J[:, 1:4] = np.eye(3)
+        mean = rotated + x[o:o + 3]
+        if name in sol["d"]:
+            d = sol["d"][name]
+            idx += [d, d + 1, d + 2]
+            J[:, 4:7] = np.eye(3)
+            mean = mean + x[d:d + 3]
+        cov = J @ P[np.ix_(idx, idx)] @ J.T + self._drift(self.distance - sol["distance"], self.time - sol["time"])
+        if name not in sol["d"]:
+            cov = cov + self._layout_prior()
+        return mean, 0.5 * (cov + cov.T)
+
     # ----- filter -----
 
     def predict(self, distance: float, dt: float):
-        # Dead-reckoning drift since the last call
-        s = self.settings
-        distance = max(float(distance), 0.0)
-        dt = max(float(dt), 0.0)
-        xy = s.drift_var_per_m_xy * distance + s.drift_var_per_s_xy * dt
-        z = s.drift_var_per_m_z * distance + s.drift_var_per_s_z * dt
-        self.P[0:3, 0:3] += np.diag([xy, xy, z])
+        # The vehicle traveled `distance` (odometry path length) over dt since the last call
+        self.distance += max(float(distance), 0.0)
+        self.time += max(float(dt), 0.0)
 
     def inflation(self, name: str, stamp: float) -> float:
         # Back-to-back detections of one object share most of their error, so each counts for less
@@ -230,6 +295,8 @@ class MapEstimator:
             R = np.asarray(position_cov, dtype=np.float64) * inflation
             if not (np.all(np.isfinite(z)) and np.all(np.isfinite(R))):
                 return False, "non-finite detection"
+            if self.is_map_object(name):
+                self._start_or_age_track(name)
             accepted, reason = self._update_position(name, z, R)
             if not accepted:
                 return False, reason
@@ -240,40 +307,49 @@ class MapEstimator:
         track.updates += 1
         track.rejects = 0
         track.last_stamp = stamp
+        if position is not None and self.is_map_object(name):
+            self.seen[name] = (self.distance, self.time)
+            if name in self.live or track.updates >= self.settings.gate_min_updates:
+                # Enough detections: the track is a fix the map is solved from
+                self.acquiring.discard(name)
+                self.live[name] = (self.distance, self.time)
+                self._solution = None
         return True, ""
+
+    def _start_or_age_track(self, name: str):
+        if name in self.acquiring or name in self.live:
+            # Odometry drifted since its last detection, so older detections count for less
+            distance, time = self.seen.get(name, (self.distance, self.time))
+            self.track_cov[name] = self.track_cov[name] + self._drift(self.distance - distance, self.time - time)
+            return
+        # First detection since a reset: start from where the map has it, uncertain enough to need fresh detections
+        mean, cov = self._predicted(name)
+        self.track_mean[name] = mean
+        self.track_cov[name] = cov + self._layout_prior()
+        self.acquiring.add(name)
 
     def _update_position(self, name: str, z: np.ndarray, R: np.ndarray) -> Tuple[bool, str]:
         s = self.settings
         track = self.tracks[name]
-        mean, cov = self.position(name)
+        mean, P = self.track_mean[name], self.track_cov[name]
         nu = z - mean
-        S = cov + R
+        S = P + R
         d2 = float(nu @ np.linalg.solve(S, nu))
 
         if track.updates >= s.gate_min_updates and d2 > s.gate_chi2:
             track.rejects += 1
             if track.rejects >= s.gate_max_rejects:
+                self.live.pop(name, None)  # it was locked onto the wrong thing: drop that fix, don't freeze it
+                self._solution = None
                 self.reset(name)
                 return False, f"{s.gate_max_rejects} rejections in a row (last {math.sqrt(d2):.1f} sigma), reacquiring"
             return False, f"{math.sqrt(d2):.1f} sigma from the estimate"
 
-        if name in self._slot:
-            slot = self._slot[name]
-            H = np.zeros((3, self.x.size))
-            H[:, 0:3] = np.eye(3)
-            H[:, slot:slot + 3] = np.eye(3)
-            K = self.P @ H.T @ np.linalg.inv(S)
-            self.x = self.x + K @ nu
-            IKH = np.eye(self.x.size) - K @ H
-            self.P = IKH @ self.P @ IKH.T + K @ R @ K.T
-            self.P = 0.5 * (self.P + self.P.T)
-        else:
-            P = self.child_P[name]
-            K = P @ np.linalg.inv(S)
-            self.child_mean[name] = self.child_mean[name] + K @ nu
-            IK = np.eye(3) - K
-            P = IK @ P @ IK.T + K @ R @ K.T
-            self.child_P[name] = 0.5 * (P + P.T)
+        K = P @ np.linalg.inv(S)
+        self.track_mean[name] = mean + K @ nu
+        IK = np.eye(3) - K
+        P = IK @ P @ IK.T + K @ R @ K.T
+        self.track_cov[name] = 0.5 * (P + P.T)
         return True, ""
 
     def _update_yaw(self, name: str, yaw: float, var: float):
@@ -285,51 +361,186 @@ class MapEstimator:
         self.yaw_mean[name] = wrap_angle(self.yaw_mean[name] + K * nu)
         self.yaw_var[name] = (1.0 - K) * self.yaw_var[name]
 
+    # ----- the map solve -----
+
+    def _fixes(self) -> List[Fix]:
+        live = [Fix(name, self.track_mean[name], self.track_cov[name], d, t) for name, (d, t) in self.live.items()]
+        return self.frozen + live
+
+    def _freeze(self, name: str):
+        # The live fix stops changing; merged into the object's last frozen fix when barely any travel apart
+        distance, time = self.live.pop(name)
+        fix = Fix(name, self.track_mean[name].copy(), self.track_cov[name].copy(), distance, time)
+        for other in reversed(self.frozen):
+            if other.name == name and abs(other.distance - distance) < self.settings.fix_merge_distance:
+                A, B = np.linalg.inv(other.cov), np.linalg.inv(fix.cov)
+                other.cov = np.linalg.inv(A + B)
+                other.mean = other.cov @ (A @ other.mean + B @ fix.mean)
+                other.distance, other.time = max(other.distance, distance), max(other.time, time)
+                return
+        self.frozen.append(fix)
+
+    def _solve(self):
+        if self._solution is not None:
+            return self._solution
+        fixes = self._fixes()
+        if not fixes:
+            return None
+        s = self.settings
+        order = sorted(range(len(fixes)), key=lambda k: (fixes[k].distance, fixes[k].time))
+        names = sorted({f.name for f in fixes})
+        n = 1 + 3 * len(fixes) + 3 * len(names)
+        node = {k: 1 + 3 * rank for rank, k in enumerate(order)}
+        dev = {name: 1 + 3 * len(fixes) + 3 * j for j, name in enumerate(names)}
+        layout_inv = np.linalg.inv(self._layout_prior())
+        yaw_var = math.radians(s.course_yaw_std_deg) ** 2
+        scale = s.layout_robust_scale
+        fix_inv = [np.linalg.inv(f.cov) for f in fixes]
+
+        # Offset chain: the first node from the start prior, then drift between consecutive nodes
+        chain = []
+        for rank, k in enumerate(order):
+            f = fixes[k]
+            if rank == 0:
+                chain.append((None, node[k], np.linalg.inv(self._offset_prior() + self._drift(f.distance, f.time))))
+            else:
+                p = fixes[order[rank - 1]]
+                Q = self._drift(f.distance - p.distance, f.time - p.time) + 1e-6 * np.eye(3)
+                chain.append((node[order[rank - 1]], node[k], np.linalg.inv(Q)))
+
+        def weights(x):
+            w = {}
+            for name in names:
+                d = x[dev[name]:dev[name] + 3]
+                r2 = float(d @ layout_inv @ d)
+                w[name] = 1.0 / (1.0 + r2 / scale ** 2) if scale > 0 else 1.0
+            return w
+
+        def normal(x, w):
+            A = np.zeros((n, n))
+            b = np.zeros(n)
+            A[0, 0] += 1.0 / yaw_var if yaw_var > 0 else 1e12
+            for k, f in enumerate(fixes):
+                rotated, g = _rotate(x[0], self.specs[f.name].position)
+                y = f.mean - rotated + g * x[0]
+                idx = [0] + list(range(node[k], node[k] + 3)) + list(range(dev[f.name], dev[f.name] + 3))
+                J = np.zeros((3, 7))
+                J[:, 0] = g
+                J[:, 1:4] = np.eye(3)
+                J[:, 4:7] = np.eye(3)
+                A[np.ix_(idx, idx)] += J.T @ fix_inv[k] @ J
+                b[idx] += J.T @ fix_inv[k] @ y
+            for a, c, Qi in chain:
+                A[c:c + 3, c:c + 3] += Qi
+                if a is not None:
+                    A[a:a + 3, a:a + 3] += Qi
+                    A[a:a + 3, c:c + 3] -= Qi
+                    A[c:c + 3, a:a + 3] -= Qi
+            for name in names:
+                d = dev[name]
+                A[d:d + 3, d:d + 3] += w[name] * layout_inv
+            return A, b
+
+        def cost(x):
+            total = x[0] ** 2 / yaw_var if yaw_var > 0 else 0.0
+            for k, f in enumerate(fixes):
+                rotated, _ = _rotate(x[0], self.specs[f.name].position)
+                r = f.mean - rotated - x[node[k]:node[k] + 3] - x[dev[f.name]:dev[f.name] + 3]
+                total += float(r @ fix_inv[k] @ r)
+            for a, c, Qi in chain:
+                r = x[c:c + 3] - (x[a:a + 3] if a is not None else 0.0)
+                total += float(r @ Qi @ r)
+            for name in names:
+                d = x[dev[name]:dev[name] + 3]
+                r2 = float(d @ layout_inv @ d)
+                total += scale ** 2 * math.log1p(r2 / scale ** 2) if scale > 0 else r2
+            return total
+
+        def run(x, iterations, first_weights=None):
+            w = first_weights or weights(x)
+            for _ in range(iterations):
+                A, b = normal(x, w)
+                x_new = np.linalg.solve(A, b)
+                done = float(np.max(np.abs(x_new - x))) < 1e-7
+                x = x_new
+                w = weights(x)
+                if done:
+                    break
+            return x
+
+        # Same fixes as last time (a live track moved): continue from the last answer. New or frozen fixes: also try
+        # starting from every way of blaming one prior, and keep the best explanation
+        structure = tuple((f.name, k < len(self.frozen)) for k, f in enumerate(fixes))
+        if structure == self._structure and self._warm is not None and self._warm.size == n:
+            x = run(self._warm, 8)
+        else:
+            starts = [run(np.zeros(n), 30)]
+            if scale > 0 and len(names) > 1:
+                for name in names:
+                    w = {other: (0.0 if other == name else 1.0) for other in names}
+                    starts.append(run(np.zeros(n), 30, first_weights=w))
+            if self._warm is not None and self._warm.size == n:
+                starts.append(run(self._warm, 30))
+            x = min(starts, key=cost)
+            self._structure = structure
+
+        w = weights(x)
+        A, _ = normal(x, w)
+        last = fixes[order[-1]]
+        self._warm = x
+        self._solution = {"x": x, "cov": np.linalg.inv(A), "o": node[order[-1]], "d": dev, "weights": w,
+                          "distance": last.distance, "time": last.time}
+        return self._solution
+
     # ----- edits from services -----
 
     def reset(self, name: str):
-        # Forget what detections taught this object (back to its prior covariance), keep where it is
-        if name in self._slot:
-            s = self._slot[name]
-            self.P[s:s + 3, :] = 0.0
-            self.P[:, s:s + 3] = 0.0
-            self.P[s:s + 3, s:s + 3] = self._layout_prior()
+        # Forget what detections taught this track (a cov check on it needs fresh detections). A map object's fix
+        # is kept: it is frozen into the map, and its new track starts from where the map has it
+        if self.is_map_object(name):
+            if name in self.live:
+                self._freeze(name)
+                self._solution = None
+            self.acquiring.discard(name)
+            self.seen.pop(name, None)
         else:
-            self.child_P[name] = self._child_prior()
+            self.track_cov[name] = self._child_prior()
         self.yaw_var[name] = self._yaw_prior()
         self.tracks[name] = Track()
 
     def seed(self, name: str, position, yaw: Optional[float] = None):
         # Put the object at position (parent frame) with its prior covariance
         self.reset(name)
-        position = np.asarray(position, dtype=np.float64)
-        if name in self._slot:
-            s = self._slot[name]
-            self.x[s:s + 3] = position - self.specs[name].position - self.x[0:3]
-        else:
-            self.child_mean[name] = position.copy()
+        self.track_mean[name] = np.asarray(position, dtype=np.float64).copy()
+        if self.is_map_object(name):
+            self.track_cov[name] = self._layout_prior()
+            self.acquiring.add(name)
+            self.seen[name] = (self.distance, self.time)
         if yaw is not None:
             self.yaw_mean[name] = wrap_angle(yaw)
 
     def shift(self, name: str, delta):
         # Translate the object in its parent frame, covariance unchanged
         delta = np.asarray(delta, dtype=np.float64)
-        if name in self._slot:
-            s = self._slot[name]
-            self.x[s:s + 3] += delta
-        else:
-            self.child_mean[name] = self.child_mean[name] + delta
+        self.track_mean[name] = self.track_mean[name] + delta
+        if self.is_map_object(name):
+            # Moving it means its prior and everything seen of it move too
+            self.specs[name].position = self.specs[name].position + delta
+            for fix in self.frozen:
+                if fix.name == name:
+                    fix.mean = fix.mean + delta
+            self._solution = None
 
     def rotate_position(self, name: str, dyaw: float):
         # Rotate the object's position about its parent frame's z axis (for when the parent frame yaws)
         c, s_ = math.cos(dyaw), math.sin(dyaw)
         rot = np.array([[c, -s_, 0.0], [s_, c, 0.0], [0.0, 0.0, 1.0]])
-        if name in self._slot:
+        if self.is_map_object(name):
             mean, _ = self.position(name)
             self.shift(name, rot @ mean - mean)
         else:
-            self.child_mean[name] = rot @ self.child_mean[name]
-            self.child_P[name] = rot @ self.child_P[name] @ rot.T
+            self.track_mean[name] = rot @ self.track_mean[name]
+            self.track_cov[name] = rot @ self.track_cov[name] @ rot.T
 
     def add_yaw(self, name: str, dyaw: float):
         self.yaw_mean[name] = wrap_angle(self.yaw_mean[name] + dyaw)
@@ -338,9 +549,17 @@ class MapEstimator:
         # The prior map changed under us: move the object with it and forget its detections
         self.specs[name].position = np.asarray(position, dtype=np.float64)
         self.specs[name].yaw = float(yaw)
-        if name in self._slot:
-            self.x[self._slot[name]:self._slot[name] + 3] = 0.0
-        else:
-            self.child_mean[name] = self.specs[name].position.copy()
-        self.yaw_mean[name] = wrap_angle(yaw)
         self.reset(name)
+        self.frozen = [fix for fix in self.frozen if fix.name != name]
+        self._solution = None
+        self._structure = None
+        if not self.is_map_object(name):
+            self.track_mean[name] = self.specs[name].position.copy()
+        self.yaw_mean[name] = wrap_angle(yaw)
+
+
+def _rotate(yaw: float, point: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    # point rotated by yaw about z, and its derivative in yaw
+    c, s = math.cos(yaw), math.sin(yaw)
+    x, y, z = point
+    return np.array([c * x - s * y, s * x + c * y, z]), np.array([-s * x - c * y, c * x - s * y, 0.0])

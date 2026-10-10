@@ -198,6 +198,7 @@ class MappingNode(Node):
             self.add_publisher(object)
 
         self.estimator = self.create_estimator()
+        self.released_priors = set()
 
         # Published (slewed) poses: object -> (position in map for map objects, else in the parent frame; yaw), and map -> offset
         self.output = {}
@@ -254,6 +255,7 @@ class MappingNode(Node):
     def reset_runtime_state(self):
         # Reset all configured map objects and the offset back to init_data params and the estimator priors
         self.estimator = self.create_estimator()
+        self.released_priors = set()
         for object_name in self.objects.keys():
             # Drop any stale basket fit cov override
             self.objects[object_name].pop("fit_covar", None)
@@ -745,8 +747,19 @@ class MappingNode(Node):
             self.get_logger().debug(f"Rejected detection of {child}: {reason}")
             if "reacquiring" in reason:
                 self.get_logger().warning(f"{child}: {reason}")
+        elif self.estimator.is_map_object(child):
+            self.report_released_priors()
 
         return True, reason
+
+    def report_released_priors(self):
+        # A map object whose prior disagrees with the other props stops dragging the map; say when that changes
+        released = {name for name in self.objects.keys() if self.estimator.is_map_object(name) and self.estimator.released(name)}
+        for name in released - self.released_priors:
+            self.get_logger().warning(f"{name}'s prior disagrees with the other props, released (it no longer moves the map)")
+        for name in self.released_priors - released:
+            self.get_logger().info(f"{name}'s prior agrees with the other props again")
+        self.released_priors = released
 
     def try_update_pose(self, result: ObjectHypothesisWithPose, detection_header: Header, closest_object: str):        
         child: str = result.hypothesis.class_id
