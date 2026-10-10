@@ -455,6 +455,8 @@ class MappingNode(Node):
             else:
                 self.get_logger().warning(f"Unknown target object {target}")
 
+        # Publish the reset estimates now, so a convergence check right after this sees them
+        self.publish_pose()
         return response
 
     def start_binary_classifier_callback(self, request: StartBinaryClassifier.Request, response: StartBinaryClassifier.Response):
