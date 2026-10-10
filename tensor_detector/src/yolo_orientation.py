@@ -10,6 +10,8 @@ The processor returns detections + markers, which this node publishes.
 import os
 import time
 import threading
+import functools
+import traceback
 from collections import deque
 
 
@@ -72,14 +74,10 @@ class YOLONode(Node):
                 ('depth_min_spread', 0.05),         # Min depth spread (m) so flat, head-on patches aren't over-pruned
                 ('publish_box_markers', False),
                 ('max_depth_age', 1.0),
-                ('depth_buffer_size', 60),          # Depth frames kept for timestamp matching (covers depth-vs-image transport lag)
+                ('depth_buffer_size', 15),          # Most depth frames kept for timestamp matching; frames older than max_depth_age are dropped too
             ]
         )
         
-        # Run image/depth callback threads in parallel so one isn't starved
-        self.image_cb_group = MutuallyExclusiveCallbackGroup()
-        self.depth_cb_group = MutuallyExclusiveCallbackGroup()
-
         self.robot_ns = self.get_parameter('robot_namespace').get_parameter_value().string_value
         self.active_camera = self.get_parameter('active_camera').get_parameter_value().string_value
 
@@ -106,6 +104,8 @@ class YOLONode(Node):
         # Guards the camera/model/config fields setup_camera() swaps on a camera
         # switch, so image_callback never reads a torn mix of old/new values.
         self._camera_lock = threading.Lock()
+        self._detector_lock = threading.Lock()
+        self.camera_switch_in_progress = False
 
         # tf
         self.tf_buffer = Buffer()
@@ -169,7 +169,7 @@ class YOLONode(Node):
         self.get_logger().info("Table pair service created. True=warning+helmet->table, False=individual")
 
     def switch_camera_callback(self, request, response):
-        if getattr(self, 'camera_switch_in_progress', False):
+        if self.camera_switch_in_progress:
             response.success = False
             response.message = "Camera switch already in progress."
             return response
@@ -214,7 +214,7 @@ class YOLONode(Node):
             self.setup_camera()
         finally:
             self.camera_switch_in_progress = False
-            self.delayed_timer.cancel()
+            self.destroy_timer(self.delayed_timer)
 
     ### Cammera lifecycle
     def setup_camera(self):
@@ -287,31 +287,40 @@ class YOLONode(Node):
 
     def create_subscriptions(self):
         #TODO: Move these to config file, but it's type dependent
-        base = f'/{self.robot_ns}/{self.camera_prefix}/zed_node'
+        camera = self.camera_prefix
+        base = f'/{self.robot_ns}/{camera}/zed_node'
 
+        # Image and depth in their own groups, run in parallel so one isn't starved.
+        self.image_cb_group = MutuallyExclusiveCallbackGroup()
+        self.depth_cb_group = MutuallyExclusiveCallbackGroup()
+
+        # Each callback is bound to the camera it subscribed to
         info_topic = f'{base}/rgb/camera_info'
         self.zed_info_subscription = self.create_subscription(
-            CameraInfo, info_topic, self.camera_info_callback, 1,
+            CameraInfo, info_topic, functools.partial(self.camera_info_callback, camera=camera), 1,
             callback_group=self.depth_cb_group)
 
         image_topic = f'{base}/rgb/image_rect_color/compressed'
         self.image_subscription = self.create_subscription(
-            CompressedImage, image_topic, self.image_callback, qos_profile_sensor_data,
-            callback_group=self.image_cb_group)
+            CompressedImage, image_topic, functools.partial(self.image_callback, camera=camera),
+            qos_profile_sensor_data, callback_group=self.image_cb_group)
 
         depth_topic = f'{base}/depth/depth_registered'
         self.depth_subscription = self.create_subscription(
-            Image, depth_topic, self.depth_callback, qos_profile_sensor_data,
-            callback_group=self.depth_cb_group)
+            Image, depth_topic, functools.partial(self.depth_callback, camera=camera),
+            qos_profile_sensor_data, callback_group=self.depth_cb_group)
     ### Callbacks
     def has_subscribers(self, publisher):
         return publisher.get_subscription_count() > 0
 
-    def camera_info_callback(self, msg):
+    def camera_info_callback(self, msg, camera):
         if not self.camera_info_gathered:
             if self.print_camera_info:
                 self.get_logger().info(f"Camera info: {msg}")
             with self._camera_lock:
+                # Still in flight from the camera we just switched away from
+                if camera != self.camera_prefix:
+                    return
                 self.intrinsic_matrix = np.array(msg.k).reshape((3, 3))
                 self.fx = msg.k[0]
                 self.cx = msg.k[2]
@@ -319,7 +328,11 @@ class YOLONode(Node):
                 self.cy = msg.k[5]
                 self.camera_info_gathered = True
 
-    def depth_callback(self, msg):
+    def depth_callback(self, msg, camera):
+        # Still in flight from the camera we just switched away from
+        if camera != self.camera_prefix:
+            return
+
         now = self.get_clock().now()
         if hasattr(self, '_last_depth_t'):
             dt = (now - self._last_depth_t).nanoseconds * 1e-9
@@ -328,20 +341,23 @@ class YOLONode(Node):
 
         depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         t_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
+        oldest_ns = t_ns - int(self.max_depth_age * 1e9)
         with self._depth_lock:
-            self._depth_buffer.append((t_ns, depth_image, msg.header.stamp))
+            self._depth_buffer.append((t_ns, camera, depth_image, msg.header.stamp))
+            while self._depth_buffer and self._depth_buffer[0][0] < oldest_ns:
+                self._depth_buffer.popleft()
 
-    def _match_depth(self, img_t_ns):
-        """Nearest buffered depth frame to img_t_ns by header stamp.
+    def _match_depth(self, img_t_ns, camera):
+        """Nearest buffered depth frame from `camera` to img_t_ns by header stamp.
 
         Returns (depth_image, depth_stamp, dt_seconds) for the closest match, or
-        None when the buffer is empty. The caller decides whether dt is tolerable.
+        None when there is none. The caller decides whether dt is tolerable.
         """
         with self._depth_lock:
-            if not self._depth_buffer:
+            frames = [e for e in self._depth_buffer if e[1] == camera]
+            if not frames:
                 return None
-            t_ns, depth_image, stamp = min(
-                self._depth_buffer, key=lambda e: abs(e[0] - img_t_ns))
+            t_ns, _, depth_image, stamp = min(frames, key=lambda e: abs(e[0] - img_t_ns))
         return depth_image, stamp, abs(t_ns - img_t_ns) * 1e-9
         
     def _stamp(self, msg):
@@ -350,13 +366,27 @@ class YOLONode(Node):
         return self.get_clock().now().to_msg()
 
     ### THE MEAT
-    def image_callback(self, msg: CompressedImage):
+    def image_callback(self, msg: CompressedImage, camera):
         start_time = time.perf_counter() if self.log_processing_time else None
 
-        img_t_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
-        match = self._match_depth(img_t_ns)
+        with self._camera_lock:
+            # A frame still in flight from the camera we just switched away from
+            if camera != self.camera_prefix:
+                return
+            info_ready = self.camera_info_gathered
+            if info_ready:
+                model = self.model
+                conf = self.conf
+                iou = self.iou
+                class_id_map = self.class_id_map
+                frame_id = self.frame_id
+                fx, fy, cx, cy = self.fx, self.fy, self.cx, self.cy
+                intrinsic_matrix = self.intrinsic_matrix
 
-        if match is None or not self.camera_info_gathered:
+        img_t_ns = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
+        match = self._match_depth(img_t_ns, camera)
+
+        if match is None or not info_ready:
             self.get_logger().warning(
                 "Skipping image because either no depth image or camera info is available.",
                 throttle_duration_sec=1)
@@ -373,17 +403,6 @@ class YOLONode(Node):
         cv_image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
         if cv_image is None:
             return
-
-        # Snapshot the camera/model state together so a concurrent setup_camera()
-        # (camera switch) can't hand us a mix of old and new values mid-frame.
-        with self._camera_lock:
-            model = self.model
-            conf = self.conf
-            iou = self.iou
-            class_id_map = self.class_id_map
-            frame_id = self.frame_id
-            fx, fy, cx, cy = self.fx, self.fy, self.cx, self.cy
-            intrinsic_matrix = self.intrinsic_matrix
 
         # Run inference
         results = model.infer(cv_image, conf=conf, iou=iou)
@@ -403,8 +422,11 @@ class YOLONode(Node):
             want_overlay_points=self.has_subscribers(self.annotated_image_publisher)
         )
 
-        # The generic planar and task specific detection logic
-        detections, markers = self.detector.process(results, frame)
+        with self._detector_lock:
+            detections, markers = self.detector.process(results, frame)
+            cloud = None
+            if self.has_subscribers(self.point_cloud_publisher):
+                cloud = self.detector.take_point_cloud(frame_id, self._stamp(msg))
 
         # Publish markers: clear the previous set, then add the current one
         if self.has_subscribers(self.marker_array_publisher):
@@ -417,10 +439,8 @@ class YOLONode(Node):
             self.marker_array_publisher.publish(marker_array)
 
         # Publish point cloud for visualization
-        if self.has_subscribers(self.point_cloud_publisher):
-            cloud = self.detector.take_point_cloud(frame_id, self._stamp(msg))
-            if cloud is not None:
-                self.point_cloud_publisher.publish(cloud)
+        if cloud is not None:
+            self.point_cloud_publisher.publish(cloud)
 
         # Publish annotated frame for visualization
         if self.has_subscribers(self.annotated_image_publisher):
@@ -448,8 +468,14 @@ def main(args=None):
         while rclpy.ok():
             try:
                 executor.spin_once()
-            except InvalidHandle:
-                yolo_node.get_logger().debug("Dropped message for subscription destroyed mid-take")
+            except InvalidHandle as e:
+                # Expected during camera switch: a worker went to take from a subscription that was just destroyed
+                if any(f.name in ('_take_subscription', 'take_data')
+                       for f in traceback.extract_tb(e.__traceback__)):
+                    yolo_node.get_logger().debug("Dropped message for subscription destroyed mid-take")
+                else:
+                    yolo_node.get_logger().error(
+                        "InvalidHandle in a callback:\n" + ''.join(traceback.format_exception(e)))
     finally:
         yolo_node.destroy_node()
         rclpy.shutdown()
