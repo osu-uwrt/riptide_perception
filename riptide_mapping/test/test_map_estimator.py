@@ -260,3 +260,14 @@ def test_retargeting_keeps_the_fix_and_a_revisit_measures_drift():
     assert horizontal_error(est, truth, "gate") < 0.05
     # The offset followed the drift
     assert est.offset()[0][1] == pytest.approx(-0.3 + 1.0, abs=0.2)
+
+
+def test_confirmed_needs_fresh_detections_after_each_reset():
+    est = make_estimator()
+    assert not est.confirmed("hole", 10)
+    feed(est, "hole", est.specs["hole"].position, 10)
+    assert est.confirmed("hole", 10)
+    est.reset("hole")  # retargeted: its covariance check needs fresh detections again
+    assert not est.confirmed("hole", 10)
+    est.seed("gate", (5.0, 0.0, -1.0))
+    assert not est.confirmed("gate", 1)

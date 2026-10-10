@@ -40,6 +40,10 @@ MAX_TABLE_YAW_CORRECTION = math.radians(30)
 MAX_ODOM_STEP = 1.0 # m, bigger jumps between odometry messages are resets, not travel
 MOTION_HISTORY = 200 # odometry samples kept to look up the vehicle's rates at a detection's stamp
 MAX_SLEW_DT = 0.2 # s, longest step a published frame takes toward the estimate in one publish
+# Covariance published for an object not yet confirmed by detections: the old mapping's unwarmed buffer (getCovariance
+# error ~1.73), above every tree threshold
+UNCONFIRMED_POSITION_VAR = 1.0
+UNCONFIRMED_ANGLE_VAR = 0.1
 
 class TransformListenerWithHook(tf2_ros.TransformListener):
     def __init__(self, buffer: tf2_ros.buffer.Buffer, node: Node, hook):
@@ -180,6 +184,9 @@ class MappingNode(Node):
             parameters=[
                 ("confidence_cutoff", 0.7),
                 ("odom_topic", "odometry/filtered"),
+                # Until an object has this many detections since its target was last set, its published covariance
+                # stays at the old "not seen yet" values, so a tree's covariance check still needs fresh detections
+                ("confirm_detections", 10),
                 # Published frames chase the estimate at most this fast so a correction never steps a frame the
                 # controller is tracking (<= 0: jump). The lag still left is added to the published covariance
                 ("output.max_speed", 0.3),
@@ -894,6 +901,7 @@ class MappingNode(Node):
         self.last_output_time = now_time
         max_speed = float(self.get_parameter("output.max_speed").value)
         max_yaw_rate = math.radians(float(self.get_parameter("output.max_yaw_rate_deg").value))
+        confirm = int(self.get_parameter("confirm_detections").value)
         settling = False
 
         # map -> offset is where the course sits in odometry. Map objects hang off it at prior + deviation
@@ -942,6 +950,12 @@ class MappingNode(Node):
             # A frame that has not caught up with the estimate is that much less certain
             cov = cov + numpy.diag(lag ** 2)
             yaw_var = yaw_var + yaw_lag ** 2
+            angle_var = 0.0
+            if not self.estimator.confirmed(object, confirm):
+                # Not confirmed by fresh detections yet: what the old mapping reported for an object it had not seen
+                cov = cov + numpy.diag(numpy.maximum(UNCONFIRMED_POSITION_VAR - numpy.diag(cov), 0.0))
+                yaw_var = max(yaw_var, UNCONFIRMED_ANGLE_VAR)
+                angle_var = UNCONFIRMED_ANGLE_VAR
 
             pose = PoseWithCovarianceStamped()
             pose.header.stamp = now
@@ -967,6 +981,7 @@ class MappingNode(Node):
             for i in range(3):
                 for j in range(3):
                     covariance[6 * i + j] = float(cov[i, j])
+            covariance[21] = covariance[28] = angle_var
             covariance[35] = float(yaw_var)
 
             # Cov stuff for cursed ah bin fit, won't touch other objects since they dont have "fit_covar"

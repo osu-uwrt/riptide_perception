@@ -6,6 +6,7 @@
 /**/riptide_mapping2:
   ros__parameters:
     confidence_cutoff: 0.2
+    confirm_detections: 10 # detections since the target was set before an object's real covariance is published
 
     # Map estimator (map_estimator.py). The init_data poses are a dead-reckoned layout; map objects sit at prior + offset + deviation
     estimator:
@@ -28,14 +29,15 @@
       gate_min_updates: 10 # ...once the object has this many accepted detections
       gate_max_rejects: 30 # this many rejections in a row reacquires the object from its prior covariance
 
-    # Detection noise: std grows with range, across and (stereo depth) along the camera ray
+    # Detection noise: std grows with range, across and (stereo depth) along the camera ray. From the old thresholds
+    # (the holes' 0.0005 needed under ~2 cm of scatter at 1.5 m); measure the real scatter to tune
     noise:
-      base_std: 0.05
-      lateral_std_per_m: 0.02
-      range_std_per_m: 0.05
-      range_std_per_m2: 0.01
+      base_std: 0.01
+      lateral_std_per_m: 0.003
+      range_std_per_m: 0.008
+      range_std_per_m2: 0.003
       timing_std: 0.03 # s, stamp error; smears detections while the vehicle turns or moves
-      yaw_std_deg: 10.0
+      yaw_std_deg: 3.0
       correlation_time: 0.3 # s, detections closer together than this count for less
       max_inflation: 30.0
 

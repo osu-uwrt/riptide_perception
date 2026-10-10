@@ -68,14 +68,16 @@ class EstimatorSettings:
     gate_max_rejects: int = 30
 
 
+# Defaults from what the trees were tuned against: the torpedo holes' 0.0005 passed with the old mapping only if
+# their detections scattered under ~2 cm at 1.5 m. Measure the real scatter to tune these.
 @dataclass
 class NoiseSettings:
-    base_std: float = 0.05            # m, any detection
-    lateral_std_per_m: float = 0.02   # m per m of range, across the camera ray
-    range_std_per_m: float = 0.05     # m per m of range, along the ray (stereo depth)
-    range_std_per_m2: float = 0.01    # m per m^2 of range, along the ray
+    base_std: float = 0.01            # m, any detection
+    lateral_std_per_m: float = 0.003  # m per m of range, across the camera ray
+    range_std_per_m: float = 0.008    # m per m of range, along the ray (stereo depth)
+    range_std_per_m2: float = 0.003   # m per m^2 of range, along the ray
     timing_std: float = 0.03          # s, error between the detection stamp and the pose used for it
-    yaw_std_deg: float = 10.0         # deg, detected yaw
+    yaw_std_deg: float = 3.0          # deg, detected yaw
     correlation_time: float = 0.3     # s, detections closer together than this share most of their error
     max_inflation: float = 30.0       # cap on the correlation inflation (several detections in one frame)
 
@@ -238,6 +240,10 @@ class MapEstimator:
         if self.specs[name].lock_yaw:
             return self.yaw_mean[name], 0.0
         return self.yaw_mean[name], self.yaw_var[name]
+
+    def confirmed(self, name: str, detections: int) -> bool:
+        # Whether the object has this many accepted detections since its last reset (seeding counts as a reset)
+        return self.tracks[name].updates >= detections
 
     def released(self, name: str) -> bool:
         # Whether the fixes say this object's prior is off (its layout weight is mostly gone)
