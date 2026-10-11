@@ -184,10 +184,10 @@ class MappingNode(Node):
             parameters=[
                 ("confidence_cutoff", 0.7),
                 ("odom_topic", "odometry/filtered"),
-                # Published frames chase the estimate at most this fast so a correction never steps a frame the
-                # controller is tracking (<= 0: jump). The lag still left is added to the published covariance
-                ("output.max_speed", 0.3),
-                ("output.max_yaw_rate_deg", 30.0),
+                # Published frames chase the estimate at most this fast (<= 0: jump, the default: the MPC smooths frame
+                # motion itself). The lag still left is added to the published covariance
+                ("output.max_speed", 0.0),
+                ("output.max_yaw_rate_deg", 0.0),
             ]
         )
 

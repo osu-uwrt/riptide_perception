@@ -45,10 +45,11 @@
       correlation_time: 0.3 # s, detections closer together than this count for less
       max_inflation: 30.0
 
-    # Published frames chase the estimate at most this fast (<= 0: jump); the lag left is added to the published covariance
+    # Published frames chase the estimate at most this fast (<= 0: jump); the lag left is added to the published covariance.
+    # Off: the MPC already smooths frame motion (path.frame_speed for carried paths, its motion profile for setpoints)
     output:
-      max_speed: 0.3
-      max_yaw_rate_deg: 30.0
+      max_speed: 0.0
+      max_yaw_rate_deg: 0.0
 
     # Cursed ah bin geometry fit thresholds
     bin_fit:
