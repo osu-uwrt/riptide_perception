@@ -299,8 +299,9 @@ class MappingNode(Node):
         return response
 
     def center_table_on_baskets_callback(self, request: Trigger.Request, response: Trigger.Response):
-        # Move the table so the baskets sit at their config offsets from it. Other table children ride along with table_frame, the baskets get
-        # shifted back so they stay put in the world (point_yaw_at_parent then re-aims them at the new table center)
+        # Move the table so the baskets sit at their config offsets from it. The baskets, and any other table child already seen
+        # (searched before centering), get shifted back so they stay put in the world (point_yaw_at_parent then re-aims them at
+        # the new table center); unseen children are still priors relative to the table, so they ride along with table_frame
         if str(self.get_parameter("init_data.table.parent").value) != "map":
             response.success = False
             response.message = "center_table_on_baskets only supports a map-parented table"
@@ -348,13 +349,17 @@ class MappingNode(Node):
         self.estimator.shift("table", (dx, dy, dz))
         self.estimator.add_yaw("table", dyaw)
 
-        # Re-express the baskets in the new table_frame so they stay put in the world
-        for basket in TABLE_BASKETS:
-            self.estimator.shift(basket, (-ox, -oy, -oz))
-            self.estimator.rotate_position(basket, -dyaw)
+        # Re-express the baskets and the seen table children in the new table_frame so they stay put in the world
+        seen = [name for name in self.objects.keys() if name not in TABLE_BASKETS and self.estimator.tracks[name].updates > 0
+                and str(self.get_parameter("init_data.{}.parent".format(name)).value) == "table_frame"]
+        for name in TABLE_BASKETS + tuple(seen):
+            self.estimator.shift(name, (-ox, -oy, -oz))
+            self.estimator.rotate_position(name, -dyaw)
+            if name in seen:
+                self.estimator.add_yaw(name, -dyaw)
 
         # The frames jump to the fit, autonomy reads them right after this call
-        for name in ("table",) + TABLE_BASKETS:
+        for name in ("table",) + TABLE_BASKETS + tuple(seen):
             self.output.pop(name, None)
 
         # The table is now fit to these basket positions, stop detections from dragging them around
@@ -363,7 +368,8 @@ class MappingNode(Node):
         self.publish_pose()
 
         response.success = True
-        response.message = f"Moved table by ({dx:.3f}, {dy:.3f}, {dz:.3f}) in map to fit the baskets, {yaw_msg}"
+        response.message = (f"Moved table by ({dx:.3f}, {dy:.3f}, {dz:.3f}) in map to fit the baskets, {yaw_msg}"
+                            + (f"; kept {', '.join(seen)} where they were seen" if seen else ""))
         self.get_logger().info(response.message)
         return response
 
