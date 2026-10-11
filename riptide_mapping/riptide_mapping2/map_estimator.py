@@ -64,6 +64,11 @@ class EstimatorSettings:
     gate_chi2: float = 16.27
     yaw_gate_chi2: float = 10.83
     gate_min_updates: int = 10   # also the detections a map object's track needs to become a fix
+    # A target is confirmed (its real covariance published) after this many detections while targeted...
+    confirm_detections: int = 10
+    # ...or, when it was already known well, after this many that land where it was (widened by the drift since it was
+    # last seen); one that lands elsewhere means it moved, and it is found again from scratch
+    verify_detections: int = 3
     # This many position rejections in a row means the estimate locked onto the wrong thing: reacquire it
     gate_max_rejects: int = 30
 
@@ -95,6 +100,9 @@ class Track:
     updates: int = 0      # accepted detections since the last reset
     rejects: int = 0      # position rejections in a row
     last_stamp: Optional[float] = None
+    established: bool = False  # confirm_detections since the last full reset, targeted or not: the estimate is good
+    confirmed: bool = False    # usable by a target check: confirmed while targeted, until the next reset
+    verifying: int = -1        # targeted again while established: detections that agreed so far (-1: not verifying)
 
 
 @dataclass
@@ -241,9 +249,9 @@ class MapEstimator:
             return self.yaw_mean[name], 0.0
         return self.yaw_mean[name], self.yaw_var[name]
 
-    def confirmed(self, name: str, detections: int) -> bool:
-        # Whether the object has this many accepted detections since its last reset (seeding counts as a reset)
-        return self.tracks[name].updates >= detections
+    def confirmed(self, name: str) -> bool:
+        # Whether fresh detections while targeted have confirmed the object since its last reset
+        return self.tracks[name].confirmed
 
     def released(self, name: str) -> bool:
         # Whether the fixes say this object's prior is off (its layout weight is mostly gone)
@@ -291,10 +299,11 @@ class MapEstimator:
         return min(max(1.0, self.noise.correlation_time / dt), self.noise.max_inflation)
 
     def observe(self, name: str, stamp: float, position=None, position_cov=None, yaw: Optional[float] = None,
-                yaw_var: Optional[float] = None) -> Tuple[bool, str]:
-        # Fuse one detection (position in the parent frame). Returns (accepted, reason)
-        track = self.tracks[name]
+                yaw_var: Optional[float] = None, targeted: bool = True) -> Tuple[bool, str]:
+        # Fuse one detection (position in the parent frame). Only a targeted object's detections confirm it; the
+        # rest (background objects) still improve its estimate. Returns (accepted, reason)
         inflation = self.inflation(name, stamp)
+        moved = ""
 
         if position is not None:
             z = np.asarray(position, dtype=np.float64)
@@ -303,9 +312,19 @@ class MapEstimator:
                 return False, "non-finite detection"
             if self.is_map_object(name):
                 self._start_or_age_track(name)
+            if self.tracks[name].verifying >= 0:
+                nu = z - self.track_mean[name]
+                d2 = float(nu @ np.linalg.solve(self.track_cov[name] + R, nu))
+                if d2 > self.settings.gate_chi2:
+                    # Not where it was: find it again from scratch (this detection is the first of the new search)
+                    moved = f"moved {np.linalg.norm(nu[0:2]) * 100:.0f} cm since it was last seen, finding it again"
+                    self.reset(name)
+                    if self.is_map_object(name):
+                        self._start_or_age_track(name)
             accepted, reason = self._update_position(name, z, R)
             if not accepted:
                 return False, reason
+        track = self.tracks[name]
 
         if yaw is not None and yaw_var is not None and not self.specs[name].lock_yaw and math.isfinite(yaw):
             self._update_yaw(name, float(yaw), float(yaw_var) * inflation)
@@ -313,14 +332,25 @@ class MapEstimator:
         track.updates += 1
         track.rejects = 0
         track.last_stamp = stamp
-        if position is not None and self.is_map_object(name):
+        if position is not None:
+            if track.updates >= self.settings.confirm_detections:
+                track.established = True
+            if targeted and track.verifying >= 0:
+                track.verifying += 1
+                if track.verifying >= self.settings.verify_detections:
+                    track.verifying = -1
+                    track.confirmed = True
+            if targeted and track.verifying < 0 and track.established:
+                track.confirmed = True
+        if position is not None:
             self.seen[name] = (self.distance, self.time)
+        if position is not None and self.is_map_object(name):
             if name in self.live or track.updates >= self.settings.gate_min_updates:
                 # Enough detections: the track is a fix the map is solved from
                 self.acquiring.discard(name)
                 self.live[name] = (self.distance, self.time)
                 self._solution = None
-        return True, ""
+        return True, moved
 
     def _start_or_age_track(self, name: str):
         if name in self.acquiring or name in self.live:
@@ -328,10 +358,11 @@ class MapEstimator:
             distance, time = self.seen.get(name, (self.distance, self.time))
             self.track_cov[name] = self.track_cov[name] + self._drift(self.distance - distance, self.time - time)
             return
-        # First detection since a reset: start from where the map has it, uncertain enough to need fresh detections
+        # First detection since a reset: start from where the map has it. Verifying: as uncertain as the map says (its
+        # drift since included); else uncertain enough to need fresh detections
         mean, cov = self._predicted(name)
         self.track_mean[name] = mean
-        self.track_cov[name] = cov + self._layout_prior()
+        self.track_cov[name] = cov if self.tracks[name].verifying >= 0 else cov + self._layout_prior()
         self.acquiring.add(name)
 
     def _update_position(self, name: str, z: np.ndarray, R: np.ndarray) -> Tuple[bool, str]:
@@ -500,19 +531,26 @@ class MapEstimator:
 
     # ----- edits from services -----
 
-    def reset(self, name: str):
+    def reset(self, name: str, verify: bool = False):
         # Forget what detections taught this track (a cov check on it needs fresh detections). A map object's fix
-        # is kept: it is frozen into the map, and its new track starts from where the map has it
+        # is kept: it is frozen into the map, and its new track starts from where the map has it.
+        # verify (a new target): an object known well keeps its estimate, widened by the drift since it was last seen,
+        # and verify_detections that agree with it confirm it (observe() starts over if one does not)
+        verify = verify and self.tracks[name].established
         if self.is_map_object(name):
             if name in self.live:
                 self._freeze(name)
                 self._solution = None
             self.acquiring.discard(name)
             self.seen.pop(name, None)
+        elif verify:
+            distance, time = self.seen.get(name, (self.distance, self.time))
+            self.track_cov[name] = self.track_cov[name] + self._drift(self.distance - distance, self.time - time)
         else:
             self.track_cov[name] = self._child_prior()
-        self.yaw_var[name] = self._yaw_prior()
-        self.tracks[name] = Track()
+        if not verify:
+            self.yaw_var[name] = self._yaw_prior()
+        self.tracks[name] = Track(established=verify, verifying=0 if verify else -1)
 
     def seed(self, name: str, position, yaw: Optional[float] = None):
         # Put the object at position (parent frame) with its prior covariance

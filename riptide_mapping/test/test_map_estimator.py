@@ -26,11 +26,11 @@ def iso(std):
     return np.eye(3) * std ** 2
 
 
-def feed(est, name, position, n, std=0.05, start=0.0, period=1.0, yaw=None):
+def feed(est, name, position, n, std=0.05, start=0.0, period=1.0, yaw=None, targeted=True):
     # n detections spaced far enough apart that none of them are inflated as correlated
     for i in range(n):
         accepted, reason = est.observe(name, start + i * period, position, iso(std), yaw,
-                                       None if yaw is None else math.radians(10) ** 2)
+                                       None if yaw is None else math.radians(10) ** 2, targeted)
         assert accepted, reason
 
 
@@ -264,10 +264,76 @@ def test_retargeting_keeps_the_fix_and_a_revisit_measures_drift():
 
 def test_confirmed_needs_fresh_detections_after_each_reset():
     est = make_estimator()
-    assert not est.confirmed("hole", 10)
-    feed(est, "hole", est.specs["hole"].position, 10)
-    assert est.confirmed("hole", 10)
-    est.reset("hole")  # retargeted: its covariance check needs fresh detections again
-    assert not est.confirmed("hole", 10)
+    assert not est.confirmed("hole")
+    feed(est, "hole", est.specs["hole"].position, 9)
+    assert not est.confirmed("hole")
+    feed(est, "hole", est.specs["hole"].position, 1, start=20.0)
+    assert est.confirmed("hole")  # confirm_detections while targeted
+    est.reset("hole")  # a full reset (reacquire): from scratch
+    assert not est.confirmed("hole")
     est.seed("gate", (5.0, 0.0, -1.0))
-    assert not est.confirmed("gate", 1)
+    assert not est.confirmed("gate")
+
+
+def test_known_target_is_verified_by_a_few_detections_where_it_was():
+    est = make_estimator()
+    spot = est.specs["hole"].position + np.array([0.05, 0.0, 0.0])
+    feed(est, "hole", spot, 10)
+    est.reset("hole", verify=True)  # targeted again
+    assert not est.confirmed("hole")
+    feed(est, "hole", spot, est.settings.verify_detections - 1, start=100.0)
+    assert not est.confirmed("hole")
+    feed(est, "hole", spot, 1, start=200.0)
+    assert est.confirmed("hole")
+    assert np.allclose(est.position("hole")[0], spot, atol=0.01)
+
+
+def test_a_small_drift_since_it_was_seen_passes_and_is_absorbed():
+    est = make_estimator()
+    spot = est.specs["hole"].position.copy()
+    feed(est, "hole", spot, 20, std=0.02)
+    est.predict(distance=4.0, dt=20.0)  # a surface trip: a few cm of expected drift
+    est.reset("hole", verify=True)
+    drifted = spot + np.array([0.04, -0.02, 0.0])
+    for i in range(est.settings.verify_detections):
+        accepted, reason = est.observe("hole", 100.0 + i, drifted, iso(0.02))
+        assert accepted and "moved" not in reason
+    assert est.confirmed("hole")
+    assert np.linalg.norm(est.position("hole")[0] - drifted) < 0.02  # it followed the drift
+
+
+def test_a_moved_target_is_found_again_from_scratch():
+    est = make_estimator()
+    spot = est.specs["hole"].position.copy()
+    feed(est, "hole", spot, 20, std=0.02)
+    est.reset("hole", verify=True)
+    moved = spot + np.array([0.4, 0.0, 0.0])
+    accepted, reason = est.observe("hole", 100.0, moved, iso(0.02))
+    assert accepted and "moved 40 cm" in reason
+    assert not est.confirmed("hole")
+    feed(est, "hole", moved, est.settings.confirm_detections - 2, start=101.0)
+    assert not est.confirmed("hole")  # the full confirm_detections at the new spot
+    feed(est, "hole", moved, 1, start=200.0)
+    assert est.confirmed("hole")
+    assert np.allclose(est.position("hole")[0], moved, atol=0.01)
+
+
+def test_background_detections_improve_but_do_not_confirm():
+    est = make_estimator()
+    spot = est.specs["hole"].position + np.array([0.1, 0.1, 0.0])
+    feed(est, "hole", spot, 15, targeted=False)
+    assert not est.confirmed("hole")
+    assert np.allclose(est.position("hole")[0], spot, atol=0.02)  # it knows where it is
+    est.reset("hole", verify=True)  # now the target: a quick check, not a fresh search
+    feed(est, "hole", spot, est.settings.verify_detections, start=100.0)
+    assert est.confirmed("hole")
+
+
+def test_a_known_map_object_is_verified_too():
+    est = make_estimator()
+    gate = est.specs["gate"].position + np.array([0.3, 0.0, 0.0])
+    feed(est, "gate", gate, 15, std=0.02)
+    est.predict(distance=10.0, dt=30.0)
+    est.reset("gate", verify=True)
+    feed(est, "gate", gate, est.settings.verify_detections, std=0.02, start=100.0)
+    assert est.confirmed("gate")

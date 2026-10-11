@@ -184,9 +184,6 @@ class MappingNode(Node):
             parameters=[
                 ("confidence_cutoff", 0.7),
                 ("odom_topic", "odometry/filtered"),
-                # Until an object has this many detections since its target was last set, its published covariance
-                # stays at the old "not seen yet" values, so a tree's covariance check still needs fresh detections
-                ("confirm_detections", 10),
                 # Published frames chase the estimate at most this fast so a correction never steps a frame the
                 # controller is tracking (<= 0: jump). The lag still left is added to the published covariance
                 ("output.max_speed", 0.3),
@@ -481,9 +478,10 @@ class MappingNode(Node):
             if self.table_centered and target in TABLE_BASKETS:
                 self.get_logger().info(f"{target} is pinned to the table, not resetting it")
             elif target in self.objects.keys():
-                # Back to the prior covariance (keeps the position) so a cov check on it needs fresh detections
+                # A cov check on it needs fresh detections: a few that agree with what it knows (it was known well), else
+                # the usual confirm_detections from its prior covariance (keeps the position either way)
                 self.get_logger().info(f"reset {target}")
-                self.estimator.reset(target)
+                self.estimator.reset(target, verify=True)
             else:
                 self.get_logger().warning(f"Unknown target object {target}")
 
@@ -740,8 +738,9 @@ class MappingNode(Node):
 
         return True, ProjectedDetection(trans_pose, parent, rotation, position_camera, stamp_sec), ""
 
-    def update_object_with_pose(self, projected: ProjectedDetection, child: str):
-        # Fuse one detection. A detection the estimator rejects still counts as handled (it is not retried)
+    def update_object_with_pose(self, projected: ProjectedDetection, child: str, targeted: bool = True):
+        # Fuse one detection (`targeted`: it can confirm the object; background objects only improve their estimate). A
+        # detection the estimator rejects still counts as handled (it is not retried)
         if not child in self.objects.keys():
             return False, f"Unknown mapping object {child}"
 
@@ -776,7 +775,9 @@ class MappingNode(Node):
             yaw_var = math.radians(self.estimator.noise.yaw_std_deg) ** 2
 
         self.predict_offset()
-        accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var)
+        accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var, targeted)
+        if accepted and reason:
+            self.get_logger().info(f"{child} {reason}")
         if not accepted:
             self.get_logger().debug(f"Rejected detection of {child}: {reason}")
             if "reacquiring" in reason:
@@ -807,7 +808,8 @@ class MappingNode(Node):
         if not update_success:
             return False, error_msg
 
-        return self.update_object_with_pose(projected, child)
+        targeted = child in self.target_objects or (not self.target_objects and child == closest_object)
+        return self.update_object_with_pose(projected, child, targeted)
 
     def try_update_binary_classifier_pose(self, result: ObjectHypothesisWithPose, detection_header: Header):
         common_target = self.binary_classifier.instance1_name
@@ -926,7 +928,6 @@ class MappingNode(Node):
         self.last_output_time = now_time
         max_speed = float(self.get_parameter("output.max_speed").value)
         max_yaw_rate = math.radians(float(self.get_parameter("output.max_yaw_rate_deg").value))
-        confirm = int(self.get_parameter("confirm_detections").value)
         settling = False
 
         # map -> offset is where the course sits in odometry. Map objects hang off it at prior + deviation
@@ -981,8 +982,9 @@ class MappingNode(Node):
             cov = cov + numpy.diag(lag ** 2)
             yaw_var = yaw_var + yaw_lag ** 2
             angle_var = 0.0
-            if not self.estimator.confirmed(object, confirm):
-                # Not confirmed by fresh detections yet: what the old mapping reported for an object it had not seen
+            if not self.estimator.confirmed(object):
+                # Not confirmed by fresh detections while targeted (estimator confirm/verify_detections): what the old
+                # mapping reported for an object it had not seen, so a tree's covariance check still needs them
                 cov = cov + numpy.diag(numpy.maximum(UNCONFIRMED_POSITION_VAR - numpy.diag(cov), 0.0))
                 yaw_var = max(yaw_var, UNCONFIRMED_ANGLE_VAR)
                 angle_var = UNCONFIRMED_ANGLE_VAR

@@ -6,7 +6,6 @@
 /**/riptide_mapping2:
   ros__parameters:
     confidence_cutoff: 0.2
-    confirm_detections: 10 # detections since the target was set before an object's real covariance is published
 
     # Map estimator (map_estimator.py). The init_data poses are a dead-reckoned layout; map objects sit at prior + offset + deviation
     estimator:
@@ -28,6 +27,11 @@
       yaw_gate_chi2: 10.83
       gate_min_updates: 10 # ...once the object has this many accepted detections
       gate_max_rejects: 30 # this many rejections in a row reacquires the object from its prior covariance
+      # Until a target is confirmed its covariance stays at the old "not seen" values (error 1.73), so tree checks need
+      # fresh detections: confirm_detections while targeted, or verify_detections that agree with what was known (widened
+      # by the drift since it was last seen) when it was already known well
+      confirm_detections: 10
+      verify_detections: 3
 
     # Detection noise: std grows with range, across and (stereo depth) along the camera ray. From the old thresholds
     # (the holes' 0.0005 needed under ~2 cm of scatter at 1.5 m); measure the real scatter to tune
