@@ -32,6 +32,16 @@
       # by the drift since it was last seen) when it was already known well
       confirm_detections: 10
       verify_detections: 3
+      # An object's first detections since a reset wait until acquire_detections agree (within acquire_radius_m, over
+      # acquire_window_s) and its estimate starts from those only, so a stray false detection never moves or biases it.
+      # Agreeing further than acquire_prior_chi2 from where the map expects it takes acquire_far_detections over
+      # acquire_far_s: a lookalike off to the side has to keep agreeing longer to take over the prior. <= 1: off
+      acquire_detections: 4
+      acquire_radius_m: 0.3
+      acquire_window_s: 4.0
+      acquire_prior_chi2: 16.27
+      acquire_far_detections: 12
+      acquire_far_s: 2.0
 
     # Detection noise: std grows with range, across and (stereo depth) along the camera ray. From the old thresholds
     # (the holes' 0.0005 needed under ~2 cm of scatter at 1.5 m); measure the real scatter to tune

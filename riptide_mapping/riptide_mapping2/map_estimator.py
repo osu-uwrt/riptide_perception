@@ -71,6 +71,18 @@ class EstimatorSettings:
     verify_detections: int = 3
     # This many position rejections in a row means the estimate locked onto the wrong thing: reacquire it
     gate_max_rejects: int = 30
+    # An object's first detections since a reset are held back until acquire_detections of them agree (within
+    # acquire_radius_m of each other, or 3 sigma of their noise, over the last acquire_window_s); the track then starts
+    # from those and the rest are dropped, so a flicker or a stray false detection never moves the estimate or biases
+    # it (the old mapping's trimmed buffer did this). A cluster further than acquire_prior_chi2 (squared Mahalanobis)
+    # from where the map has the object needs acquire_far_detections over at least acquire_far_s instead: a lookalike
+    # off to the side has to keep agreeing for longer before it takes over the prior. acquire_detections <= 1: off
+    acquire_detections: int = 4
+    acquire_radius_m: float = 0.3
+    acquire_window_s: float = 4.0
+    acquire_prior_chi2: float = 16.27
+    acquire_far_detections: int = 12
+    acquire_far_s: float = 2.0
 
 
 # Defaults from what the trees were tuned against: the torpedo holes' 0.0005 passed with the old mapping only if
@@ -183,6 +195,9 @@ class MapEstimator:
         self._solution = None
         self._structure = None  # fixes the last full (multi-start) solve ran on
         self._warm = None
+
+        # Detections held back until enough agree: (stamp, position, cov, yaw, yaw_var, targeted)
+        self.pending: Dict[str, List[tuple]] = {}
 
         self.yaw_mean = {name: wrap_angle(spec.yaw) for name, spec in self.specs.items()}
         self.yaw_var = {name: self._yaw_prior() for name in self.specs}
@@ -299,9 +314,10 @@ class MapEstimator:
         return min(max(1.0, self.noise.correlation_time / dt), self.noise.max_inflation)
 
     def observe(self, name: str, stamp: float, position=None, position_cov=None, yaw: Optional[float] = None,
-                yaw_var: Optional[float] = None, targeted: bool = True) -> Tuple[bool, str]:
+                yaw_var: Optional[float] = None, targeted: bool = True, agreed: bool = False) -> Tuple[bool, str]:
         # Fuse one detection (position in the parent frame). Only a targeted object's detections confirm it; the
-        # rest (background objects) still improve its estimate. Returns (accepted, reason)
+        # rest (background objects) still improve its estimate. agreed: already agreed with others (the binary
+        # classifier clusters before it names a target), so it needn't wait for more. Returns (accepted, reason)
         inflation = self.inflation(name, stamp)
         moved = ""
 
@@ -310,17 +326,24 @@ class MapEstimator:
             R = np.asarray(position_cov, dtype=np.float64) * inflation
             if not (np.all(np.isfinite(z)) and np.all(np.isfinite(R))):
                 return False, "non-finite detection"
-            if self.is_map_object(name):
-                self._start_or_age_track(name)
+            started = False  # the map track is started (or aged by the drift since it was last seen) once per detection
             if self.tracks[name].verifying >= 0:
+                if self.is_map_object(name):
+                    self._start_or_age_track(name)
+                    started = True
                 nu = z - self.track_mean[name]
                 d2 = float(nu @ np.linalg.solve(self.track_cov[name] + R, nu))
                 if d2 > self.settings.gate_chi2:
                     # Not where it was: find it again from scratch (this detection is the first of the new search)
                     moved = f"moved {np.linalg.norm(nu[0:2]) * 100:.0f} cm since it was last seen, finding it again"
                     self.reset(name)
-                    if self.is_map_object(name):
-                        self._start_or_age_track(name)
+                    started = False
+            if not agreed and self._acquiring_by_agreement(name):
+                accepted, reason = self._agree(name, stamp, z, np.asarray(position_cov, dtype=np.float64), yaw, yaw_var,
+                                               targeted)
+                return accepted, "; ".join(r for r in (moved, reason) if r)
+            if self.is_map_object(name) and not started:
+                self._start_or_age_track(name)
             accepted, reason = self._update_position(name, z, R)
             if not accepted:
                 return False, reason
@@ -351,6 +374,50 @@ class MapEstimator:
                 self.live[name] = (self.distance, self.time)
                 self._solution = None
         return True, moved
+
+    def _acquiring_by_agreement(self, name: str) -> bool:
+        # No detection accepted since the last full reset (and not checking a known estimate): wait for agreement
+        track = self.tracks[name]
+        return self.settings.acquire_detections > 1 and track.updates == 0 and track.verifying < 0
+
+    def _acquisition_prior(self, name: str) -> Tuple[np.ndarray, np.ndarray]:
+        # Where the map expects the object (its layout and course-yaw uncertainty included)
+        if self.is_map_object(name) and name not in self.acquiring and name not in self.live:
+            return self._predicted(name)
+        return self.track_mean[name], self.track_cov[name]
+
+    def _agree(self, name: str, stamp: float, z: np.ndarray, R: np.ndarray, yaw, yaw_var, targeted: bool) -> Tuple[bool, str]:
+        # Hold the detection until enough agree; then start the track from the agreeing ones only
+        s = self.settings
+        held = [d for d in self.pending.get(name, []) if stamp - d[0] <= s.acquire_window_s]
+        held.append((stamp, z, R, yaw, yaw_var, targeted))
+        self.pending[name] = held
+
+        def agree(a, b):
+            gap = float(np.linalg.norm(a[1] - b[1]))
+            sigma = math.sqrt(max(float(np.linalg.eigvalsh(a[2] + b[2])[-1]), 0.0))
+            return gap <= max(s.acquire_radius_m, 3.0 * sigma)
+
+        members = max(([b for b in held if agree(a, b)] for a in held), key=len)
+        mean = np.mean([m[1] for m in members], axis=0)
+        prior_mean, prior_cov = self._acquisition_prior(name)
+        nu = mean - prior_mean
+        spread = np.mean([m[2] for m in members], axis=0) / len(members)
+        far = float(nu @ np.linalg.solve(prior_cov + spread, nu)) > s.acquire_prior_chi2
+        needed = s.acquire_far_detections if far else s.acquire_detections
+        span = max(m[0] for m in members) - min(m[0] for m in members)
+        if len(members) < needed or (far and span < s.acquire_far_s):
+            return False, (f"acquiring: {len(members)}/{needed} detections agree" +
+                           (f" over {span:.1f}/{s.acquire_far_s:.1f} s, away from the map's estimate" if far else ""))
+
+        del self.pending[name]
+        for m in sorted(members, key=lambda m: m[0]):
+            self.observe(name, m[0], m[1], m[2], m[3], m[4], m[5], agreed=True)
+        dropped = len(held) - len(members)
+        reason = f"{len(members)} detections agree" + (f", {dropped} that didn't dropped" if dropped else "")
+        if far:
+            reason += f", {np.linalg.norm(nu[0:2]):.1f} m from where the map had it: taking them over the prior"
+        return True, reason
 
     def _start_or_age_track(self, name: str):
         if name in self.acquiring or name in self.live:
@@ -551,6 +618,7 @@ class MapEstimator:
         if not verify:
             self.yaw_var[name] = self._yaw_prior()
         self.tracks[name] = Track(established=verify, verifying=0 if verify else -1)
+        self.pending.pop(name, None)
 
     def seed(self, name: str, position, yaw: Optional[float] = None):
         # Put the object at position (parent frame) with its prior covariance

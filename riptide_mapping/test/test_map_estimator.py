@@ -12,6 +12,8 @@ from map_estimator import (EstimatorSettings, MapEstimator, NoiseSettings, Objec
 
 
 def make_estimator(**settings):
+    # Detections are taken one at a time unless a test is about acquiring by agreement
+    settings.setdefault("acquire_detections", 1)
     specs = {
         "gate": ObjectSpec("map", np.array([5.0, 0.0, -1.0]), 0.0),
         "torpedo": ObjectSpec("map", np.array([15.0, 3.0, -1.5]), math.pi),
@@ -199,6 +201,7 @@ COURSE = {"gate": (5.0, 0.0, -1.0), "torpedo": (15.0, 3.0, -1.5), "bin": (10.0, 
 def fly(order, layout_err=None, yaw_deg=0.0, drift_at=None, drift=(0.0, 0.0, 0.0), **settings):
     # Locks each prop in turn (15 m of travel between), the props sitting at R(yaw) * prior + offset + layout error
     # (+ drift once it happens, as odometry sees them). Returns the estimator and where each prop really is now
+    settings.setdefault("acquire_detections", 1)
     est = MapEstimator({n: ObjectSpec("map", np.array(p), 0.0) for n, p in COURSE.items()},
                        EstimatorSettings(**settings), NoiseSettings())
     offset, layout_err, d = np.array([0.5, -0.3, 0.0]), layout_err or {}, np.zeros(3)
@@ -337,3 +340,92 @@ def test_a_known_map_object_is_verified_too():
     est.reset("gate", verify=True)
     feed(est, "gate", gate, est.settings.verify_detections, std=0.02, start=100.0)
     assert est.confirmed("gate")
+
+
+# ----- acquiring by agreement -----
+
+def acquiring_estimator(**settings):
+    settings.setdefault("acquire_detections", 4)
+    return make_estimator(**settings)
+
+
+def test_a_stray_first_detection_neither_moves_nor_biases_the_estimate():
+    est = acquiring_estimator()
+    prior = est.specs["hole"].position.copy()
+    truth = prior + np.array([0.15, -0.1, 0.0])
+    accepted, reason = est.observe("hole", 0.0, prior + np.array([1.5, 1.0, 0.0]), iso(0.03))  # a false detection
+    assert not accepted and "acquiring" in reason
+    assert np.allclose(est.position("hole")[0], prior)  # held back: the estimate didn't move
+    for i in range(3):
+        accepted, reason = est.observe("hole", 0.1 * (i + 1), truth, iso(0.03))
+        assert not accepted, reason
+    accepted, reason = est.observe("hole", 0.4, truth, iso(0.03))
+    assert accepted and "4 detections agree" in reason and "1 that didn't dropped" in reason
+    assert np.allclose(est.position("hole")[0], truth, atol=0.02)  # the stray one didn't bias it
+    assert est.tracks["hole"].updates == 4
+
+
+def test_flickers_that_never_agree_never_start_a_track():
+    est = acquiring_estimator()
+    prior = est.specs["gate"].position.copy()
+    for i in range(10):
+        accepted, _ = est.observe("gate", 0.5 * i, prior + np.array([0.0, 0.8 * i, 0.0]), iso(0.03))
+        assert not accepted
+    assert est.tracks["gate"].updates == 0 and np.allclose(est.position("gate")[0], prior)
+
+
+def test_old_detections_fall_out_of_the_window():
+    est = acquiring_estimator(acquire_window_s=1.0)
+    spot = est.specs["gate"].position + np.array([0.2, 0.0, 0.0])
+    for i in range(6):
+        accepted, _ = est.observe("gate", 2.0 * i, spot, iso(0.03))  # agreeing, but each alone in its window
+        assert not accepted
+
+
+def test_agreement_away_from_the_map_needs_more_detections_for_longer():
+    est = acquiring_estimator(course_yaw_std_deg=0.0)
+    # One prop seen: the bin is expected within ~0.36 m (offset and layout), so 2 m off it is far
+    for i in range(30):
+        est.observe("gate", float(i), est.specs["gate"].position, iso(0.02), agreed=True)
+    est.predict(5.0, 5.0)
+    far_spot = est.specs["bin"].position + np.array([2.0, 0.0, 0.0])
+    results = [est.observe("bin", 100.0 + 0.1 * i, far_spot, iso(0.03)) for i in range(25)]
+    taken = [i for i, (accepted, _) in enumerate(results) if accepted]
+    assert taken, results[-1]
+    first = taken[0]
+    assert first + 1 >= est.settings.acquire_far_detections  # more than the usual 4...
+    assert 0.1 * first >= est.settings.acquire_far_s - 1e-9  # ...agreeing for acquire_far_s
+    assert "taking them over the prior" in results[first][1]
+    assert np.allclose(est.position("bin")[0], far_spot, atol=0.05)
+
+
+def test_a_near_cluster_is_taken_after_the_usual_few():
+    est = acquiring_estimator()
+    for i in range(30):
+        est.observe("gate", float(i), est.specs["gate"].position, iso(0.02), agreed=True)
+    near = est.specs["bin"].position + np.array([0.1, 0.05, 0.0])
+    results = [est.observe("bin", 100.0 + 0.1 * i, near, iso(0.03)) for i in range(6)]
+    assert [accepted for accepted, _ in results][:4] == [False, False, False, True]
+
+
+def test_agreed_detections_skip_the_wait():
+    est = acquiring_estimator()
+    accepted, reason = est.observe("hole", 0.0, est.specs["hole"].position, iso(0.03), agreed=True)
+    assert accepted, reason
+    assert est.tracks["hole"].updates == 1
+
+
+def test_a_verified_target_that_moved_is_found_again_by_agreement():
+    est = acquiring_estimator()
+    spot = est.specs["hole"].position + np.array([0.05, 0.0, 0.0])
+    for i in range(12):
+        est.observe("hole", 0.1 * i, spot, iso(0.02))
+    assert est.tracks["hole"].established
+    est.reset("hole", verify=True)
+    moved = spot + np.array([0.6, 0.0, 0.0])
+    accepted, reason = est.observe("hole", 5.0, moved, iso(0.02))
+    assert not accepted and "moved" in reason and "acquiring" in reason
+    for i in range(3):
+        accepted, reason = est.observe("hole", 5.1 + 0.1 * i, moved, iso(0.02))
+    assert accepted, reason
+    assert np.allclose(est.position("hole")[0], moved, atol=0.03)

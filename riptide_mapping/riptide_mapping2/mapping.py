@@ -749,7 +749,7 @@ class MappingNode(Node):
 
         return True, ProjectedDetection(trans_pose, parent, rotation, position_camera, stamp_sec), ""
 
-    def update_object_with_pose(self, projected: ProjectedDetection, child: str, targeted: bool = True):
+    def update_object_with_pose(self, projected: ProjectedDetection, child: str, targeted: bool = True, agreed: bool = False):
         # Fuse one detection (`targeted`: it can confirm the object; background objects only improve their estimate). A
         # detection the estimator rejects still counts as handled (it is not retried)
         if not child in self.objects.keys():
@@ -786,13 +786,16 @@ class MappingNode(Node):
             yaw_var = math.radians(self.estimator.noise.yaw_std_deg) ** 2
 
         self.predict_offset()
-        accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var, targeted)
+        accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var, targeted,
+                                                  agreed)
         if accepted and reason:
             self.get_logger().info(f"{child} {reason}")
         if accepted:
             self.fused_now.add(child)
         if not accepted:
             self.get_logger().debug(f"Rejected detection of {child}: {reason}")
+            if "moved" in reason:
+                self.get_logger().info(f"{child} {reason}")
             if "reacquiring" in reason:
                 self.get_logger().warning(f"{child}: {reason}")
         elif self.estimator.is_map_object(child):
@@ -870,7 +873,7 @@ class MappingNode(Node):
             if not update_success:
                 return False, error_msg
 
-        return self.update_object_with_pose(projected, child)
+        return self.update_object_with_pose(projected, child, agreed=True)  # the classifier only names a cluster
                
     def closest_object(self, detections: Detection3DArray) -> str:
         object = ""
