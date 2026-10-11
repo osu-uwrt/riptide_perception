@@ -6,7 +6,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
 from rclpy.time import Time
 
-from std_msgs.msg import Header, Int8
+from std_msgs.msg import Header, Int8, String
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point, PoseStamped
 from nav_msgs.msg import Odometry
@@ -242,6 +242,10 @@ class MappingNode(Node):
         self.create_subscription(Detection3DArray, "detected_objects", self.vision_callback, qos_profile_system_default)
         self.create_subscription(Odometry, str(self.get_parameter("odom_topic").value), self.odom_callback, qos_profile_sensor_data)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
+        # The objects a detection was just fused into ("bin_target1,helmet"), so autonomy knows an object is in view even
+        # when the detector's class differs (the binary classifier turns "fire" into bin_target1 or bin_target2)
+        self.fused_pub = self.create_publisher(String, "mapping/fused", qos_profile_system_default)
+        self.fused_now = set()
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
         self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
         self.create_service(Trigger, "mapping/center_table_on_baskets", self.center_table_on_baskets_callback)
@@ -621,6 +625,7 @@ class MappingNode(Node):
         # Bypass normal mapping behavior for binary classifier
         if self.binary_classifier.running:
             self.handle_binary_classifier_detections(detections)
+            self.publish_fused()
             self.publish_pose()
             return
         
@@ -653,7 +658,13 @@ class MappingNode(Node):
             if not update_success:
                 self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
             
+        self.publish_fused()
         self.publish_pose()
+
+    def publish_fused(self):
+        if self.fused_now:
+            self.fused_pub.publish(String(data=",".join(sorted(self.fused_now))))
+            self.fused_now.clear()
 
     def handle_binary_classifier_detections(self, detections: Detection3DArray):
         for detection in detections.detections:
@@ -778,6 +789,8 @@ class MappingNode(Node):
         accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var, targeted)
         if accepted and reason:
             self.get_logger().info(f"{child} {reason}")
+        if accepted:
+            self.fused_now.add(child)
         if not accepted:
             self.get_logger().debug(f"Rejected detection of {child}: {reason}")
             if "reacquiring" in reason:
@@ -911,6 +924,7 @@ class MappingNode(Node):
 
     def update_oustanding_items(self):
         self.update_outstanding_detections()
+        self.publish_fused()
         
         # publish while frames are still sliding to the estimate, otherwise when the poses go stale
         elapsed = (self.get_clock().now() - self.last_pub_time).nanoseconds / 1e9
