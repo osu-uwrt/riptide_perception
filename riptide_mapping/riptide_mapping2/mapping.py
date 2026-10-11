@@ -13,7 +13,7 @@ from nav_msgs.msg import Odometry
 from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
 from rcl_interfaces.msg import SetParametersResult
-from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier
+from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier, SetString
 from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 
 import tf2_ros
@@ -224,8 +224,10 @@ class MappingNode(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
-        # Objects fused from detections. The service takes "a,b,c"; the first is the primary target
+        # Objects fused from detections. The service takes "a,b,c"; the first is the primary target. Background objects
+        # (mapping/set_background_targets) are fused too, whatever the target, and are never reset by a target change
         self.target_objects: 'list[str]' = []
+        self.background_objects: 'list[str]' = []
         self.target_object = ""
         self.lock_map = False
         # Set once the table is fit to the baskets, after that basket positions are frozen (yaw still points at the table)
@@ -246,6 +248,7 @@ class MappingNode(Node):
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
         self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
         self.create_service(Trigger, "mapping/center_table_on_baskets", self.center_table_on_baskets_callback)
+        self.create_service(SetString, "mapping/set_background_targets", self.background_targets_callback)
 
         # binary classifier services (resolve under this nodes ns)
         self.create_service(StartBinaryClassifier, "mapping/start_binary_classifier", self.start_binary_classifier_callback)
@@ -282,6 +285,7 @@ class MappingNode(Node):
 
         # Reset mapping mode
         self.set_targets("")
+        self.background_objects = []
         self.lock_map = False
         self.table_centered = False
         self.instance1_seeded = False
@@ -453,6 +457,21 @@ class MappingNode(Node):
         self.target_objects = [t.strip() for t in str(targets).split(",") if t.strip() != ""]
         self.target_object = self.target_objects[0] if self.target_objects else ""
 
+    def background_targets_callback(self, request: SetString.Request, response: SetString.Response):
+        # "helmet,warning,pill": fused alongside whatever the target is (a search for one prop maps the others it sees),
+        # without resetting them. Empty (or ","): none
+        names = [n.strip() for n in str(request.data).split(",") if n.strip() != ""]
+        unknown = [n for n in names if n not in self.objects]
+        if unknown:
+            response.success = False
+            response.message = f"Unknown mapping objects {unknown}"
+            return response
+        self.background_objects = names
+        response.success = True
+        response.message = f"Background targets: {', '.join(names) if names else 'none'}"
+        self.get_logger().info(response.message)
+        return response
+
     def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
         self.set_targets(request.target_info.target_object)
         self.lock_map = bool(request.target_info.lock_map)
@@ -609,9 +628,9 @@ class MappingNode(Node):
         
         closest_object = self.closest_object(detections)
         
-        # Fuse the target objects, or the closest object if none is set. Other classes are left alone because lookalike props
-        # get each other's class
-        fused = set(self.target_objects) if self.target_objects else {closest_object}
+        # Fuse the target objects (or the closest object if none is set) and the background objects. Other classes are left
+        # alone because lookalike props get each other's class
+        fused = (set(self.target_objects) if self.target_objects else {closest_object}) | set(self.background_objects)
                 
         # Send each targeted detection to the estimator
         for detection in detections.detections:
@@ -949,6 +968,11 @@ class MappingNode(Node):
             lag = target_position - position
             yaw_lag = math.atan2(math.sin(target_yaw - yaw), math.cos(target_yaw - yaw))
             settling = settling or float(numpy.linalg.norm(lag)) > 1e-4 or abs(yaw_lag) > 1e-4
+            # Its published yaw points at the parent (from its position), so the yaw estimate's lag says nothing about it
+            points_at_parent = parent != "map" and not lock_orientation and not is_downward \
+                and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value)
+            if points_at_parent:
+                yaw_lag = 0.0
 
             # Map objects' frames hang off the offset frame, the rest off their parent
             translation = position - self.output_offset if is_map else position
@@ -974,8 +998,7 @@ class MappingNode(Node):
 
             # point yaw at parent on the PUBLISHED pose too, so the cov arrow matches the tf.
             # only applies to non-map parents; position here is in parent frame.
-            if parent != "map" and not lock_orientation and not is_downward \
-                and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value):
+            if points_at_parent:
                 
                 yaw = math.atan2(-pose.pose.pose.position.y, -pose.pose.pose.position.x)
                 (pose.pose.pose.orientation.w,
