@@ -112,7 +112,7 @@ class Track:
     updates: int = 0      # accepted detections since the last reset
     rejects: int = 0      # position rejections in a row
     last_stamp: Optional[float] = None
-    established: bool = False  # confirm_detections since the last full reset, targeted or not: the estimate is good
+    established: bool = False  # confirm_detections while targeted since the last full reset: the estimate is good
     confirmed: bool = False    # usable by a target check: confirmed while targeted, until the next reset
     verifying: int = -1        # targeted again while established: detections that agreed so far (-1: not verifying)
 
@@ -315,8 +315,9 @@ class MapEstimator:
 
     def observe(self, name: str, stamp: float, position=None, position_cov=None, yaw: Optional[float] = None,
                 yaw_var: Optional[float] = None, targeted: bool = True, agreed: bool = False) -> Tuple[bool, str]:
-        # Fuse one detection (position in the parent frame). Only a targeted object's detections confirm it; the
-        # rest (background objects) still improve its estimate. agreed: already agreed with others (the binary
+        # Fuse one detection (position in the parent frame). Only a targeted object's detections confirm or establish
+        # it; the rest (background objects, often seen far off and at an angle) still say where it is, but its first
+        # time as the target is a fresh search from there. agreed: already agreed with others (the binary
         # classifier clusters before it names a target), so it needn't wait for more. Returns (accepted, reason)
         inflation = self.inflation(name, stamp)
         moved = ""
@@ -356,7 +357,7 @@ class MapEstimator:
         track.rejects = 0
         track.last_stamp = stamp
         if position is not None:
-            if track.updates >= self.settings.confirm_detections:
+            if targeted and track.updates >= self.settings.confirm_detections:
                 track.established = True
             if targeted and track.verifying >= 0:
                 track.verifying += 1

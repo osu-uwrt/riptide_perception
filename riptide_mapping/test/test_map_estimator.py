@@ -321,14 +321,28 @@ def test_a_moved_target_is_found_again_from_scratch():
     assert np.allclose(est.position("hole")[0], moved, atol=0.01)
 
 
-def test_background_detections_improve_but_do_not_confirm():
+def test_background_detections_improve_but_do_not_confirm_or_establish():
     est = make_estimator()
     spot = est.specs["hole"].position + np.array([0.1, 0.1, 0.0])
     feed(est, "hole", spot, 15, targeted=False)
-    assert not est.confirmed("hole")
+    assert not est.confirmed("hole") and not est.tracks["hole"].established
     assert np.allclose(est.position("hole")[0], spot, atol=0.02)  # it knows where it is
-    est.reset("hole", verify=True)  # now the target: a quick check, not a fresh search
+    est.reset("hole", verify=True)  # now the target: a fresh search from there, not a quick check
+    assert np.allclose(est.position("hole")[0], spot, atol=0.02)
+    assert est.position("hole")[1][0, 0] == pytest.approx(est.settings.child_std_xy ** 2)  # from its prior covariance
     feed(est, "hole", spot, est.settings.verify_detections, start=100.0)
+    assert not est.confirmed("hole")
+    feed(est, "hole", spot, est.settings.confirm_detections - est.settings.verify_detections, start=200.0)
+    assert est.confirmed("hole")
+
+
+def test_background_detections_after_a_target_keep_it_established():
+    est = make_estimator()
+    spot = est.specs["hole"].position.copy()
+    feed(est, "hole", spot, est.settings.confirm_detections)  # established as the target
+    feed(est, "hole", spot, 5, start=100.0, targeted=False)  # then seen while searching for something else
+    est.reset("hole", verify=True)
+    feed(est, "hole", spot, est.settings.verify_detections, start=200.0)
     assert est.confirmed("hole")
 
 

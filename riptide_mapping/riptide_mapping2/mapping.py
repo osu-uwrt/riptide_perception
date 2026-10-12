@@ -482,8 +482,9 @@ class MappingNode(Node):
             if self.table_centered and target in TABLE_BASKETS:
                 self.get_logger().info(f"{target} is pinned to the table, not resetting it")
             elif target in self.objects.keys():
-                # A cov check on it needs fresh detections: a few that agree with what it knows (it was known well), else
-                # the usual confirm_detections from its prior covariance (keeps the position either way)
+                # A cov check on it needs fresh detections: a few that agree with what it knows (it was established as a
+                # target before), else the usual confirm_detections from its prior covariance, which is also how an
+                # object only seen in the background starts (keeps the position either way)
                 self.get_logger().info(f"reset {target}")
                 self.estimator.reset(target, verify=True)
             else:
