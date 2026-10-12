@@ -6,29 +6,44 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default, qos_profile_sensor_data
 from rclpy.time import Time
 
-from std_msgs.msg import Header, Int8
+from std_msgs.msg import Header, Int8, String
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped, Pose, Vector3, Point, PoseStamped
+from nav_msgs.msg import Odometry
 from vision_msgs.msg import Detection3DArray, ObjectHypothesisWithPose
 from tf2_geometry_msgs import do_transform_pose_stamped
-from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier
+from rcl_interfaces.msg import SetParametersResult
+from riptide_msgs2.srv import MappingTarget, StartBinaryClassifier, SetString
 from riptide_msgs2.msg import MappingTargetInfo, LedCommand
 
 import tf2_ros
 from tf2_ros import TransformException, TransformStamped
 
 from transforms3d.euler import euler2quat
+from transforms3d.quaternions import quat2mat
 
-from location import Location
+from map_estimator import (MapEstimator, ObjectSpec, EstimatorSettings, NoiseSettings, detection_covariance,
+                           slew_vector, slew_angle)
 from binary_classifier import BinaryClassifier, DetectionSample
 from bin_geometry import BinGeometryFitter
 
 from tf2_msgs.msg import TFMessage
+from collections import deque
+from dataclasses import fields
 import math
-from typing import cast
+import numpy
 
 STALE_TIME = 2 #seconds
 BINARY_CLASSIFIER_CLASSES = {"fire", "blood", "magnet"}
+TABLE_BASKETS = ("helmet", "warning")
+MAX_TABLE_YAW_CORRECTION = math.radians(30)
+MAX_ODOM_STEP = 1.0 # m, bigger jumps between odometry messages are resets, not travel
+MOTION_HISTORY = 200 # odometry samples kept to look up the vehicle's rates at a detection's stamp
+MAX_SLEW_DT = 0.2 # s, longest step a published frame takes toward the estimate in one publish
+# Covariance published for an object not yet confirmed by detections: the old mapping's unwarmed buffer (getCovariance
+# error ~1.73), above every tree threshold
+UNCONFIRMED_POSITION_VAR = 1.0
+UNCONFIRMED_ANGLE_VAR = 0.1
 
 class TransformListenerWithHook(tf2_ros.TransformListener):
     def __init__(self, buffer: tf2_ros.buffer.Buffer, node: Node, hook):
@@ -46,11 +61,23 @@ class OutstandingDetectionInfo:
         self.det_header = det_header
         self.closest_object = closest_object
         self.binary_classifier_detection = binary_classifier_detection
-        
 
-# Instead of updating the location for individual objects we apply a global offset to account for robot drift as we
-# are confident in deadly reckoning the relative location of objects. The only objects that we keep track of in the translational
-# system are the objects in active_objects. Rotational estimates are kept for all objects as well as they aren't relavant to robot drift.
+
+class ProjectedDetection:
+    # A detection moved into an object's parent frame, plus what the noise model needs
+    def __init__(self, pose: PoseStamped, parent: str, rotation, position_camera, stamp_sec: float):
+        self.pose = pose
+        self.parent = parent
+        self.rotation = rotation # camera -> parent rotation matrix
+        self.position_camera = position_camera
+        self.stamp_sec = stamp_sec
+
+
+# The config is a dead-reckoned layout of the course, and the odometry frame drifts away from it. Map-parented objects sit at
+# prior + offset + deviation: one shared offset (map -> offset TF, random-walks with distance traveled) and a small per-object
+# layout deviation, all in one Kalman filter (map_estimator.py). Any targeted map object refines the offset and with it the rest of
+# the map. Objects parented to other mapping frames are filtered in that frame. Only the target objects are fused, because
+# lookalike props get each other's class (slalom poles on the gate).
 class MappingNode(Node):
 
     def __init__(self):
@@ -139,6 +166,7 @@ class MappingNode(Node):
                     ('init_data.{}.pose.y'.format(object), 0.0),
                     ('init_data.{}.pose.z'.format(object), 0.0),
                     ('init_data.{}.pose.yaw'.format(object), 0.0),
+                    # covar is left over from the 2022 estimator and unused, the priors are the estimator.* params
                     ('init_data.{}.covar.x'.format(object), 1.0),
                     ('init_data.{}.covar.y'.format(object), 1.0),
                     ('init_data.{}.covar.z'.format(object), 1.0),
@@ -155,23 +183,52 @@ class MappingNode(Node):
             namespace="",
             parameters=[
                 ("confidence_cutoff", 0.7),
-                ("buffer_size", 100),
-                ("quantile", [0.01, 0.99])
+                ("odom_topic", "odometry/filtered"),
+                # Published frames chase the estimate at most this fast (<= 0: jump, the default: the MPC smooths frame
+                # motion itself). The lag still left is added to the published covariance
+                ("output.max_speed", 0.0),
+                ("output.max_yaw_rate_deg", 0.0),
             ]
         )
 
+        # Estimator and detection noise tuning, see map_estimator.py for what each one means
+        for prefix, settings in (("estimator", EstimatorSettings), ("noise", NoiseSettings)):
+            self.declare_parameters(
+                namespace="",
+                parameters=[("{}.{}".format(prefix, f.name), f.default) for f in fields(settings)]
+            )
+
         for object in self.objects.keys():
-            self.create_location(object)
             self.add_publisher(object)
 
-        # Create the buffer to send 
+        self.estimator = self.create_estimator()
+        self.released_priors = set()
+
+        # Published (slewed) poses: object -> (position in map for map objects, else in the parent frame; yaw), and map -> offset
+        self.output = {}
+        self.output_offset = None
+        self.last_output_time = None
+        self.output_settling = False
+
+        # Odometry: distance traveled drives the offset's drift, rates scale the detection noise
+        self.last_odom_position = None
+        self.pending_distance = 0.0
+        self.last_predict_time = self.get_clock().now()
+        self.motion_history = deque(maxlen=MOTION_HISTORY) # (stamp sec, angular speed, linear speed)
+
+        # Create the buffer to send
         self.tf_buffer = tf2_ros.buffer.Buffer(node=self)
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.tf_brod = tf2_ros.transform_broadcaster.TransformBroadcaster(self)
 
+        # Objects fused from detections. The service takes "a,b,c"; the first is the primary target. Background objects
+        # (mapping/set_background_targets) are fused too, whatever the target, and are never reset by a target change
+        self.target_objects: 'list[str]' = []
+        self.background_objects: 'list[str]' = []
         self.target_object = ""
         self.lock_map = False
-        self.offset = Location(Point(), Vector3(), int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
+        # Set once the table is fit to the baskets, after that basket positions are frozen (yaw still points at the table)
+        self.table_centered = False
         self.binary_classifier = BinaryClassifier(self)
 
         # Bin geometry shitter cursed ah subsystem
@@ -182,10 +239,17 @@ class MappingNode(Node):
         self.instance2_seeded = False
 
         self.add_on_set_parameters_callback(self.param_callback)
-        self.create_subscription(Detection3DArray, "detected_objects".format(self.get_namespace()), self.vision_callback, qos_profile_system_default)
+        self.create_subscription(Detection3DArray, "detected_objects", self.vision_callback, qos_profile_system_default)
+        self.create_subscription(Odometry, str(self.get_parameter("odom_topic").value), self.odom_callback, qos_profile_sensor_data)
         self.status_pub = self.create_publisher(MappingTargetInfo, "state/mapping", qos_profile_system_default)
+        # The objects a detection was just fused into ("bin_target1,helmet"), so autonomy knows an object is in view even
+        # when the detector's class differs (the binary classifier turns "fire" into bin_target1 or bin_target2)
+        self.fused_pub = self.create_publisher(String, "mapping/fused", qos_profile_system_default)
+        self.fused_now = set()
         self.create_service(MappingTarget, "mapping_target", self.target_callback) # Should prob be mapping ns but not changing for compatability for now
         self.create_service(Trigger, "mapping/reset_mapping", self.reset_mapping_callback)
+        self.create_service(Trigger, "mapping/center_table_on_baskets", self.center_table_on_baskets_callback)
+        self.create_service(SetString, "mapping/set_background_targets", self.background_targets_callback)
 
         # binary classifier services (resolve under this nodes ns)
         self.create_service(StartBinaryClassifier, "mapping/start_binary_classifier", self.start_binary_classifier_callback)
@@ -200,20 +264,16 @@ class MappingNode(Node):
         self.publish_timer = self.create_timer(0.125, self.update_oustanding_items)
         
     def reset_runtime_state(self):
-        # Reset all configured map objects back to init_data params.
-        # This also clears each Location's internal sample buffer because create_location() constructs a new Location object
+        # Reset all configured map objects and the offset back to init_data params and the estimator priors
+        self.estimator = self.create_estimator()
+        self.released_priors = set()
         for object_name in self.objects.keys():
-            self.create_location(object_name)
-            # Drop any stale bin fit cov override
+            # Drop any stale basket fit cov override
             self.objects[object_name].pop("fit_covar", None)
 
-        # Reset global map drift/offset buffer
-        self.offset = Location(
-            Point(),
-            Vector3(),
-            int(self.get_parameter("buffer_size").value),
-            tuple(self.get_parameter("quantile").value),
-        )
+        # Frames jump to the reset map instead of sliding there
+        self.output.clear()
+        self.output_offset = None
 
         # Drop queued detections waiting on TF
         self.outstanding_detections.clear()
@@ -225,8 +285,10 @@ class MappingNode(Node):
             self.get_logger().warning(f"Binary classifier stop during reset failed: {ex}")
 
         # Reset mapping mode
-        self.target_object = ""
+        self.set_targets("")
+        self.background_objects = []
         self.lock_map = False
+        self.table_centered = False
         self.instance1_seeded = False
         self.instance2_seeded = False
 
@@ -240,7 +302,82 @@ class MappingNode(Node):
         response.success = True
         response.message = "Mapping reset to init_data"
         return response
-    
+
+    def center_table_on_baskets_callback(self, request: Trigger.Request, response: Trigger.Response):
+        # Move the table so the baskets sit at their config offsets from it. The baskets, and any other table child already seen
+        # (searched before centering), get shifted back so they stay put in the world (point_yaw_at_parent then re-aims them at
+        # the new table center); unseen children are still priors relative to the table, so they ride along with table_frame
+        if str(self.get_parameter("init_data.table.parent").value) != "map":
+            response.success = False
+            response.message = "center_table_on_baskets only supports a map-parented table"
+            return response
+
+        # Midpoint of the baskets in table_frame
+        positions = [self.estimator.position(basket)[0] for basket in TABLE_BASKETS]
+        mx = sum(p[0] for p in positions) / len(positions)
+        my = sum(p[1] for p in positions) / len(positions)
+        mz = sum(p[2] for p in positions) / len(positions)
+
+        if not all(math.isfinite(v) for v in (mx, my, mz)):
+            response.success = False
+            response.message = f"Basket midpoint is not finite ({mx}, {my}, {mz})"
+            return response
+
+        # Yaw the table so the measured basket axis lines up with the config basket axis, that way the other children
+        # (which are fixed offsets in table_frame) land where they are relative to the baskets in config
+        cfg = [[float(self.get_parameter(f"init_data.{basket}.pose.{axis}").value) for axis in "xyz"] for basket in TABLE_BASKETS]
+        cfg_axis = math.atan2(cfg[0][1] - cfg[1][1], cfg[0][0] - cfg[1][0])
+        meas_axis = math.atan2(positions[0][1] - positions[1][1], positions[0][0] - positions[1][0])
+        dyaw = math.atan2(math.sin(meas_axis - cfg_axis), math.cos(meas_axis - cfg_axis))
+
+        yaw_msg = f"yawed table {math.degrees(dyaw):.1f} deg"
+        if abs(dyaw) > MAX_TABLE_YAW_CORRECTION:
+            # Probably a bad/unmapped basket, don't swing all the table objects around on it
+            yaw_msg = f"skipped yaw correction of {math.degrees(dyaw):.1f} deg (limit {math.degrees(MAX_TABLE_YAW_CORRECTION):.0f})"
+            dyaw = 0.0
+
+        # New table origin in the old table_frame: the measured basket midpoint minus the (yawed) config basket midpoint,
+        # so the baskets end up at their config offsets from the table
+        cmx = sum(c[0] for c in cfg) / len(cfg)
+        cmy = sum(c[1] for c in cfg) / len(cfg)
+        cmz = sum(c[2] for c in cfg) / len(cfg)
+        ox = mx - (cmx * math.cos(dyaw) - cmy * math.sin(dyaw))
+        oy = my - (cmx * math.sin(dyaw) + cmy * math.cos(dyaw))
+        oz = mz - cmz
+
+        # Rotate the origin shift into map using the table's yaw (offset frame is translation only)
+        table_yaw, _ = self.estimator.yaw("table")
+        dx = ox * math.cos(table_yaw) - oy * math.sin(table_yaw)
+        dy = ox * math.sin(table_yaw) + oy * math.cos(table_yaw)
+        dz = oz
+
+        self.estimator.shift("table", (dx, dy, dz))
+        self.estimator.add_yaw("table", dyaw)
+
+        # Re-express the baskets and the seen table children in the new table_frame so they stay put in the world
+        seen = [name for name in self.objects.keys() if name not in TABLE_BASKETS and self.estimator.tracks[name].updates > 0
+                and str(self.get_parameter("init_data.{}.parent".format(name)).value) == "table_frame"]
+        for name in TABLE_BASKETS + tuple(seen):
+            self.estimator.shift(name, (-ox, -oy, -oz))
+            self.estimator.rotate_position(name, -dyaw)
+            if name in seen:
+                self.estimator.add_yaw(name, -dyaw)
+
+        # The frames jump to the fit, autonomy reads them right after this call
+        for name in ("table",) + TABLE_BASKETS + tuple(seen):
+            self.output.pop(name, None)
+
+        # The table is now fit to these basket positions, stop detections from dragging them around
+        self.table_centered = True
+
+        self.publish_pose()
+
+        response.success = True
+        response.message = (f"Moved table by ({dx:.3f}, {dy:.3f}, {dz:.3f}) in map to fit the baskets, {yaw_msg}"
+                            + (f"; kept {', '.join(seen)} where they were seen" if seen else ""))
+        self.get_logger().info(response.message)
+        return response
+
     def pulse_detection_led(self, red=0, green=255, blue=0):
         # Pulse LEDs to indicate a detection was received
         ledPulse = LedCommand()
@@ -253,51 +390,108 @@ class MappingNode(Node):
 
         self.led_pulse_pub.publish(ledPulse)
 
-    def create_location(self, object: str):
-        #create the Location object using two vector3s describing coordinates and euler rotation
-        xyz = Point()
-        rpy = Vector3()
+    def object_spec(self, object: str, overrides=None) -> ObjectSpec:
+        # Prior for one object from its init_data params (overrides: {param name: value} not applied yet)
+        def param(name):
+            name = 'init_data.{}.{}'.format(object, name)
+            if overrides is not None and name in overrides:
+                return overrides[name]
+            return self.get_parameter(name).value
 
-        xyz.x = float(self.get_parameter('init_data.{}.pose.x'.format(object)).value)
-        xyz.y = float(self.get_parameter('init_data.{}.pose.y'.format(object)).value)
-        xyz.z = float(self.get_parameter('init_data.{}.pose.z'.format(object)).value)
+        position = numpy.array([float(param('pose.x')), float(param('pose.y')), float(param('pose.z'))])
+        return ObjectSpec(
+            parent=str(param('parent')),
+            position=position,
+            yaw=math.radians(float(param('pose.yaw'))),
+            lock_yaw=bool(param('lock_orientation_to_config')),
+        )
 
-        rpy.x = 0.0
-        rpy.y = 0.0
-        rpy.z = float(self.get_parameter('init_data.{}.pose.yaw'.format(object)).value)
+    def create_estimator(self) -> MapEstimator:
+        specs = {object: self.object_spec(object) for object in self.objects.keys()}
+        return MapEstimator(specs, self.read_settings(EstimatorSettings, "estimator"), self.read_settings(NoiseSettings, "noise"))
 
-        self.objects[object]["location"] = Location(xyz, rpy, int(self.get_parameter("buffer_size").value), tuple(self.get_parameter("quantile").value))
-        
-        #create pose to store as initial. Used to publish objects with the map offset
-        pose = Pose()
-        pose.position = xyz
-        (pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z) = euler2quat(rpy.x, rpy.y, rpy.z)
-        self.objects[object]["init_pose"] = pose
+    def read_settings(self, settings_type, prefix: str, overrides=None):
+        values = {}
+        for f in fields(settings_type):
+            name = "{}.{}".format(prefix, f.name)
+            value = overrides[name] if overrides is not None and name in overrides else self.get_parameter(name).value
+            values[f.name] = type(f.default)(value)
+        return settings_type(**values)
 
     # Creates a publisher to publish PoseWithCovariance
     def add_publisher(self, object: str):
         self.objects[object]["publisher"] = self.create_publisher(PoseWithCovarianceStamped, "mapping/{}".format(object), qos_profile_system_default)
 
-    # Check which params need updated and update them via the create_location method
+    # Apply init_data, estimator and noise changes. Runs before the new values are stored, so read them from params
     def param_callback(self, params):
-        updates = set()
-        # self.get_logger().info(str(params))
-        for param in params:
-            if(str(param.name).split(".")) == "init_data":
-                updates.add(str(param.name).split(".")[1])
+        overrides = {str(param.name): param.value for param in params}
+        priors = set()
+        for name in overrides:
+            parts = name.split(".")
+            if parts[0] == "init_data" and len(parts) > 2 and parts[1] in self.objects and parts[2] in ("pose", "parent", "lock_orientation_to_config"):
+                priors.add(parts[1])
 
-        for object in updates:
-            self.create_location(object)
+        try:
+            if any(name.startswith("estimator.") for name in overrides):
+                self.estimator.settings = self.read_settings(EstimatorSettings, "estimator", overrides)
+            if any(name.startswith("noise.") for name in overrides):
+                self.estimator.noise = self.read_settings(NoiseSettings, "noise", overrides)
+        except (TypeError, ValueError) as ex:
+            return SetParametersResult(successful=False, reason=str(ex))
+
+        for object in priors:
+            spec = self.object_spec(object, overrides)
+            if spec.parent != self.estimator.specs[object].parent:
+                # Moving an object between map and a parent frame changes the filter layout, rebuild on the next reset
+                self.get_logger().warning(f"{object} parent changed to {spec.parent}, applies after mapping/reset_mapping")
+                continue
+            self.estimator.specs[object].lock_yaw = spec.lock_yaw
+            self.estimator.set_prior(object, spec.position, spec.yaw)
+            self.output.pop(object, None)
+            # The timer publishes the moved frame on its next tick
+            self.output_settling = True
+
+        return SetParametersResult(successful=True)
+
+    def set_targets(self, targets: str):
+        # "torpedo" or "torpedo, bin": every listed object is fused, the first is the primary target
+        self.target_objects = [t.strip() for t in str(targets).split(",") if t.strip() != ""]
+        self.target_object = self.target_objects[0] if self.target_objects else ""
+
+    def background_targets_callback(self, request: SetString.Request, response: SetString.Response):
+        # "helmet,warning,pill": fused alongside whatever the target is (a search for one prop maps the others it sees),
+        # without resetting them. Empty (or ","): none
+        names = [n.strip() for n in str(request.data).split(",") if n.strip() != ""]
+        unknown = [n for n in names if n not in self.objects]
+        if unknown:
+            response.success = False
+            response.message = f"Unknown mapping objects {unknown}"
+            return response
+        self.background_objects = names
+        response.success = True
+        response.message = f"Background targets: {', '.join(names) if names else 'none'}"
+        self.get_logger().info(response.message)
+        return response
 
     def target_callback(self, request: MappingTarget.Request, response: MappingTarget.Response):
-        self.target_object = str(request.target_info.target_object)
+        self.set_targets(request.target_info.target_object)
         self.lock_map = bool(request.target_info.lock_map)
-        
-        if self.target_object in self.objects.keys():
-            self.get_logger().info(f"reset {self.target_object}")
-            self.objects[self.target_object]["location"].reset()
-            self.offset.cool_buffer()
 
+        for target in self.target_objects:
+            # Resetting a pinned basket would let detections drag it off the table fit
+            if self.table_centered and target in TABLE_BASKETS:
+                self.get_logger().info(f"{target} is pinned to the table, not resetting it")
+            elif target in self.objects.keys():
+                # A cov check on it needs fresh detections: a few that agree with what it knows (it was established as a
+                # target before), else the usual confirm_detections from its prior covariance, which is also how an
+                # object only seen in the background starts (keeps the position either way)
+                self.get_logger().info(f"reset {target}")
+                self.estimator.reset(target, verify=True)
+            else:
+                self.get_logger().warning(f"Unknown target object {target}")
+
+        # Publish the reset estimates now, so a convergence check right after this sees them
+        self.publish_pose()
         return response
 
     def start_binary_classifier_callback(self, request: StartBinaryClassifier.Request, response: StartBinaryClassifier.Response):
@@ -337,15 +531,14 @@ class MappingNode(Node):
             response.message = message
             return response
 
-        self.objects[target1]["location"].reset()
-        self.objects[target2]["location"].reset()
+        self.estimator.reset(target1)
+        self.estimator.reset(target2)
 
         self.instance1_seeded = False
         self.instance2_seeded = False
 
-        self.target_object = target1
+        self.set_targets(target1)
         self.lock_map = False
-        self.offset.cool_buffer()
         self.outstanding_detections.clear()
 
         response.success = True
@@ -392,7 +585,7 @@ class MappingNode(Node):
         success, message = self.binary_classifier.stop()
 
         if success:
-            self.target_object = ""
+            self.set_targets("")
             self.outstanding_detections.clear()
             self.get_logger().info(message)
         else:
@@ -404,7 +597,7 @@ class MappingNode(Node):
 
     def maybe_seed_binary_instances(self):
         # Fire once on each aquire -> track transition
-        # Rebuild the target's Location centered on the classifier centroid so the published pose snaps to the cluster instead of crawling
+        # Seed the target on the classifier centroid so the published pose snaps to the cluster instead of crawling
         # from the reckoned init pose (needs to only fire once, or cov would never drop)
         bc = self.binary_classifier
 
@@ -416,35 +609,15 @@ class MappingNode(Node):
             self.seed_object_estimate(bc.instance2_name, bc.instance2_centroid)
             self.instance2_seeded = True
             
-    def seed_object_estimate(self, child: str, centroid_map):
-        # Seed a map-parented object's pose so both its Location and TF frame land on the same centroid.
-        # Rebuilt Location stays soft/unwarmed (cov=1.0) until its buffer fills.
+    def seed_object_estimate(self, child: str, centroid):
+        # Put the object (and its TF frame) on the classifier centroid, given in the object's parent frame, keeping its yaw.
+        # It starts from its prior covariance, so it reads as soft until detections tighten it
         if child not in self.objects.keys():
             self.get_logger().error(f"seed_object_estimate: unknown object {child}")
             return
 
-        offset_pos = self.offset.get_pose().pose.position
-
-        cx = float(centroid_map[0])
-        cy = float(centroid_map[1])
-        cz = float(centroid_map[2])
-
-        # rebuild Location centered on the centroid -> topic position = centroid, cov = soft 1.0
-        xyz = Point(x=cx, y=cy, z=cz)
-        rpy = Vector3()  # no orientation from the classifier, leave identity
-        self.objects[child]["location"] = Location(
-            xyz, rpy,
-            int(self.get_parameter("buffer_size").value),
-            tuple(self.get_parameter("quantile").value),
-        )
-
-        # TF init_pose cancels the shared offset so map -> offset -> child lands on the centroid
-        init_pose = Pose()
-        init_pose.position.x = cx - offset_pos.x
-        init_pose.position.y = cy - offset_pos.y
-        init_pose.position.z = cz - offset_pos.z
-        init_pose.orientation.w = 1.0
-        self.objects[child]["init_pose"] = init_pose
+        self.estimator.seed(child, (float(centroid[0]), float(centroid[1]), float(centroid[2])))
+        self.output.pop(child, None)
 
     def vision_callback(self, detections: Detection3DArray):
         if self.lock_map:
@@ -453,25 +626,21 @@ class MappingNode(Node):
         # Bypass normal mapping behavior for binary classifier
         if self.binary_classifier.running:
             self.handle_binary_classifier_detections(detections)
+            self.publish_fused()
             self.publish_pose()
             return
         
         closest_object = self.closest_object(detections)
         
-        # if no target object set, use closest
-        closest_or_target = closest_object if self.target_object == "" else self.target_object
+        # Fuse the target objects (or the closest object if none is set) and the background objects. Other classes are left
+        # alone because lookalike props get each other's class
+        fused = (set(self.target_objects) if self.target_objects else {closest_object}) | set(self.background_objects)
                 
-        # Send the Poses for each location to their Location class
+        # Send each targeted detection to the estimator
         for detection in detections.detections:
-            result_ids = [r.hypothesis.class_id for r in detection.results]
-            
-            try:
-                result_idx = result_ids.index(closest_or_target)
-            except ValueError:
+            result = next((r for r in detection.results if r.hypothesis.class_id in fused), None)
+            if result is None:
                 continue
-                        
-            # if we reached here, then result is in the result list at result_idx    
-            result = detection.results[result_idx]
                         
             if not result.hypothesis.class_id in self.objects.keys() \
                     and not result.hypothesis.class_id in self.downwards_objects.keys():
@@ -490,7 +659,13 @@ class MappingNode(Node):
             if not update_success:
                 self.outstanding_detections.append(OutstandingDetectionInfo(result, detections.header, closest_object))
             
+        self.publish_fused()
         self.publish_pose()
+
+    def publish_fused(self):
+        if self.fused_now:
+            self.fused_pub.publish(String(data=",".join(sorted(self.fused_now))))
+            self.fused_now.clear()
 
     def handle_binary_classifier_detections(self, detections: Detection3DArray):
         for detection in detections.detections:
@@ -559,7 +734,7 @@ class MappingNode(Node):
                 detection_header.stamp
             )
         except TransformException as ex:
-            return False, None, None, str(ex)
+            return False, None, str(ex)
 
         trans_pose = do_transform_pose_stamped(pose, transform)
         if child in self.downwards_objects.keys():
@@ -568,9 +743,16 @@ class MappingNode(Node):
             trans_pose.pose.orientation.z = 0.0
             trans_pose.pose.orientation.w = 1.0
 
-        return True, trans_pose, parent, ""
+        q = transform.transform.rotation
+        rotation = quat2mat([q.w, q.x, q.y, q.z])
+        position_camera = (pose.pose.position.x, pose.pose.position.y, pose.pose.position.z)
+        stamp_sec = float(detection_header.stamp.sec) + float(detection_header.stamp.nanosec) / 1e9
 
-    def update_object_with_pose(self, trans_pose, parent: str, child: str, closest_object: str):
+        return True, ProjectedDetection(trans_pose, parent, rotation, position_camera, stamp_sec), ""
+
+    def update_object_with_pose(self, projected: ProjectedDetection, child: str, targeted: bool = True, agreed: bool = False):
+        # Fuse one detection (`targeted`: it can confirm the object; background objects only improve their estimate). A
+        # detection the estimator rejects still counts as handled (it is not retried)
         if not child in self.objects.keys():
             return False, f"Unknown mapping object {child}"
 
@@ -580,30 +762,61 @@ class MappingNode(Node):
         # These objects keep their orientation from config (detection yaw is unreliable)
         if bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(child)).value):
             update_orientation = False
-        
-        object_location: Location = self.objects[child]["location"]
-        object_location.add_pose(trans_pose.pose, update_position, update_orientation)
 
-        # update the offset pose if necessary (target or otherwise closest object, parent is map)
-        if (child == self.target_object or (self.target_object == "" and child == closest_object)) \
-           and parent == "map":
-               
-            offset_pose = Pose()
+        # Baskets are pinned once the table has been fit to them
+        if self.table_centered and child in TABLE_BASKETS:
+            update_position = False
 
-            offset_pose.position.x = trans_pose.pose.position.x - float(self.get_parameter("init_data.{}.pose.x".format(child)).value)
-            offset_pose.position.y = trans_pose.pose.position.y - float(self.get_parameter("init_data.{}.pose.y".format(child)).value)
-            offset_pose.position.z = trans_pose.pose.position.z - float(self.get_parameter("init_data.{}.pose.z".format(child)).value)
-            
-            # Rotational will never be changed because we don't want to offset that
-            # FOG go brrrrrrrrrrrrrrrr
-            self.offset.add_pose(offset_pose, True, False)
-        
-        return True, ""
+        pose = projected.pose.pose
+        position = None
+        position_cov = None
+        if update_position:
+            angular_speed, linear_speed = self.motion_at(projected.stamp_sec)
+            position = (pose.position.x, pose.position.y, pose.position.z)
+            position_cov = detection_covariance(projected.position_camera, projected.rotation, angular_speed, linear_speed,
+                                                self.estimator.noise)
+
+        yaw = None
+        yaw_var = None
+        if update_orientation:
+            # Vision detects the normal vector as the Z axis, its heading is the object's yaw
+            # (maybe someday roll and pitch will be nonzero)
+            det_rotm = quat2mat([pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z])
+            normal = det_rotm @ numpy.array([0.0, 0.0, 1.0])
+            yaw = math.atan2(normal[1], normal[0])
+            yaw_var = math.radians(self.estimator.noise.yaw_std_deg) ** 2
+
+        self.predict_offset()
+        accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var, targeted,
+                                                  agreed)
+        if accepted and reason:
+            self.get_logger().info(f"{child} {reason}")
+        if accepted:
+            self.fused_now.add(child)
+        if not accepted:
+            self.get_logger().debug(f"Rejected detection of {child}: {reason}")
+            if "moved" in reason:
+                self.get_logger().info(f"{child} {reason}")
+            if "reacquiring" in reason:
+                self.get_logger().warning(f"{child}: {reason}")
+        elif self.estimator.is_map_object(child):
+            self.report_released_priors()
+
+        return True, reason
+
+    def report_released_priors(self):
+        # A map object whose prior disagrees with the other props stops dragging the map; say when that changes
+        released = {name for name in self.objects.keys() if self.estimator.is_map_object(name) and self.estimator.released(name)}
+        for name in released - self.released_priors:
+            self.get_logger().warning(f"{name}'s prior disagrees with the other props, released (it no longer moves the map)")
+        for name in self.released_priors - released:
+            self.get_logger().info(f"{name}'s prior agrees with the other props again")
+        self.released_priors = released
 
     def try_update_pose(self, result: ObjectHypothesisWithPose, detection_header: Header, closest_object: str):        
         child: str = result.hypothesis.class_id
 
-        update_success, trans_pose, parent, error_msg = self.transform_detection_to_object_parent(
+        update_success, projected, error_msg = self.transform_detection_to_object_parent(
             result,
             detection_header,
             child,
@@ -612,17 +825,13 @@ class MappingNode(Node):
         if not update_success:
             return False, error_msg
 
-        return self.update_object_with_pose(
-            trans_pose,
-            parent,
-            child,
-            closest_object,
-        )
+        targeted = child in self.target_objects or (not self.target_objects and child == closest_object)
+        return self.update_object_with_pose(projected, child, targeted)
 
     def try_update_binary_classifier_pose(self, result: ObjectHypothesisWithPose, detection_header: Header):
         common_target = self.binary_classifier.instance1_name
 
-        update_success, trans_pose, parent, error_msg = self.transform_detection_to_object_parent(
+        update_success, projected, error_msg = self.transform_detection_to_object_parent(
             result,
             detection_header,
             common_target,
@@ -631,15 +840,14 @@ class MappingNode(Node):
         if not update_success:
             return False, error_msg
 
-        stamp_sec = float(detection_header.stamp.sec) + float(detection_header.stamp.nanosec) / float(1e9)
         now_sec = float(self.get_clock().now().nanoseconds) / float(1e9)
 
         sample = DetectionSample(
-            trans_pose.pose.position.x,
-            trans_pose.pose.position.y,
-            trans_pose.pose.position.z,
+            projected.pose.pose.position.x,
+            projected.pose.pose.position.y,
+            projected.pose.pose.position.z,
             result.hypothesis.score,
-            stamp_sec,
+            projected.stamp_sec,
         )
 
         assignment = self.binary_classifier.observe(sample, now_sec)
@@ -656,8 +864,8 @@ class MappingNode(Node):
         child_parent: str = str(self.get_parameter("init_data.{}.parent".format(child)).value)
 
         # If both binary targets share the same parent, reuse the already-transformed pose
-        if child_parent != parent:
-            update_success, trans_pose, parent, error_msg = self.transform_detection_to_object_parent(
+        if child_parent != projected.parent:
+            update_success, projected, error_msg = self.transform_detection_to_object_parent(
                 result,
                 detection_header,
                 child,
@@ -666,12 +874,7 @@ class MappingNode(Node):
             if not update_success:
                 return False, error_msg
 
-        return self.update_object_with_pose(
-            trans_pose,
-            parent,
-            child,
-            "",
-        )
+        return self.update_object_with_pose(projected, child, agreed=True)  # the classifier only names a cluster
                
     def closest_object(self, detections: Detection3DArray) -> str:
         object = ""
@@ -694,23 +897,67 @@ class MappingNode(Node):
 
         return object
     
+    def odom_callback(self, msg: Odometry):
+        p = msg.pose.pose.position
+        position = numpy.array([p.x, p.y, p.z])
+        if self.last_odom_position is not None:
+            step = float(numpy.linalg.norm(position - self.last_odom_position))
+            if step < MAX_ODOM_STEP:
+                self.pending_distance += step
+        self.last_odom_position = position
+
+        w = msg.twist.twist.angular
+        v = msg.twist.twist.linear
+        stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) / 1e9
+        self.motion_history.append((stamp, math.sqrt(w.x**2 + w.y**2 + w.z**2), math.sqrt(v.x**2 + v.y**2 + v.z**2)))
+
+    def motion_at(self, stamp_sec: float):
+        # Vehicle angular and linear speed at the odometry sample nearest stamp_sec (still if there is no odometry)
+        if not self.motion_history:
+            return 0.0, 0.0
+        nearest = min(self.motion_history, key=lambda m: abs(m[0] - stamp_sec))
+        return nearest[1], nearest[2]
+
+    def predict_offset(self):
+        # Grow the offset's uncertainty by the dead-reckoning drift since the last call
+        now = self.get_clock().now()
+        dt = (now - self.last_predict_time).nanoseconds / 1e9
+        self.estimator.predict(self.pending_distance, dt)
+        self.pending_distance = 0.0
+        self.last_predict_time = now
+
     def update_oustanding_items(self):
         self.update_outstanding_detections()
+        self.publish_fused()
         
-        #publish poses if they are stale
-        elapsed = (self.get_clock().now() - self.last_pub_time).to_msg()
-        if elapsed.sec + float(elapsed.nanosec / 1e9) >= STALE_TIME:
+        # publish while frames are still sliding to the estimate, otherwise when the poses go stale
+        elapsed = (self.get_clock().now() - self.last_pub_time).nanoseconds / 1e9
+        if self.output_settling or elapsed >= STALE_TIME:
             self.publish_pose()
 
     # Publishes stuff
     def publish_pose(self):
-        # Send the transform between offset and map which is tracked in
-        # self.offset which is a Location class
-        offset_transform = TransformStamped()
-        offset_pose = self.offset.get_pose()
+        self.predict_offset()
 
-        now = self.get_clock().now().to_msg()
-        offset_transform.transform.translation = Vector3(x=offset_pose.pose.position.x, y=offset_pose.pose.position.y, z=offset_pose.pose.position.z)
+        now_time = self.get_clock().now()
+        now = now_time.to_msg()
+        # Capped so a publish after a quiet spell (only stale publishes) can't jump a frame that just started moving
+        dt = 0.0 if self.last_output_time is None else min(max((now_time - self.last_output_time).nanoseconds / 1e9, 0.0), MAX_SLEW_DT)
+        self.last_output_time = now_time
+        max_speed = float(self.get_parameter("output.max_speed").value)
+        max_yaw_rate = math.radians(float(self.get_parameter("output.max_yaw_rate_deg").value))
+        settling = False
+
+        # map -> offset is where the course sits in odometry. Map objects hang off it at prior + deviation
+        offset, _ = self.estimator.offset()
+        if self.output_offset is None:
+            self.output_offset = offset.copy()
+        else:
+            self.output_offset = slew_vector(self.output_offset, offset, max_speed, dt)
+        settling = settling or float(numpy.linalg.norm(offset - self.output_offset)) > 1e-4
+
+        offset_transform = TransformStamped()
+        offset_transform.transform.translation = Vector3(x=float(self.output_offset[0]), y=float(self.output_offset[1]), z=float(self.output_offset[2]))
         offset_transform.header.stamp = now
         offset_transform.header.frame_id = "map"
         offset_transform.child_frame_id = "offset"
@@ -724,73 +971,89 @@ class MappingNode(Node):
             parent = str(self.get_parameter("init_data.{}.parent".format(object)).value)
             lock_orientation = bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(object)).value)
             is_downward = object in self.downwards_objects
-            pose = PoseWithCovarianceStamped()
+            is_map = self.estimator.is_map_object(object)
 
-            pose.pose = cast(Location, self.objects[object]["location"]).get_pose()
+            # Slide the published pose toward the estimate. Map objects slide in map (offset included) so a frame never moves
+            # faster than max_speed in the world, the rest in their parent frame
+            target_position, cov = self.estimator.position(object)
+            target_yaw, yaw_var = self.estimator.yaw(object)
+            out = self.output.get(object)
+            if out is None:
+                out = (target_position.copy(), target_yaw)
+            else:
+                out = (slew_vector(out[0], target_position, max_speed, dt), slew_angle(out[1], target_yaw, max_yaw_rate, dt))
+            self.output[object] = out
+            position, yaw = out
+            lag = target_position - position
+            yaw_lag = math.atan2(math.sin(target_yaw - yaw), math.cos(target_yaw - yaw))
+            settling = settling or float(numpy.linalg.norm(lag)) > 1e-4 or abs(yaw_lag) > 1e-4
+            # Its published yaw points at the parent (from its position), so the yaw estimate's lag says nothing about it
+            points_at_parent = parent != "map" and not lock_orientation and not is_downward \
+                and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value)
+            if points_at_parent:
+                yaw_lag = 0.0
+
+            # Map objects' frames hang off the offset frame, the rest off their parent
+            translation = position - self.output_offset if is_map else position
+
+            # A frame that has not caught up with the estimate is that much less certain
+            cov = cov + numpy.diag(lag ** 2)
+            yaw_var = yaw_var + yaw_lag ** 2
+            angle_var = 0.0
+            if not self.estimator.confirmed(object):
+                # Not confirmed by fresh detections while targeted (estimator confirm/verify_detections): what the old
+                # mapping reported for an object it had not seen, so a tree's covariance check still needs them
+                cov = cov + numpy.diag(numpy.maximum(UNCONFIRMED_POSITION_VAR - numpy.diag(cov), 0.0))
+                yaw_var = max(yaw_var, UNCONFIRMED_ANGLE_VAR)
+                angle_var = UNCONFIRMED_ANGLE_VAR
+
+            pose = PoseWithCovarianceStamped()
             pose.header.stamp = now
             pose.header.frame_id = parent
+            pose.pose.pose.position = Point(x=float(position[0]), y=float(position[1]), z=float(position[2]))
+            (pose.pose.pose.orientation.w,
+            pose.pose.pose.orientation.x,
+            pose.pose.pose.orientation.y,
+            pose.pose.pose.orientation.z) = euler2quat(0.0, 0.0, yaw)
 
             # point yaw at parent on the PUBLISHED pose too, so the cov arrow matches the tf.
             # only applies to non-map parents; position here is in parent frame.
-            if parent != "map" and not lock_orientation and not is_downward \
-                and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value):
+            if points_at_parent:
                 
                 yaw = math.atan2(-pose.pose.pose.position.y, -pose.pose.pose.position.x)
                 (pose.pose.pose.orientation.w,
                 pose.pose.pose.orientation.x,
                 pose.pose.pose.orientation.y,
                 pose.pose.pose.orientation.z) = euler2quat(0.0, 0.0, yaw)
-            
-            # If the object is the target object the translational covariance will be in the offset object.
-            if object == self.target_object and parent == "map":
-                offset_covar = self.offset.get_pose().covariance
 
-                pose.pose.covariance[0] = offset_covar[0]
-                pose.pose.covariance[7] = offset_covar[7]
-                pose.pose.covariance[14] = offset_covar[14]
+            covariance = [0.0] * 36
+            for i in range(3):
+                for j in range(3):
+                    covariance[6 * i + j] = float(cov[i, j])
+            covariance[21] = covariance[28] = angle_var
+            covariance[35] = float(yaw_var)
 
             # Cov stuff for cursed ah bin fit, won't touch other objects since they dont have "fit_covar"
             fit_covar = self.objects[object].get("fit_covar")
             if fit_covar is not None:
-                pose.pose.covariance[0] = fit_covar
-                pose.pose.covariance[7] = fit_covar
-                pose.pose.covariance[14] = fit_covar
+                covariance[0] = fit_covar
+                covariance[7] = fit_covar
+                covariance[14] = fit_covar
 
+            pose.pose.covariance = covariance
             self.objects[object]["publisher"].publish(pose)
 
             transform = TransformStamped()
             transform.header.stamp = pose.header.stamp
-            transform.transform.translation = Vector3(x=pose.pose.pose.position.x, y=pose.pose.pose.position.y, z=pose.pose.pose.position.z)
-            transform.transform.rotation = pose.pose.pose.orientation
+            transform.header.frame_id = "offset" if is_map else parent
             transform.child_frame_id = object + "_frame"
+            transform.transform.translation = Vector3(x=float(translation[0]), y=float(translation[1]), z=float(translation[2]))
+            transform.transform.rotation = pose.pose.pose.orientation
 
-            # If an object has the parent of anything other than map just apply the transform regularly
-            # This will eventually be changed when chameleon_tf is absorbed by mapping and the offset tf frame is removed
-
-            frame_valid = True; #if the mapping frame is valid / nans have occured
-
-            if parent == "map":
-                transform.header.frame_id = "offset"
-                
-                # assign initial position because that offset is taken care of by map offset as long as this object is the 
-                # target object. DONT assign orientation because map offset doesn't cover that
-                # The actual offset transform is added to the array earlier in this function. We just need to pub init pose
-                init_pose: Pose = self.objects[object]["init_pose"]
-
-                # check init pose for nans and infs
-                if not (math.isfinite(init_pose.position.x) and math.isfinite(init_pose.position.y) and math.isfinite(init_pose.position.z)):
-                    frame_valid = False
-
-                transform.transform.translation.x = init_pose.position.x # need to assign individual components because a vector3 is not a point
-                transform.transform.translation.y = init_pose.position.y
-                transform.transform.translation.z = init_pose.position.z
-            else:
-                transform.header.frame_id = str(self.get_parameter("init_data.{}.parent".format(object)).value)
-
-            if(frame_valid):
+            if all(math.isfinite(v) for v in translation):
                 transforms.append(transform)
             else:
-                self.get_logger().error("Recieving NAN in position vector from objects:init_pose")
+                self.get_logger().error(f"Not publishing {object}_frame, its translation is not finite")
         
         self.tf_brod.sendTransform(transforms)
         
@@ -800,11 +1063,12 @@ class MappingNode(Node):
         
         # publish status
         stat = MappingTargetInfo()
-        stat.target_object = self.target_object
+        stat.target_object = ",".join(self.target_objects)
         stat.lock_map = self.lock_map
         self.status_pub.publish(stat)
         
         self.last_pub_time = self.get_clock().now()
+        self.output_settling = settling
 
 
 def main(args=None):
