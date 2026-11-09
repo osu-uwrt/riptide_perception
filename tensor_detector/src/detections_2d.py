@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Pure helpers that turn detector output into ROS messages: 2D detections and the FoundationPose target mask.
+"""Pure helpers that turn detector output into ROS messages:
+2D detections and the FoundationPose target mask.
 
 No node, subscriptions or Ultralytics imports here, so it runs without a GPU.
 """
