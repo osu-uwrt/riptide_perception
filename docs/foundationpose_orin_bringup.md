@@ -67,13 +67,18 @@ ros2 param get /$ROBOT/$CAM/zed_node debug.use_pub_timestamps   # expect False
 
 Best effort anywhere → add `zed_qos:=SENSOR_DATA` to the Isaac launch.
 
-**Timestamp parity (design doc open question 2).** Run these in three terminals at the same moment and compare `sec` / `nanosec` (or record a short bag and compare there):
+**Timestamp parity (design doc open question 2).** `check_stamps.py` records the stamps on raw RGB, compressed RGB, depth and camera_info for a few seconds, then reports how many raw RGB frames each one matched exactly:
 ```bash
-ros2 topic echo $RGB --field header.stamp
-ros2 topic echo $RGB/compressed --field header.stamp
-ros2 topic echo $DEPTH --field header.stamp
+ros2 run tensor_detector check_stamps.py --ros-args \
+  -r image:=$RGB -r image/compressed:=$RGB/compressed \
+  -r depth:=$DEPTH -r camera_info:=/$ROBOT/$CAM/zed_node/<rgb camera_info topic>
 ```
-→ Identical stamps across all three: ______ **Stop if not.** With `sync_threshold` 0, FoundationPose silently produces nothing.
+- **PASS** (exit code 0): every compared frame matched exactly on every topic.
+- **FAIL:** read the gaps. A gap of about one frame period (67 ms at 15 fps) is a frame dropped in transit. That's harmless if it's rare. Small consistent gaps (µs to a few ms) on most frames mean the stamps really differ.
+- **0 msgs:** wrong topic name, incompatible QoS, or not published. On `image/compressed`, that's the NITROS case from stage 2. With `input_type:=raw`, ignore the compressed line.
+- Add `-p duration:=30.0` for a longer sample.
+
+→ Compressed / depth / camera_info matched: ______ / ______ / ______ **Stop if depth or camera_info really differ.** With `sync_threshold` 0, FoundationPose silently produces nothing.
 
 ## 4. yolo_2d on the real camera (M1 robot checks)
 
