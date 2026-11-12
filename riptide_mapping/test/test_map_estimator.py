@@ -487,3 +487,19 @@ def test_detections_seen_at_an_angle_count_for_less():
     assert obliquity_factor([0, 0, 1], [1.0, 0, 0], noise) == pytest.approx(capped)  # edge on
     noise.obliquity_power = 0.0
     assert obliquity_factor([0, 0, 1], [1.0, 0, 0], noise) == 1.0
+
+
+def test_retargeting_rebuilds_the_estimate_from_the_fresh_detections():
+    # A first look from an angle put it 3 cm off; seen again square on, the locked estimate is the fresh view only
+    est = make_estimator()
+    first = est.specs["hole"].position.copy()
+    feed(est, "hole", first, est.settings.confirm_detections, std=0.01, yaw=0.2)
+    est.reset("hole", verify=True)
+    fresh = first + np.array([0.0, 0.03, 0.0])
+    feed(est, "hole", fresh, est.settings.verify_detections - 1, std=0.01, start=100.0, yaw=0.0)
+    assert np.allclose(est.position("hole")[0], first, atol=1e-9)  # held while verifying: not moved yet
+    feed(est, "hole", fresh, est.settings.confirm_detections - est.settings.verify_detections + 1, std=0.01,
+         start=200.0, yaw=0.0)
+    assert est.confirmed("hole")
+    assert np.linalg.norm(est.position("hole")[0] - fresh) < 0.003
+    assert abs(est.yaw("hole")[0]) < 0.02

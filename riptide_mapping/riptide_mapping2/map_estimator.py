@@ -127,6 +127,7 @@ class Track:
     verifying: int = -1        # targeted again while established: detections that agreed so far (-1: not verifying)
     positions: deque = field(default_factory=deque)  # the last spread_window accepted positions since the last reset
     yaws: deque = field(default_factory=deque)       # and their yaws
+    held: list = field(default_factory=list)         # verifying: the fresh detections that landed where it was so far
 
 
 @dataclass
@@ -379,6 +380,13 @@ class MapEstimator:
                     moved = f"moved {np.linalg.norm(nu[0:2]) * 100:.0f} cm since it was last seen, finding it again"
                     self.reset(name)
                     started = False
+                elif not agreed:
+                    # Where it was: hold it until verify_detections agree, then rebuild the estimate from those
+                    held = self.tracks[name].held
+                    held.append((stamp, z, np.asarray(position_cov, dtype=np.float64), yaw, yaw_var, targeted))
+                    if len(held) < max(1, self.settings.verify_detections):
+                        return True, f"verifying: {len(held)}/{self.settings.verify_detections} where it was"
+                    return self._rebuild(name)
             if not agreed and self._acquiring_by_agreement(name):
                 accepted, reason = self._agree(name, stamp, z, np.asarray(position_cov, dtype=np.float64), yaw, yaw_var,
                                                targeted)
@@ -408,11 +416,6 @@ class MapEstimator:
         if position is not None:
             if targeted and track.updates >= self.settings.confirm_detections:
                 track.established = True
-            if targeted and track.verifying >= 0:
-                track.verifying += 1
-                if track.verifying >= self.settings.verify_detections:
-                    track.verifying = -1
-                    track.confirmed = True
             if targeted and track.verifying < 0 and track.established:
                 track.confirmed = True
         if position is not None:
@@ -424,6 +427,18 @@ class MapEstimator:
                 self.live[name] = (self.distance, self.time)
                 self._solution = None
         return True, moved
+
+    def _rebuild(self, name: str) -> Tuple[bool, str]:
+        # Verified where it was: the estimate starts over from these fresh detections. The old one only checked that
+        # they land where it was, so a first look from elsewhere (another angle, drift since) is not carried into it
+        track = self.tracks[name]
+        held, track.held, track.verifying = track.held, [], -1
+        self.track_cov[name] = (self.track_cov[name] + self._layout_prior() if self.is_map_object(name)
+                                else self._child_prior())
+        self.yaw_var[name] = self._yaw_prior()
+        for m in held:
+            self.observe(name, *m, agreed=True)
+        return True, f"{len(held)} detections where it was: estimate rebuilt from fresh detections"
 
     def _acquiring_by_agreement(self, name: str) -> bool:
         # No detection accepted since the last full reset (and not checking a known estimate): wait for agreement
