@@ -1,0 +1,4 @@
+/**/foundationpose:
+  ros__parameters:
+    symmetry_axes: ["z_full"]
+    tf_frame_name: "fp_owala"
