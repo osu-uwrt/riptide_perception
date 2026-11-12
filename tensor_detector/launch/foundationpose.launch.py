@@ -27,7 +27,9 @@ def generate_launch_description():
     zed_rgb_topic = LaunchConfiguration("zed_rgb_topic")
     zed_camera_info_topic = LaunchConfiguration("zed_camera_info_topic")
     zed_depth_topic = LaunchConfiguration("zed_depth_topic")
+    input_type = LaunchConfiguration("input_type")
     image_topic = LaunchConfiguration("image_topic")
+    raw_image_topic = LaunchConfiguration("raw_image_topic")
 
     target_class = LaunchConfiguration("target_class")
     yolo_model_path = LaunchConfiguration("yolo_model_path")
@@ -90,10 +92,23 @@ def generate_launch_description():
             description="Depth topic (32FC1, meters) relative to zed_node",
         ),
         DeclareLaunchArgument(
+            "input_type",
+            default_value="compressed",
+            description="yolo_2d input: compressed (default) or raw. Use raw when the "
+            "ZED publishes no /compressed topic (NITROS enabled)",
+        ),
+        DeclareLaunchArgument(
             "image_topic",
             default_value=rgb_topic + ["/compressed"],
-            description="Compressed image yolo_2d subscribes to. Defaults to the "
-            "ZED's compressed RGB; on the VM set it to /image_raw/compressed",
+            description="Compressed image yolo_2d subscribes to when "
+            "input_type:=compressed. Defaults to the ZED's compressed RGB; on the "
+            "VM set it to /image_raw/compressed",
+        ),
+        DeclareLaunchArgument(
+            "raw_image_topic",
+            default_value=rgb_topic,
+            description="Raw image yolo_2d subscribes to when input_type:=raw. "
+            "Defaults to the ZED's rectified RGB; on the VM set it to /image_raw",
         ),
         # --- yolo_2d ---
         DeclareLaunchArgument(
@@ -226,9 +241,10 @@ def generate_launch_description():
             {
                 "target_class": target_class,
                 "model_path": yolo_model_path,
+                "input_type": input_type,
             }
         ],
-        remappings=[("image/compressed", image_topic)],
+        remappings=[("image/compressed", image_topic), ("image", raw_image_topic)],
     )
 
     return launch.LaunchDescription(

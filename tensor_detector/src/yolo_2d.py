@@ -24,6 +24,7 @@ class YOLONode(Node):
                 ("model_path", "", ParameterDescriptor(read_only=True)),
                 ("minimum_mask_pixels", 300, ParameterDescriptor(read_only=True)),
                 ("iou_threshold", 0.7, ParameterDescriptor(read_only=True)),
+                ("input_type", "compressed", ParameterDescriptor(read_only=True)),
             ],
         )
 
@@ -40,6 +41,12 @@ class YOLONode(Node):
         self.iou_threshold = self.get_parameter("iou_threshold").value
         if self.iou_threshold < 0 or self.iou_threshold > 1:
             raise ValueError(f"iou_threshold = {self.iou_threshold}, must be in [0, 1]")
+
+        self.input_type = self.get_parameter("input_type").value
+        if self.input_type not in {"raw", "compressed"}:
+            raise ValueError(
+                f"input_type = {self.input_type}, must be 'raw' or 'compressed'"
+            )
 
         self.model_path = self.get_parameter("model_path").value
         if not self.model_path:
@@ -79,16 +86,23 @@ class YOLONode(Node):
 
         qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
 
-        self.image_subscription = self.create_subscription(
-            CompressedImage, "image/compressed", self.image_callback, qos
-        )
+        if self.input_type == "compressed":
+            self.image_subscription = self.create_subscription(
+                CompressedImage, "image/compressed", self.image_callback, qos
+            )
+            self.decode = self.bridge.compressed_imgmsg_to_cv2
+        else:
+            self.image_subscription = self.create_subscription(
+                Image, "image", self.image_callback, qos
+            )
+            self.decode = self.bridge.imgmsg_to_cv2
 
-    def image_callback(self, msg: CompressedImage):
+    def image_callback(self, msg: CompressedImage | Image):
 
         header = msg.header
 
         try:
-            cv_image = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+            cv_image = self.decode(msg, "bgr8")
         except CvBridgeError as e:
             self.get_logger().warning(f"CvBridge Error: {e}", throttle_duration_sec=1.0)
             return

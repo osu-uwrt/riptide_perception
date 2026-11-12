@@ -31,13 +31,14 @@ Reference for the M2 integration: ZED → format converter → Isaac ROS Foundat
 riptide_perception/
 ├── docs/
 │   ├── foundationpose_architecture.md
-│   └── foundationpose_isaac_reference.md      ← this file
+│   ├── foundationpose_isaac_reference.md      ← this file
+│   └── foundationpose_orin_bringup.md         ← robot bring-up procedure
 └── tensor_detector/
     ├── launch/
     │   ├── tensorrt.launch.py                 (legacy, untouched)
     │   └── foundationpose.launch.py           ← M2 launch file
     ├── config/
-    │   └── foundationpose_<object>.yaml       ← optional: per-object params (symmetry, depth, tf name)
+    │   └── foundationpose_<object>.yaml       ← per-object params (symmetry_axes, tf_frame_name), passed as object_config_path
     └── src/
         ├── detections_2d.py
         └── yolo_2d.py
@@ -83,7 +84,7 @@ yolo_2d ── foundationpose/segmentation (mono8) ─────────�
 
 `<RGB topic>` depends on the ZED wrapper version (see [ZED facts](#zed-facts)):
 
-| Wrapper | Rectified RGB | RGB camera_info | Compressed (`yolo_2d` input) |
+| Wrapper | Rectified RGB | RGB camera_info | Compressed (`yolo_2d` default input) |
 | --- | --- | --- | --- |
 | < 5.1 (used by the legacy node) | `rgb/image_rect_color` | `rgb/camera_info` | `rgb/image_rect_color/compressed` |
 | ≥ 5.1 (workspace checkout is 5.4) | `rgb/color/rect/image` | `rgb/color/rect/camera_info` | `rgb/color/rect/image/compressed` |
@@ -101,7 +102,8 @@ Depth is `depth/depth_registered` in both. `riptide_hardware/launch/zed.launch.p
 | FoundationPoseNode | `pose_estimation/camera_info` | ZED RGB camera_info |
 | FoundationPoseNode | `pose_estimation/segmentation` | `foundationpose/segmentation` |
 | FoundationPoseNode | `pose_estimation/output` | unchanged, or e.g. `foundationpose/output` (M3 adapter input) |
-| yolo_2d | `image/compressed` | ZED compressed RGB |
+| yolo_2d | `image/compressed` | ZED compressed RGB (launch argument `image_topic`; used when `input_type:=compressed`, the default) |
+| yolo_2d | `image` | ZED rectified RGB (launch argument `raw_image_topic`; used when `input_type:=raw`) |
 
 All three images and the mask must have the **same width and height**. At HD1200 that is 1920×1200.
 
@@ -272,7 +274,7 @@ Verified in `gxf_isaac_foundationpose/gxf/foundationpose/mesh_storage.cpp` (rele
 
 Resolutions:
 1. Set `debug.disable_nitros: true` in `ffc_config.yaml`. Topics stay standard, at the cost of zero-copy transport into Isaac.
-2. Subscribe `yolo_2d` to the raw RGB topic instead (requires a `sensor_msgs/Image` input variant).
+2. Subscribe `yolo_2d` to the raw RGB topic instead: launch with `input_type:=raw`. `raw_image_topic` defaults to the ZED's rectified RGB. This keeps NITROS for Isaac, at the cost of about 9 MB per frame copied into Python.
 
 ---
 
@@ -364,8 +366,8 @@ Notes on memory and duty cycle:
 - [ ] QoS is compatible on every hop (`ros2 topic info -v`).
 - [ ] Engines were built on the Orin with the container's TensorRT, with ≥ 7.5 GB free GPU memory.
 - [ ] The mesh is a single mesh, in meters, with a working `.mtl` texture (log shows `Found texture path`).
-- [ ] `max_depth` is set explicitly (docs/source default mismatch).
-- [ ] `tf_frame_name` is not `fp_object` and doesn't collide with mapping frames.
+- [x] `max_depth` is set explicitly (docs/source default mismatch). Set to 4.0 in the launch file.
+- [x] `tf_frame_name` is not `fp_object` and doesn't collide with mapping frames. `fp_owala` in the object YAML.
 - [ ] `debug: true` for the first run, with output inspected in `debug_dir`.
 
 ---
