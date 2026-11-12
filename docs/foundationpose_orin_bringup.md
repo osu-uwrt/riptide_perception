@@ -10,7 +10,6 @@ How to use it:
 
 - [ ] Branch `foundationpose-integration` pushed (`git push -u origin foundationpose-integration`)
 - [ ] YOLO weights `yolo26s-seg.pt` (not in git) on a USB stick, or confirm the Orin can download it
-- [ ] The folder `meshes/owala_textured/` (not in git): `owala.obj`, `owala.mtl` and `owala_texture.png` must stay together, because the `.mtl` finds the texture relative to the `.obj`.
 - [ ] Optional: FoundationPose ONNX models downloaded ahead of time (ref: [Models and TensorRT engines](foundationpose_isaac_reference.md#models-and-tensorrt-engines))
 
 ## 0. Set paths once per terminal
@@ -21,7 +20,7 @@ Fill in after stages 1–2, then paste into every new terminal:
 export ROBOT=tempest            # from ros2 topic list
 export CAM=ffc
 export YOLO_MODEL=~/models/yolo26s-seg.pt
-export MESH=~/meshes/owala_textured/owala.obj
+export MESH=<workspace>/src/riptide_perception/meshes/owala_textured/owala.obj   # in the repo
 export MODELS_DIR=${ISAAC_ROS_WS}/isaac_ros_assets/models/foundationpose
 ```
 
