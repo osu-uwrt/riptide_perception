@@ -10,7 +10,7 @@ How to use it:
 
 - [ ] Branch `foundationpose-integration` pushed (`git push -u origin foundationpose-integration`)
 - [ ] YOLO weights `yolo26s-seg.pt` (not in git) on a USB stick, or confirm the Orin can download it
-- [ ] `meshes/owala.obj` + `owala.mtl` (not in git)
+- [ ] The folder `meshes/owala_textured/` (not in git): `owala.obj`, `owala.mtl` and `owala_texture.png` must stay together, because the `.mtl` finds the texture relative to the `.obj`.
 - [ ] Optional: FoundationPose ONNX models downloaded ahead of time (ref: [Models and TensorRT engines](foundationpose_isaac_reference.md#models-and-tensorrt-engines))
 
 ## 0. Set paths once per terminal
@@ -21,7 +21,7 @@ Fill in after stages 1–2, then paste into every new terminal:
 export ROBOT=tempest            # from ros2 topic list
 export CAM=ffc
 export YOLO_MODEL=~/models/yolo26s-seg.pt
-export MESH=~/meshes/owala.obj
+export MESH=~/meshes/owala_textured/owala.obj
 export MODELS_DIR=${ISAAC_ROS_WS}/isaac_ros_assets/models/foundationpose
 ```
 
@@ -121,7 +121,7 @@ Add `zed_rgb_topic:=... zed_camera_info_topic:=...` (stage 2) and `zed_qos:=SENS
 
 In the log, check:
 - Both components load, with no `Failed to load` errors.
-- The engines load. The mesh loads: expect a gray-texture warning, not `Found texture path`, because the mesh has no texture.
+- The engines load. The mesh loads with `[MeshStorage] Found texture path`. A gray-texture warning instead means the `.png` isn't next to the `.mtl`.
 
 Then check the wiring:
 ```bash
