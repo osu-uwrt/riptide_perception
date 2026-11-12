@@ -256,35 +256,37 @@ class DummyDetectionNode(Node):
                         mapMat = resolvePoseInMap(parent) @ localMat
                     
                     mapPose = matToPose(mapMat)
-                    
-                    if publishInvalid:
-                        #invalid quaternion indicating that mapping should not merge orientation
-                        mapPose.orientation.w = 2.0
-                        mapPose.orientation.x = 2.0
-                        mapPose.orientation.y = 2.0
-                        mapPose.orientation.z = 2.0
-                    
+
                     # now convert pose to the desired camera frame
                     fwd_camera_frame = self.get_parameter("forward_camera_frame").value.replace("<robot>", self.robot) #this is the frame that "detects" the object
                     dwd_camera_frame = self.get_parameter("downward_camera_frame").value.replace("<robot>", self.robot)
                     camera_frame = fwd_camera_frame if visibleForwards else dwd_camera_frame if visibleDownwards else None
-                    
+
                     map2camera = self.tfBuffer.lookup_transform(camera_frame, "map", rclpy.time.Time())
                     framePose = do_transform_pose(mapPose, map2camera)
-                    
+
+                    if publishInvalid:
+                        #invalid quaternion indicating that mapping should not merge orientation.
+                        #set after the frame transform so the sentinel reaches mapping unchanged.
+                        framePose.orientation.w = 2.0
+                        framePose.orientation.x = 2.0
+                        framePose.orientation.y = 2.0
+                        framePose.orientation.z = 2.0
+
                     pubPose = PoseWithCovarianceStamped()
                     pubPose.header = fwdHeader if visibleForwards else dwdHeader if visibleDownwards else None
                     pubPose.pose.pose = framePose
                     self.pubs[i].publish(pubPose)
-                    
-                    #rotate quaternion to the "z out" position
-                    transformedQuat = [framePose.orientation.w, framePose.orientation.x, framePose.orientation.y, framePose.orientation.z]
-                    rotatedQuat = tf3d.quaternions.qmult(transformedQuat, CAMERA_ROTATION) #wxyz
-                    
-                    framePose.orientation.w = rotatedQuat[0]
-                    framePose.orientation.x = rotatedQuat[1]
-                    framePose.orientation.y = rotatedQuat[2]
-                    framePose.orientation.z = rotatedQuat[3]
+
+                    #rotate quaternion to the "z out" position (skip for the invalid sentinel, which must stay exact)
+                    if not publishInvalid:
+                        transformedQuat = [framePose.orientation.w, framePose.orientation.x, framePose.orientation.y, framePose.orientation.z]
+                        rotatedQuat = tf3d.quaternions.qmult(transformedQuat, CAMERA_ROTATION) #wxyz
+
+                        framePose.orientation.w = rotatedQuat[0]
+                        framePose.orientation.x = rotatedQuat[1]
+                        framePose.orientation.y = rotatedQuat[2]
+                        framePose.orientation.z = rotatedQuat[3]
                                         
                     #populate detection. looks like mapping only uses results so I'll just populate that and also header because its easy
                     detection = Detection3D()

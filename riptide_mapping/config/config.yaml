@@ -5,20 +5,69 @@
 # BOTH-ROBOTS SETTTINGS
 /**/riptide_mapping2:
   ros__parameters:
-    # Covariance filter parameters
-    cov_limit: 0.01 # Minimum value for the covariance matrix elements
-    k_value: 0.1 # Covariance step size (< 1.0) applied per detection
-    detection_cov_factor: 7.0
-
-    # relative position filter parameters
-    angle_cutoff: 15.0
-    distance_limit: 10.0
     confidence_cutoff: 0.2
 
-    # location tracking settings NOTE: buffer size is a per-robot setting.
+    # Map estimator (map_estimator.py). The init_data poses are a dead-reckoned layout; map objects sit at prior + offset + deviation
+    estimator:
+      offset_std_xy: 1.0 # m, where the course sits in odometry at the start
+      offset_std_z: 0.3
+      drift_var_per_m_xy: 0.002 # m^2 the offset can drift per m traveled
+      drift_var_per_m_z: 0.0002
+      drift_var_per_s_xy: 0.00001 # m^2 per s, even when holding still
+      drift_var_per_s_z: 0.000001
+      layout_std_xy: 0.25 # m, how far a map object can be from where the layout puts it...
+      layout_std_z: 0.15
+      layout_robust_scale: 2.0 # ...heavy-tailed: a prior this many stds off that disagrees with the other props is released
+      course_yaw_std_deg: 2.0 # start-heading misalignment of the layout (the AprilTag calibration keeps it small; 0: off)
+      fix_merge_distance: 1.0 # m; sightings of one object closer together than this merge into one fix
+      child_std_xy: 0.5 # m, prior of an object in its parent mapping frame
+      child_std_z: 0.3
+      yaw_std_deg: 30.0
+      gate_chi2: 16.27 # reject detections further than this (Mahalanobis^2, 3 dof 99.9 %)...
+      yaw_gate_chi2: 10.83
+      gate_min_updates: 10 # ...once the object has this many accepted detections
+      gate_max_rejects: 30 # this many rejections in a row reacquires the object from its prior covariance
+      # Until a target is confirmed its covariance stays at the old "not seen" values (error 1.73), so tree checks need
+      # confirm_detections fresh detections while targeted, also when it was already known well (then the first
+      # verify_detections must land where it was, widened by the drift since it was last seen)
+      confirm_detections: 20
+      verify_detections: 3
+      # Once confirmed, the published covariance is never below the scatter of its last spread_window detections:
+      # converged means the detections agree, as with the old mapping's buffer (the trees' thresholds were tuned on it)
+      spread_window: 50
+      # An object's first detections since a reset wait until acquire_detections agree (within acquire_radius_m, over
+      # acquire_window_s) and its estimate starts from those only, so a stray false detection never moves or biases it.
+      # Agreeing further than acquire_prior_chi2 from where the map expects it takes acquire_far_detections over
+      # acquire_far_s: a lookalike off to the side has to keep agreeing longer to take over the prior. <= 1: off
+      acquire_detections: 4
+      acquire_radius_m: 0.3
+      acquire_window_s: 4.0
+      acquire_prior_chi2: 16.27
+      acquire_far_detections: 12
+      acquire_far_s: 2.0
 
-    quantile: [ 0.01, 0.99 ]
-    minimum_distance: 1.0
+    # Detection noise: std grows with range, across and (stereo depth) along the camera ray. From the old thresholds
+    # (the holes' 0.0005 needed under ~2 cm of scatter at 1.5 m); measure the real scatter to tune
+    noise:
+      base_std: 0.01
+      lateral_std_per_m: 0.003
+      range_std_per_m: 0.008
+      range_std_per_m2: 0.003
+      timing_std: 0.25 # s, stamp error; smears detections while the vehicle turns or moves. The detector pairs each image
+                       # with a depth frame typically 0.2-0.5 s older (measured on the Orin 2026-11-12)
+      yaw_std_deg: 3.0
+      correlation_time: 0.3 # s, detections closer together than this count for less
+      max_inflation: 30.0
+      # Seen at an angle (camera ray off the object's normal) a detection counts for less: position and yaw variance
+      # times 1 / cos(angle)^obliquity_power, the angle capped at max_obliquity_deg. 0: off
+      obliquity_power: 2.0
+      max_obliquity_deg: 75.0
+
+    # Published frames chase the estimate at most this fast (<= 0: jump); the lag left is added to the published covariance.
+    # Off: the MPC already smooths frame motion (path.frame_speed for carried paths, its motion profile for setpoints)
+    output:
+      max_speed: 0.0
+      max_yaw_rate_deg: 0.0
 
     # Cursed ah bin geometry fit thresholds
     bin_fit:
@@ -30,7 +79,7 @@
 
 # TALOS SETTINGS
 /talos/riptide_mapping2:
-  ros__parameters:
+   ros__parameters:
     init_data:
       gate:
         parent: map
@@ -41,7 +90,7 @@
           yaw: 50.0
         pose:
           x: 4.810167
-          y: 0.525311
+          y: -2.217889
           z: -0.75
           yaw: 170.645069
       gate_rescue:
@@ -77,7 +126,7 @@
           yaw: 0.5
         pose:
           x: 16.410646
-          y: -1.31507
+          y: -4.05827
           z: -1.372
           yaw: 90.226263
       slalom_parent:
@@ -90,8 +139,8 @@
           yaw: 0.001
         pose:
           x: 8.332382
-          y: 3.303995
-          z: -1.0
+          y: 0.560795
+          z: -1.3
           yaw: -152.691724
       slalom_front:
         parent: slalom_parent_frame
@@ -141,7 +190,7 @@
           yaw: 0.5
         pose:
           x: 16.849613
-          y: 5.631254
+          y: 2.888054
           z: -1.372
           yaw: -0.029345
       torpedo:
@@ -153,7 +202,7 @@
           yaw: 0.5
         pose:
           x: 18.35222
-          y: 5.223745
+          y: 2.480545
           z: -1.372
           yaw: -169.835651
       fire_hole_large:
@@ -213,7 +262,7 @@
           yaw: 0.001
         pose:
           x: 13.222851
-          y: 12.986017
+          y: 10.242817
           z: -1.3
           yaw: 0.0
       post_bin_pose:
@@ -238,7 +287,7 @@
           yaw: 0.001
         pose:
           x: 13.408019
-          y: 15.067913
+          y: 12.324713
           z: -2.13
           yaw: -145.070841
       bin_target1:
@@ -376,7 +425,7 @@
           yaw: 0.001
         pose:
           x: -0.21663
-          y: -0.34660
+          y: -0.3466
           z: 0.47036
           yaw: 0.0
       bin_vinyl4:
@@ -403,9 +452,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 19.290761
-          y: 11.7502
-          z: -1.54
+          x: 1.80328
+          y: 0.002247
+          z: -4.0
           yaw: 89.039804
       pill:
         parent: table_frame
@@ -418,7 +467,7 @@
         pose:
           x: -0.082859
           y: 0.192053
-          z: 0.0
+          z: 0.05
           yaw: 180.0
       bandage:
         parent: table_frame
@@ -431,7 +480,7 @@
         pose:
           x: -0.068547
           y: -0.133469
-          z: 0.0
+          z: 0.03
           yaw: 180.0
       nut_and_bolt:
         parent: table_frame
@@ -442,9 +491,9 @@
           z: 0.001
           yaw: 0.001
         pose:
-          x: 0.25
-          y: 0.25
-          z: 0.0
+          x: 0.15
+          y: 0.15
+          z: 0.05
           yaw: 0.0
       plug:
         parent: table_frame
@@ -457,7 +506,7 @@
         pose:
           x: 0.25
           y: -0.25
-          z: 0.0
+          z: 0.03
           yaw: 0.0
       helmet:
         parent: table_frame
@@ -495,7 +544,7 @@
         pose:
           x: 0.082085
           y: -0.064919
-          z: 1.54
+          z: 1.2352
           yaw: -134.313351
       compass:
         parent: octagon_frame
@@ -553,10 +602,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 17.889498
-          y: 11.190864
+          x: 1.205305
+          y: 0.020372
           z: -1.3
-          yaw: 0.0
+          yaw: -0.609417
       post_table_pose:
         parent: pre_table_pose_frame
         covar:
@@ -565,10 +614,10 @@
           z: 1.0
           yaw: 1.0
         pose:
-          x: 0.0
-          y: 0.0
+          x: -0.002639
+          y: 0.002639
           z: 0.5
-          yaw: 0.0
+          yaw: -0.626838
 
       prequal_gate:
         parent: map
@@ -594,99 +643,3 @@
           y: 0.0
           z: -1.5
           yaw: 180.0
-
-    # location tracking settings
-    buffer_size: 60
-
-# LILTANK SETTINGS
-/liltank/riptide_mapping2:
-  ros__parameters:
-    init_data:
-      # table locations
-      table:
-        parent: map
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.0
-          y: 0.0
-          z: -2.0
-          yaw: 0.0
-      table_reefshark:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 1.0
-          y: 0.0
-          z: 1.0
-          yaw: 180.0
-      table_sawfish:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: -1.0
-          y: 0.0
-          z: 1.0
-          yaw: 180.0
-      table_basket_pink:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.4
-          y: 0.0
-          z: 0.1
-          yaw: 0.0
-      table_basket_yellow:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: -0.4
-          y: 0.0
-          z: 0.1
-          yaw: 0.0
-      table_spoon_pink:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.1
-          y: -0.036
-          z: 0.0
-          yaw: 0.0
-      table_bottle_yellow:
-        parent: table_frame
-        covar:
-          x: 0.001
-          y: 0.001
-          z: 0.001
-          yaw: 0.001
-        pose:
-          x: 0.25
-          y: 0.25
-          z: 0.0
-          yaw: 0.0
-
-    # location tracking settings
-    buffer_size: 30
