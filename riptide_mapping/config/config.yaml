@@ -28,10 +28,13 @@
       gate_min_updates: 10 # ...once the object has this many accepted detections
       gate_max_rejects: 30 # this many rejections in a row reacquires the object from its prior covariance
       # Until a target is confirmed its covariance stays at the old "not seen" values (error 1.73), so tree checks need
-      # fresh detections: confirm_detections while targeted, or verify_detections that agree with what was known (widened
-      # by the drift since it was last seen) when it was already known well
-      confirm_detections: 10
+      # confirm_detections fresh detections while targeted, also when it was already known well (then the first
+      # verify_detections must land where it was, widened by the drift since it was last seen)
+      confirm_detections: 20
       verify_detections: 3
+      # Once confirmed, the published covariance is never below the scatter of its last spread_window detections:
+      # converged means the detections agree, as with the old mapping's buffer (the trees' thresholds were tuned on it)
+      spread_window: 50
       # An object's first detections since a reset wait until acquire_detections agree (within acquire_radius_m, over
       # acquire_window_s) and its estimate starts from those only, so a stray false detection never moves or biases it.
       # Agreeing further than acquire_prior_chi2 from where the map expects it takes acquire_far_detections over
@@ -50,10 +53,15 @@
       lateral_std_per_m: 0.003
       range_std_per_m: 0.008
       range_std_per_m2: 0.003
-      timing_std: 0.03 # s, stamp error; smears detections while the vehicle turns or moves
+      timing_std: 0.25 # s, stamp error; smears detections while the vehicle turns or moves. The detector pairs each image
+                       # with a depth frame typically 0.2-0.5 s older (measured on the Orin 2026-11-12)
       yaw_std_deg: 3.0
       correlation_time: 0.3 # s, detections closer together than this count for less
       max_inflation: 30.0
+      # Seen at an angle (camera ray off the object's normal) a detection counts for less: position and yaw variance
+      # times 1 / cos(angle)^obliquity_power, the angle capped at max_obliquity_deg. 0: off
+      obliquity_power: 2.0
+      max_obliquity_deg: 75.0
 
     # Published frames chase the estimate at most this fast (<= 0: jump); the lag left is added to the published covariance.
     # Off: the MPC already smooths frame motion (path.frame_speed for carried paths, its motion profile for setpoints)

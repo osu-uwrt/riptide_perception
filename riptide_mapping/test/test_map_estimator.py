@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "riptide_mapping2"))
 
 from map_estimator import (EstimatorSettings, MapEstimator, NoiseSettings, ObjectSpec,  # noqa: E402
-                           detection_covariance, slew_angle, slew_vector)
+                           detection_covariance, obliquity_factor, slew_angle, slew_vector)
 
 
 def make_estimator(**settings):
@@ -268,7 +268,7 @@ def test_retargeting_keeps_the_fix_and_a_revisit_measures_drift():
 def test_confirmed_needs_fresh_detections_after_each_reset():
     est = make_estimator()
     assert not est.confirmed("hole")
-    feed(est, "hole", est.specs["hole"].position, 9)
+    feed(est, "hole", est.specs["hole"].position, est.settings.confirm_detections - 1)
     assert not est.confirmed("hole")
     feed(est, "hole", est.specs["hole"].position, 1, start=20.0)
     assert est.confirmed("hole")  # confirm_detections while targeted
@@ -278,15 +278,18 @@ def test_confirmed_needs_fresh_detections_after_each_reset():
     assert not est.confirmed("gate")
 
 
-def test_known_target_is_verified_by_a_few_detections_where_it_was():
+def test_known_target_keeps_its_estimate_but_needs_the_full_count_of_fresh_detections():
     est = make_estimator()
     spot = est.specs["hole"].position + np.array([0.05, 0.0, 0.0])
-    feed(est, "hole", spot, 10)
+    feed(est, "hole", spot, est.settings.confirm_detections)
     est.reset("hole", verify=True)  # targeted again
     assert not est.confirmed("hole")
-    feed(est, "hole", spot, est.settings.verify_detections - 1, start=100.0)
+    assert np.allclose(est.position("hole")[0], spot, atol=0.01)  # kept
+    feed(est, "hole", spot, est.settings.verify_detections, start=100.0)
+    assert not est.confirmed("hole")  # a few that agree say little about how well it is known
+    feed(est, "hole", spot, est.settings.confirm_detections - est.settings.verify_detections - 1, start=200.0)
     assert not est.confirmed("hole")
-    feed(est, "hole", spot, 1, start=200.0)
+    feed(est, "hole", spot, 1, start=300.0)
     assert est.confirmed("hole")
     assert np.allclose(est.position("hole")[0], spot, atol=0.01)
 
@@ -298,7 +301,7 @@ def test_a_small_drift_since_it_was_seen_passes_and_is_absorbed():
     est.predict(distance=4.0, dt=20.0)  # a surface trip: a few cm of expected drift
     est.reset("hole", verify=True)
     drifted = spot + np.array([0.04, -0.02, 0.0])
-    for i in range(est.settings.verify_detections):
+    for i in range(est.settings.confirm_detections):
         accepted, reason = est.observe("hole", 100.0 + i, drifted, iso(0.02))
         assert accepted and "moved" not in reason
     assert est.confirmed("hole")
@@ -342,17 +345,20 @@ def test_background_detections_after_a_target_keep_it_established():
     feed(est, "hole", spot, est.settings.confirm_detections)  # established as the target
     feed(est, "hole", spot, 5, start=100.0, targeted=False)  # then seen while searching for something else
     est.reset("hole", verify=True)
-    feed(est, "hole", spot, est.settings.verify_detections, start=200.0)
+    assert est.tracks["hole"].established  # still known well: verified where it was, not searched for from scratch
+    feed(est, "hole", spot, est.settings.confirm_detections, start=200.0)
     assert est.confirmed("hole")
 
 
 def test_a_known_map_object_is_verified_too():
     est = make_estimator()
     gate = est.specs["gate"].position + np.array([0.3, 0.0, 0.0])
-    feed(est, "gate", gate, 15, std=0.02)
+    feed(est, "gate", gate, est.settings.confirm_detections, std=0.02)
     est.predict(distance=10.0, dt=30.0)
     est.reset("gate", verify=True)
     feed(est, "gate", gate, est.settings.verify_detections, std=0.02, start=100.0)
+    assert not est.confirmed("gate")
+    feed(est, "gate", gate, est.settings.confirm_detections - est.settings.verify_detections, std=0.02, start=200.0)
     assert est.confirmed("gate")
 
 
@@ -432,7 +438,7 @@ def test_agreed_detections_skip_the_wait():
 def test_a_verified_target_that_moved_is_found_again_by_agreement():
     est = acquiring_estimator()
     spot = est.specs["hole"].position + np.array([0.05, 0.0, 0.0])
-    for i in range(12):
+    for i in range(est.settings.confirm_detections + 2):
         est.observe("hole", 0.1 * i, spot, iso(0.02))
     assert est.tracks["hole"].established
     est.reset("hole", verify=True)
@@ -443,3 +449,41 @@ def test_a_verified_target_that_moved_is_found_again_by_agreement():
         accepted, reason = est.observe("hole", 5.1 + 0.1 * i, moved, iso(0.02))
     assert accepted, reason
     assert np.allclose(est.position("hole")[0], moved, atol=0.03)
+
+
+# ----- converged means the detections agree -----
+
+def test_spread_is_the_scatter_of_the_recent_detections_since_the_reset():
+    est = make_estimator()
+    base = est.specs["hole"].position
+    rng = np.random.default_rng(1)
+    pts = base + rng.normal(0.0, 0.03, size=(est.settings.confirm_detections, 3))
+    for i, p in enumerate(pts):
+        assert est.observe("hole", float(i), p, iso(0.03), yaw=0.1 * (i % 2), yaw_var=0.01)[0]
+    cov, yaw_var = est.spread("hole")
+    assert np.allclose(np.diag(cov), np.var(pts, axis=0, ddof=1))
+    # the filter thinks it knows the mean far better than the detections agree with each other
+    assert np.all(np.diag(est.position("hole")[1]) < np.diag(cov))
+    assert yaw_var == pytest.approx(0.0025, rel=0.1)
+    est.reset("hole", verify=True)
+    assert est.spread("hole") == (None, None)  # fresh detections only
+
+
+def test_spread_keeps_only_the_last_window():
+    est = make_estimator(spread_window=5)
+    spot = est.specs["hole"].position
+    feed(est, "hole", spot + np.array([0.2, 0.0, 0.0]), 5)
+    feed(est, "hole", spot, 5, start=10.0)
+    cov, _ = est.spread("hole")
+    assert np.allclose(cov, 0.0)
+
+
+def test_detections_seen_at_an_angle_count_for_less():
+    noise = NoiseSettings()
+    assert obliquity_factor([0, 0, 1], [0, 0, -2.0], noise) == pytest.approx(1.0)  # head on
+    assert obliquity_factor([0, 0, 1], [math.sin(math.radians(60)), 0, -math.cos(math.radians(60))], noise) \
+        == pytest.approx(4.0)
+    capped = 1.0 / math.cos(math.radians(noise.max_obliquity_deg)) ** 2
+    assert obliquity_factor([0, 0, 1], [1.0, 0, 0], noise) == pytest.approx(capped)  # edge on
+    noise.obliquity_power = 0.0
+    assert obliquity_factor([0, 0, 1], [1.0, 0, 0], noise) == 1.0

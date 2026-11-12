@@ -23,7 +23,7 @@ from transforms3d.euler import euler2quat
 from transforms3d.quaternions import quat2mat
 
 from map_estimator import (MapEstimator, ObjectSpec, EstimatorSettings, NoiseSettings, detection_covariance,
-                           slew_vector, slew_angle)
+                           obliquity_factor, slew_vector, slew_angle)
 from binary_classifier import BinaryClassifier, DetectionSample
 from bin_geometry import BinGeometryFitter
 
@@ -768,23 +768,26 @@ class MappingNode(Node):
             update_position = False
 
         pose = projected.pose.pose
+        # Vision detects the normal vector as the Z axis (parent frame here)
+        det_rotm = quat2mat([pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z])
+        normal = det_rotm @ numpy.array([0.0, 0.0, 1.0])
+        # Seen at an angle, the plane fit behind the position and the normal is worse: such a detection counts for less
+        ray = projected.rotation @ numpy.asarray(projected.position_camera, dtype=float)
+        oblique = obliquity_factor(normal, ray, self.estimator.noise)
         position = None
         position_cov = None
         if update_position:
             angular_speed, linear_speed = self.motion_at(projected.stamp_sec)
             position = (pose.position.x, pose.position.y, pose.position.z)
-            position_cov = detection_covariance(projected.position_camera, projected.rotation, angular_speed, linear_speed,
-                                                self.estimator.noise)
+            position_cov = oblique * detection_covariance(projected.position_camera, projected.rotation, angular_speed,
+                                                          linear_speed, self.estimator.noise)
 
         yaw = None
         yaw_var = None
         if update_orientation:
-            # Vision detects the normal vector as the Z axis, its heading is the object's yaw
-            # (maybe someday roll and pitch will be nonzero)
-            det_rotm = quat2mat([pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z])
-            normal = det_rotm @ numpy.array([0.0, 0.0, 1.0])
+            # Its heading is the object's yaw (maybe someday roll and pitch will be nonzero)
             yaw = math.atan2(normal[1], normal[0])
-            yaw_var = math.radians(self.estimator.noise.yaw_std_deg) ** 2
+            yaw_var = oblique * math.radians(self.estimator.noise.yaw_std_deg) ** 2
 
         self.predict_offset()
         accepted, reason = self.estimator.observe(child, projected.stamp_sec, position, position_cov, yaw, yaw_var, targeted,
@@ -1006,6 +1009,13 @@ class MappingNode(Node):
                 cov = cov + numpy.diag(numpy.maximum(UNCONFIRMED_POSITION_VAR - numpy.diag(cov), 0.0))
                 yaw_var = max(yaw_var, UNCONFIRMED_ANGLE_VAR)
                 angle_var = UNCONFIRMED_ANGLE_VAR
+            else:
+                # Never below the scatter of its recent detections: converged means they agree (estimator.spread)
+                spread_cov, spread_yaw_var = self.estimator.spread(object)
+                if spread_cov is not None:
+                    cov = cov + numpy.diag(numpy.maximum(numpy.diag(spread_cov) - numpy.diag(cov), 0.0))
+                if spread_yaw_var is not None and not lock_orientation:
+                    yaw_var = max(yaw_var, spread_yaw_var)
 
             pose = PoseWithCovarianceStamped()
             pose.header.stamp = now

@@ -22,7 +22,8 @@
 # frame. Yaw is a scalar filter per object.
 
 import math
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -64,11 +65,16 @@ class EstimatorSettings:
     gate_chi2: float = 16.27
     yaw_gate_chi2: float = 10.83
     gate_min_updates: int = 10   # also the detections a map object's track needs to become a fix
-    # A target is confirmed (its real covariance published) after this many detections while targeted...
-    confirm_detections: int = 10
-    # ...or, when it was already known well, after this many that land where it was (widened by the drift since it was
-    # last seen); one that lands elsewhere means it moved, and it is found again from scratch
+    # A target is confirmed (its real covariance published) after this many fresh detections while targeted, also when
+    # it was already known well (then the first verify_detections must land where it was, widened by the drift since it
+    # was last seen; one that lands elsewhere means it moved, and it is found again from scratch)
+    confirm_detections: int = 20
     verify_detections: int = 3
+    # The published covariance is never below the scatter of the last spread_window detections since the last reset:
+    # the filter's own covariance shrinks with every detection whether or not they agree, so on its own a target
+    # "converges" on a few correlated frames. Converged then means the detections themselves agree, as the old
+    # mapping's buffer covariance did (the thresholds in the trees were tuned against that)
+    spread_window: int = 50
     # This many position rejections in a row means the estimate locked onto the wrong thing: reacquire it
     gate_max_rejects: int = 30
     # An object's first detections since a reset are held back until acquire_detections of them agree (within
@@ -97,6 +103,10 @@ class NoiseSettings:
     yaw_std_deg: float = 3.0          # deg, detected yaw
     correlation_time: float = 0.3     # s, detections closer together than this share most of their error
     max_inflation: float = 30.0       # cap on the correlation inflation (several detections in one frame)
+    # A detection seen at an angle (camera ray off the object's normal) is a worse plane fit: its position and yaw
+    # variance are scaled by 1 / cos(angle)^obliquity_power, the angle capped at max_obliquity_deg. 0: off
+    obliquity_power: float = 2.0
+    max_obliquity_deg: float = 75.0
 
 
 @dataclass
@@ -115,6 +125,8 @@ class Track:
     established: bool = False  # confirm_detections while targeted since the last full reset: the estimate is good
     confirmed: bool = False    # usable by a target check: confirmed while targeted, until the next reset
     verifying: int = -1        # targeted again while established: detections that agreed so far (-1: not verifying)
+    positions: deque = field(default_factory=deque)  # the last spread_window accepted positions since the last reset
+    yaws: deque = field(default_factory=deque)       # and their yaws
 
 
 @dataclass
@@ -145,6 +157,20 @@ def detection_covariance(position_camera, rotation_parent_camera, angular_speed:
 
     rot = np.asarray(rotation_parent_camera, dtype=np.float64)
     return rot @ cov @ rot.T
+
+
+def obliquity_factor(normal, ray, noise: NoiseSettings) -> float:
+    # How much worse a detection seen at an angle is: 1 / cos(camera ray to the object's normal)^power
+    if noise.obliquity_power <= 0:
+        return 1.0
+    n = np.asarray(normal, dtype=np.float64)
+    r = np.asarray(ray, dtype=np.float64)
+    nn, rn = float(np.linalg.norm(n)), float(np.linalg.norm(r))
+    if nn < 1e-9 or rn < 1e-9:
+        return 1.0
+    cos = abs(float(n @ r)) / (nn * rn)
+    cos = max(cos, math.cos(math.radians(noise.max_obliquity_deg)))
+    return 1.0 / cos ** noise.obliquity_power
 
 
 def slew_vector(current: np.ndarray, target: np.ndarray, max_speed: float, dt: float) -> np.ndarray:
@@ -265,8 +291,22 @@ class MapEstimator:
         return self.yaw_mean[name], self.yaw_var[name]
 
     def confirmed(self, name: str) -> bool:
-        # Whether fresh detections while targeted have confirmed the object since its last reset
-        return self.tracks[name].confirmed
+        # Whether fresh detections while targeted have confirmed the object since its last reset (at least
+        # confirm_detections of them, also on the verify path: a few that agree say little about how well it is known)
+        track = self.tracks[name]
+        return track.confirmed and len(track.positions) >= self.settings.confirm_detections
+
+    def spread(self, name: str) -> Tuple[Optional[np.ndarray], Optional[float]]:
+        # Scatter of the recent detections since the last reset: position covariance (parent frame) and yaw variance
+        track = self.tracks[name]
+        cov = yaw_var = None
+        if len(track.positions) >= 2:
+            cov = np.cov(np.array(track.positions), rowvar=False)
+        if len(track.yaws) >= 2:
+            yaws = np.array(track.yaws)
+            r = math.hypot(float(np.mean(np.cos(yaws))), float(np.mean(np.sin(yaws))))
+            yaw_var = -2.0 * math.log(max(r, 1e-12))  # circular variance as a variance in rad^2
+        return cov, yaw_var
 
     def released(self, name: str) -> bool:
         # Whether the fixes say this object's prior is off (its layout weight is mostly gone)
@@ -349,6 +389,15 @@ class MapEstimator:
             if not accepted:
                 return False, reason
         track = self.tracks[name]
+        window = max(int(self.settings.spread_window), 2)
+        if position is not None:
+            track.positions.append(np.asarray(position, dtype=np.float64).copy())
+            while len(track.positions) > window:
+                track.positions.popleft()
+        if yaw is not None and math.isfinite(yaw):
+            track.yaws.append(float(yaw))
+            while len(track.yaws) > window:
+                track.yaws.popleft()
 
         if yaw is not None and yaw_var is not None and not self.specs[name].lock_yaw and math.isfinite(yaw):
             self._update_yaw(name, float(yaw), float(yaw_var) * inflation)
