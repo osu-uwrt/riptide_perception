@@ -216,6 +216,7 @@ Profiles (`isaac_ros_common/src/qos.cpp`): `SYSTEM_DEFAULT`, `DEFAULT`, `PARAMET
 | CUDA / TensorRT / VPI | From JetPack. A minimal flash has only the runtime libraries (seen on the Orin: TensorRT 10.3.0.30, VPI 3.2.4, apt source r36.4, no `nvcc`/`trtexec`). Install the CUDA, cuDNN, TensorRT and VPI dev parts individually. **Not** the full `nvidia-jetpack` that the ZED wrapper README suggests: it pulls NVIDIA's OpenCV 4.8 and removes Ubuntu's OpenCV 4.5.4 `-dev` packages that ROS Humble uses. Procedure: bring-up stage 1a | ZED wrapper README; simulated install on the Orin |
 | VPI on the PVA | "Jetson Setup for VPI" (`pva-allow-2`) is required outside Docker only for running compute on the **PVA**. FoundationPose and the format converter don't use it, but other Isaac packages might | release-3.2 Jetson Setup for VPI |
 | PyTorch for `yolo_2d` | Jetson wheels, not PyPI. Ultralytics' "Run on JetPack 6.1" section lists the torch/torchvision wheels for Python 3.10 (plus `cudss` for its current torch) | Ultralytics NVIDIA Jetson guide |
+| CV-CUDA | **v0.5.0-beta** `nvcv-lib` and `nvcv-dev` `.deb`s (arm64, CUDA 12) from the CV-CUDA GitHub releases. Not an apt dependency of the Isaac packages: NVIDIA's container installs it by hand in `isaac_ros_common` `docker/Dockerfile.base`. The FoundationPose GXF extension links `libcvcuda.so.0` | isaac_ros_common release-3.2 `Dockerfile.base`; seen on the Orin |
 | ZED SDK | Builds exist for JetPack 6.1/6.2 (L4T 36.4) and 6.2.2 (L4T 36.5). Match the version to the wrapper's README | ZED SDK release page |
 
 Install procedure: [bring-up stage 1b](foundationpose_orin_bringup.md#1b-install-isaac-ros-native-no-docker).
@@ -223,6 +224,8 @@ Install procedure: [bring-up stage 1b](foundationpose_orin_bringup.md#1b-install
 **Native-install pitfalls:**
 - The Isaac apt repository carries its own builds of some `ros-humble-*` packages. On a shared robot, simulate the install (`apt-get install -s`) and check for upgrades of core packages first.
 - Installing Isaac changes how the ZED wrapper builds: once NITROS packages are present, the wrapper enables NITROS and drops the `/compressed` topic (see [NITROS and the compressed topic](#nitros-and-the-compressed-topic)).
+- **CV-CUDA is missing after a native apt install.** The `foundationpose` component then fails at load with `[NitrosNode] loadExtensions Error: GXF_EXTENSION_FILE_NOT_FOUND`. The real cause is one line earlier in the log: `Failed to load extension .../libgxf_isaac_foundationpose.so Error: libcvcuda.so.0: cannot open shared object file`. Fix: [bring-up stage 1b](foundationpose_orin_bringup.md#1b-install-isaac-ros-native-no-docker), step 6. To find any other missing library: `ldd /opt/ros/humble/share/gxf_isaac_foundationpose/gxf/lib/libgxf_isaac_foundationpose.so | grep "not found"`.
+- **RMW:** Isaac ROS 3.2 (format converter and FoundationPose, NITROS inside one container) loads, negotiates and connects under `rmw_zenoh_cpp` (tested 2026-11-13). Large raw images cross processes reliably under Zenoh but not under default Fast DDS (see [Checklist](#checklist)).
 - Stereolabs' current Isaac ROS documentation covers Isaac ROS 5 only ("Isaac ROS 4.x is not covered"). For the release-3.2 + NITROS setup, the wrapper source (`zed_components/CMakeLists.txt`, the `disable_nitros` handling) is the reference.
 
 ---
@@ -255,12 +258,21 @@ wget 'https://api.ngc.nvidia.com/v2/models/nvidia/isaac/foundationpose/versions/
 ```
 On TensorRT 10.3+, the engines run in FP32 (NVIDIA disabled FP16 because of precision loss).
 
+**Measured engine time on the Orin** (2026-11-13, AGX Orin ~32 GB, TensorRT 10.3.0.30, FP32, `MODE_30W`: GPU max 612 MHz, 4 TPCs active). The command is `trtexec --loadEngine=<plan> --shapes=input1:<N>x160x160x6,input2:<N>x160x160x6`, mean GPU compute time:
+
+| Engine, batch | GPU otherwise idle | While the pipeline runs (bag at ~9 Hz + `yolo_2d` + FoundationPose) |
+| --- | --- | --- |
+| refine, 42 | 339 ms | ~1020 ms |
+| score, 252 | 1612 ms | ~4830 ms |
+
+One estimation pass runs 252 pose hypotheses through refine in 6 batches of 42 (the `batch0`…`batch5` folders in `debug_dir`), then scores all 252 in one batch. Engine time alone is therefore ≈ 6 × 339 + 1612 ≈ **3.6 s** per estimate at `MODE_30W`. End to end, with `yolo_2d` running on every frame, the quickstart bag gave **~7.5 s** per estimate (`/foundationpose/output` ~0.13 Hz, `GR3D_FREQ` 98–99%). `debug: true` adds little (~0.11 Hz). NVIDIA's 780 ms figure is at MAXN. The gap is mostly the power mode (clock and active TPCs) plus GPU contention, not FP32 alone.
+
 **Install** natively from the Isaac apt repository, once it's added ([Platform and native install](#platform-and-native-install)). NVIDIA's docs run this inside `run_dev.sh`; on the Orin it runs on the host:
 ```bash
 sudo apt-get update && sudo apt-get install -y ros-humble-isaac-ros-foundationpose ros-humble-isaac-ros-image-proc
 ```
 
-**Optional install check with NVIDIA's data.** This tests Isaac and the engines without any of this repo's code. It needs the quickstart assets (docs, "Download Quickstart Assets", an NGC download into `${ISAAC_ROS_WS}/isaac_ros_assets`) and the RT-DETR tutorial's `sdetr_grasp.plan` engine, because the quickstart makes masks with RT-DETR. The release-3.2 docs' rosbag quickstart:
+**Optional install check with NVIDIA's data.** This tests Isaac and the engines without any of this repo's code. It needs the quickstart assets (docs, "Download Quickstart Assets", an NGC download into `${ISAAC_ROS_WS}/isaac_ros_assets`) and the RT-DETR tutorial's `sdetr_grasp.plan` engine, because the quickstart makes masks with RT-DETR. The assets are NGC resource `nvidia/isaac/isaac_ros_foundationpose_assets`, version `3.2.0`, file `quickstart.tar.gz` (~1.6 GB), extracted into `${ISAAC_ROS_WS}/isaac_ros_assets`. NGC also lists 4.0.0 and 5.0.0, so pin 3.2.0. They hold `quickstart.bag` and the meshes `Mustard`, `soup_can`, `Mac_and_cheese_0_1` and `dock`. The bag is **a single frame**: 640×480 `image_rect` (rgb8), `depth` (32FC1) and `camera_info_rect`, all stamped 0. Looped playback is therefore a static scene: fine for a first pose and for per-estimate timing, useless for tracking or for stamp-keyed latency. With this repo's launch file instead of RT-DETR, `yolo26s-seg` detects the mustard bottle as `cake` (0.51), not `bottle`. The full procedure is in bring-up stage 6. The release-3.2 docs' rosbag quickstart:
 ```bash
 sudo apt-get install -y ros-humble-isaac-ros-examples
 ros2 launch isaac_ros_examples isaac_ros_examples.launch.py launch_fragments:=foundationpose \
@@ -400,11 +412,11 @@ Notes on memory and duty cycle:
 - [ ] RGB, depth and mask are all 1920×1200, matching what Isaac receives.
 - [ ] Stamps on compressed RGB, raw RGB and depth are identical (`sync_threshold` 0). A mismatch produces no output and **no error**.
 - [ ] QoS is compatible on every hop (`ros2 topic info -v`).
-- [ ] Large raw images (ZED RGB and depth, ~9.2 MB each) arrive at the full rate across processes under the RMW the robot actually runs (`remote_launch` uses `rmw_zenoh_cpp`). On default Fast DDS with `net.core.rmem_max` 1 MB, a 2.3 MB best-effort image mostly didn't arrive (`ros2 topic hz` ~0.1 Hz at 2 Hz published, 2026-11-13). Compressed images were unaffected. Open: whether Isaac ROS 3.2 / NITROS works with `rmw_zenoh_cpp`.
-- [ ] Isaac ROS release-3.2 installed natively on JetPack 6.1/6.2 (L4T R36.4), and `ISAAC_ROS_WS` set.
-- [ ] Engines were built on the Orin with the host's (JetPack) TensorRT, with ≥ 7.5 GB free GPU memory. Rebuild after any TensorRT upgrade.
-- [ ] `torch.cuda.is_available()` is `True` in the Python that runs `yolo_2d` (Jetson PyTorch wheel, not PyPI).
-- [ ] The mesh is a single mesh, in meters, with a working `.mtl` texture (log shows `Found texture path`).
+- [x] Large raw images (ZED RGB and depth, ~9.2 MB each) arrive at the full rate across processes under the RMW the robot actually runs (`remote_launch` uses `rmw_zenoh_cpp`). On default Fast DDS with `net.core.rmem_max` 1 MB, a 2.3 MB best-effort image mostly didn't arrive (`ros2 topic hz` ~0.1 Hz at 2 Hz published). Under `rmw_zenoh_cpp` with `rmw_zenohd`, 2.3 MB and 9.2 MB images and `yolo_2d` on them were a steady 2 Hz. Isaac ROS 3.2 works under Zenoh (2026-11-13). Every process must use the same `RMW_IMPLEMENTATION`.
+- [x] Isaac ROS release-3.2 installed natively on JetPack 6.1/6.2 (L4T R36.4), `ISAAC_ROS_WS` set, and CV-CUDA 0.5.0-beta installed.
+- [x] Engines were built on the Orin with the host's (JetPack) TensorRT, with ≥ 7.5 GB free GPU memory. Rebuild after any TensorRT upgrade.
+- [x] `torch.cuda.is_available()` is `True` in the Python that runs `yolo_2d` (Jetson PyTorch wheel, not PyPI).
+- [ ] The mesh is a single mesh, in meters, with a working `.mtl` texture. The 3.2 node logs no mesh or texture line at the default log level (2026-11-13), so check the renders in `debug_dir` instead.
 - [x] `max_depth` is set explicitly (docs/source default mismatch). Set to 4.0 in the launch file.
 - [x] `tf_frame_name` is not `fp_object` and doesn't collide with mapping frames. `fp_owala` in the object YAML.
 - [ ] `debug: true` for the first run, with output inspected in `debug_dir`.

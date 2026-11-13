@@ -271,6 +271,19 @@ ros2 topic hz /foundationpose/output               # with the bottle in view
 
 Result (2026-11-13, ZED off, `rmw_zenoh_cpp`, `MODE_30W`, wrapper 5.5 topic names, `input_type:=raw`): components load **yes** (after installing CV-CUDA, stage 1b step 6). Engines load **yes**: `[foundationpose] Node was started` came ~50 s after `Initializing and running GXF graph`, which is mostly TensorRT engine loading, so allow about a minute before expecting output. Texture found: **not shown**, because no mesh or texture line appears at the default log level. Check the rendered mesh in `/tmp/foundationpose` during the camera session instead. Wiring OK: **yes**. `symmetry_axes` = `['z_full']`. `/foundationpose/rgb8` and `/foundationpose/segmentation` each have 1 publisher and 1 subscriber. ZED depth and `camera_info` each have 1 subscriber and 0 publishers (camera off). No errors in the log. Isaac ROS 3.2 loads and connects under Zenoh.
 
+**End-to-end on NVIDIA's quickstart bag (2026-11-13, no camera).** NVIDIA's quickstart assets (`isaac_ros_foundationpose_assets` 3.2.0 from NGC, ~1.6 GB) include `quickstart.bag`. The bag is one 640×480 frame (`image_rect` rgb8, `depth` 32FC1, `camera_info_rect`) with stamp 0, so `ros2 bag play -l` repeats it at ~9 Hz. Play it with `--remap image_rect:=/tempest/ffc/zed_node/rgb/color/rect/image depth:=/tempest/ffc/zed_node/depth/depth_registered camera_info_rect:=/tempest/ffc/zed_node/rgb/color/rect/camera_info`. Launch with `mesh_file_path:=.../Mustard/textured_simple.obj image_width:=640 image_height:=480 input_type:=raw` and an object config without `symmetry_axes`, because the mustard bottle isn't rotationally symmetric. `yolo26s-seg` sees the mustard bottle as `cake` (0.51), not `bottle`, so this test uses `target_class:=cake`. Results:
+- `/foundationpose/output` publishes. The pose projects to pixel (147, 314), inside YOLO's box (105–170, 268–345).
+- Rate: ~0.13 Hz (~7.5 s per estimate) with `debug:=false`, and ~0.11 Hz with `debug:=true`. `GR3D_FREQ` stays at 98–99%, and RAM in use is ~10.8 GB.
+- `MODE_30W` limits the GPU to 612 MHz with 4 TPCs active.
+- Engine timing (`trtexec --loadEngine`, FP32):
+
+  | Engine (batch) | GPU idle | Pipeline running |
+  |---|---|---|
+  | refine (42) | 339 ms | ~1020 ms |
+  | score (252) | 1612 ms | ~4830 ms |
+
+  One estimate is 6 refine batches (252 hypotheses) plus 1 score batch, so ≈ 3.6 s of engine time with the GPU idle. The rest of the 7.5 s is GPU contention, mostly from `yolo_2d` running on every frame.
+
 **If nothing comes out and nothing errors,** check in this order:
 1. Timestamps (stage 3).
 2. Image sizes: RGB, depth and mask must all be 1920×1200.
