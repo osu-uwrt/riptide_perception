@@ -7,19 +7,22 @@ Reference for the M2 integration: ZED → format converter → Isaac ROS Foundat
 - ZED wrapper: the workspace's `zed_ros2_wrapper` checkout (tag `v5.4.0`). **The robot may run a different version.** See [ZED facts](#zed-facts).
 - Where the docs and the source disagree, the source wins. Discrepancies are marked.
 
+**Platform and install sources, checked 2026-11-12:** Isaac ROS release-3.2 Getting Started, Developer Environment Setup, Compute Setup and Isaac Apt Repository pages; the Isaac ROS release-4.0 requirements; the Stereolabs ZED SDK release page and Isaac ROS integration page; the ZED wrapper README (v5.4.0); the Ultralytics NVIDIA Jetson guide; NVIDIA's PyTorch for Jetson page.
+
 ## Contents
 
 1. [File structure](#file-structure)
 2. [Graph and topic wiring](#graph-and-topic-wiring)
 3. [FoundationPoseNode reference](#foundationposenode-reference)
 4. [ImageFormatConverterNode reference](#imageformatconverternode-reference)
-5. [Models and TensorRT engines](#models-and-tensorrt-engines)
-6. [Mesh requirements](#mesh-requirements)
-7. [ZED facts](#zed-facts)
-8. [Tracking (M4)](#tracking-m4)
-9. [Multiple objects](#multiple-objects)
-10. [Checklist](#checklist)
-11. [Links](#links)
+5. [Platform and native install](#platform-and-native-install)
+6. [Models and TensorRT engines](#models-and-tensorrt-engines)
+7. [Mesh requirements](#mesh-requirements)
+8. [ZED facts](#zed-facts)
+9. [Tracking (M4)](#tracking-m4)
+10. [Multiple objects](#multiple-objects)
+11. [Checklist](#checklist)
+12. [Links](#links)
 
 ---
 
@@ -49,7 +52,9 @@ riptide_perception/
 
 ### On the robot (not in git)
 
-Paths follow NVIDIA's convention so their commands work unchanged. Every path is a launch argument, so the exact location is not fixed.
+Paths follow NVIDIA's convention so their commands work unchanged. Every path is a launch argument, so the exact location is not fixed. `ISAAC_ROS_WS` is set in `~/.bashrc` on the Orin (bring-up stage 1b), because the native install doesn't set it. If it's unset, the launch file's `models_dir` default falls back to the Docker path `/workspaces/isaac_ros-dev`, which doesn't exist on the Orin.
+
+The Owala mesh is in this repo (`meshes/owala_textured/`) rather than under `isaac_ros_assets/meshes/`. Either location works, since `mesh_file_path` is a launch argument.
 
 ```
 ${ISAAC_ROS_WS}/isaac_ros_assets/
@@ -196,9 +201,35 @@ Profiles (`isaac_ros_common/src/qos.cpp`): `SYSTEM_DEFAULT`, `DEFAULT`, `PARAMET
 
 ---
 
+## Platform and native install
+
+**The Orin runs Isaac ROS natively, not in Docker** (team decision). NVIDIA strongly recommends their Docker dev environment, and all their quickstarts assume it, but release-3.2 also documents a native path: "setup ROS 2 Humble in your host machine with the Isaac Apt Repository and setup dependencies with rosdep" (Developer Environment Setup). In NVIDIA's commands, skip `run_dev.sh` and run the rest on the host.
+
+| Requirement | Value | Source |
+| --- | --- | --- |
+| Isaac ROS release | **release-3.2**, the last Humble release. 4.x is ROS 2 Jazzy / Ubuntu 24.04 (JetPack 7.0 on Thor); 5.x is ROS 2 Lyrical / Ubuntu 24.04 (JetPack 7.2) | release-3.2 and release-4.0 Getting Started; Stereolabs Isaac ROS page |
+| JetPack | **6.1 or 6.2** on Jetson Orin. `/etc/nv_tegra_release` shows `R36 (release), REVISION: 4.x`. 6.2.2 (L4T 36.5) is not listed | release-3.2 Getting Started, Compute Setup |
+| ROS | Humble only ("ONLY been tested against ROS 2 Humble") | release-3.2 Getting Started |
+| Power | `nvpmodel -m 0` and `jetson_clocks` "for best performance" | release-3.2 Compute Setup |
+| Apt repository | `deb https://isaac.download.nvidia.com/isaac-ros/release-3 $(lsb_release -cs) release-3.0`, key `https://isaac.download.nvidia.com/isaac-ros/repos.key` | release-3.2 Isaac Apt Repository |
+| Packages | `ros-humble-isaac-ros-foundationpose`, `ros-humble-isaac-ros-image-proc` (format converter). The quickstart also uses `ros-humble-isaac-ros-examples` and RT-DETR | release-3.2 FoundationPose page |
+| CUDA / TensorRT / VPI | From JetPack. A minimal flash has only the runtime libraries (seen on the Orin: TensorRT 10.3.0.30, VPI 3.2.4, apt source r36.4, no `nvcc`/`trtexec`). Install the CUDA, cuDNN, TensorRT and VPI dev parts individually. **Not** the full `nvidia-jetpack` that the ZED wrapper README suggests: it pulls NVIDIA's OpenCV 4.8 and removes Ubuntu's OpenCV 4.5.4 `-dev` packages that ROS Humble uses. Procedure: bring-up stage 1a | ZED wrapper README; simulated install on the Orin |
+| VPI on the PVA | "Jetson Setup for VPI" (`pva-allow-2`) is required outside Docker only for running compute on the **PVA**. FoundationPose and the format converter don't use it, but other Isaac packages might | release-3.2 Jetson Setup for VPI |
+| PyTorch for `yolo_2d` | Jetson wheels, not PyPI. Ultralytics' "Run on JetPack 6.1" section lists the torch/torchvision wheels for Python 3.10 (plus `cudss` for its current torch) | Ultralytics NVIDIA Jetson guide |
+| ZED SDK | Builds exist for JetPack 6.1/6.2 (L4T 36.4) and 6.2.2 (L4T 36.5). Match the version to the wrapper's README | ZED SDK release page |
+
+Install procedure: [bring-up stage 1b](foundationpose_orin_bringup.md#1b-install-isaac-ros-native-no-docker).
+
+**Native-install pitfalls:**
+- The Isaac apt repository carries its own builds of some `ros-humble-*` packages. On a shared robot, simulate the install (`apt-get install -s`) and check for upgrades of core packages first.
+- Installing Isaac changes how the ZED wrapper builds: once NITROS packages are present, the wrapper enables NITROS and drops the `/compressed` topic (see [NITROS and the compressed topic](#nitros-and-the-compressed-topic)).
+- Stereolabs' current Isaac ROS documentation covers Isaac ROS 5 only ("Isaac ROS 4.x is not covered"). For the release-3.2 + NITROS setup, the wrapper source (`zed_components/CMakeLists.txt`, the `disable_nitros` handling) is the reference.
+
+---
+
 ## Models and TensorRT engines
 
-Commands from the release-3.2 quickstart. They run inside the Isaac ROS dev container on the Orin, except the download, which can run anywhere.
+Commands from the release-3.2 quickstart, checked against the docs page on 2026-11-12. On the Orin they run natively on the host, with JetPack's `trtexec`. The download can run anywhere.
 
 **Download the ONNX models.** They are portable between machines.
 ```bash
@@ -224,19 +255,24 @@ wget 'https://api.ngc.nvidia.com/v2/models/nvidia/isaac/foundationpose/versions/
 ```
 On TensorRT 10.3+, the engines run in FP32 (NVIDIA disabled FP16 because of precision loss).
 
-**Install** (inside the container started by `isaac_ros_common/scripts/run_dev.sh`):
+**Install** natively from the Isaac apt repository, once it's added ([Platform and native install](#platform-and-native-install)). NVIDIA's docs run this inside `run_dev.sh`; on the Orin it runs on the host:
 ```bash
-sudo apt-get update && sudo apt-get install -y ros-humble-isaac-ros-foundationpose
+sudo apt-get update && sudo apt-get install -y ros-humble-isaac-ros-foundationpose ros-humble-isaac-ros-image-proc
 ```
 
-**Optional install check with NVIDIA's data.** After downloading the quickstart assets (docs, "Download Quickstart Assets"):
+**Optional install check with NVIDIA's data.** This tests Isaac and the engines without any of this repo's code. It needs the quickstart assets (docs, "Download Quickstart Assets", an NGC download into `${ISAAC_ROS_WS}/isaac_ros_assets`) and the RT-DETR tutorial's `sdetr_grasp.plan` engine, because the quickstart makes masks with RT-DETR. The release-3.2 docs' rosbag quickstart:
 ```bash
-ros2 launch isaac_ros_foundationpose isaac_ros_foundationpose.launch.py \
-  mesh_file_path:=.../Mustard/textured_simple.obj texture_path:=.../Mustard/texture_map.png \
-  refine_engine_file_path:=.../refine_trt_engine.plan score_engine_file_path:=.../score_trt_engine.plan
+sudo apt-get install -y ros-humble-isaac-ros-examples
+ros2 launch isaac_ros_examples isaac_ros_examples.launch.py launch_fragments:=foundationpose \
+  interface_specs_file:=${ISAAC_ROS_WS}/isaac_ros_assets/isaac_ros_foundationpose/quickstart_interface_specs.json \
+  mesh_file_path:=${ISAAC_ROS_WS}/isaac_ros_assets/isaac_ros_foundationpose/Mustard/textured_simple.obj \
+  texture_path:=${ISAAC_ROS_WS}/isaac_ros_assets/isaac_ros_foundationpose/Mustard/texture_map.png \
+  score_engine_file_path:=${ISAAC_ROS_WS}/isaac_ros_assets/models/foundationpose/score_trt_engine.plan \
+  refine_engine_file_path:=${ISAAC_ROS_WS}/isaac_ros_assets/models/foundationpose/refine_trt_engine.plan \
+  rt_detr_engine_file_path:=${ISAAC_ROS_WS}/isaac_ros_assets/models/synthetica_detr/sdetr_grasp.plan
 ros2 bag play -l ${ISAAC_ROS_WS}/isaac_ros_assets/isaac_ros_foundationpose/quickstart.bag/
 ```
-The quickstart bag also needs NVIDIA's RT-DETR detector to produce masks.
+`isaac_ros_foundationpose.launch.py` (the package's minimal launch file, with `mesh_file_path`, `texture_path` and the two engine paths) is the alternative that doesn't need RT-DETR, but then masks must come from somewhere else.
 
 ---
 
@@ -364,7 +400,10 @@ Notes on memory and duty cycle:
 - [ ] RGB, depth and mask are all 1920×1200, matching what Isaac receives.
 - [ ] Stamps on compressed RGB, raw RGB and depth are identical (`sync_threshold` 0). A mismatch produces no output and **no error**.
 - [ ] QoS is compatible on every hop (`ros2 topic info -v`).
-- [ ] Engines were built on the Orin with the container's TensorRT, with ≥ 7.5 GB free GPU memory.
+- [ ] Large raw images (ZED RGB and depth, ~9.2 MB each) arrive at the full rate across processes under the RMW the robot actually runs (`remote_launch` uses `rmw_zenoh_cpp`). On default Fast DDS with `net.core.rmem_max` 1 MB, a 2.3 MB best-effort image mostly didn't arrive (`ros2 topic hz` ~0.1 Hz at 2 Hz published, 2026-11-13). Compressed images were unaffected. Open: whether Isaac ROS 3.2 / NITROS works with `rmw_zenoh_cpp`.
+- [ ] Isaac ROS release-3.2 installed natively on JetPack 6.1/6.2 (L4T R36.4), and `ISAAC_ROS_WS` set.
+- [ ] Engines were built on the Orin with the host's (JetPack) TensorRT, with ≥ 7.5 GB free GPU memory. Rebuild after any TensorRT upgrade.
+- [ ] `torch.cuda.is_available()` is `True` in the Python that runs `yolo_2d` (Jetson PyTorch wheel, not PyPI).
 - [ ] The mesh is a single mesh, in meters, with a working `.mtl` texture (log shows `Found texture path`).
 - [x] `max_depth` is set explicitly (docs/source default mismatch). Set to 4.0 in the launch file.
 - [x] `tf_frame_name` is not `fp_object` and doesn't collide with mapping frames. `fp_owala` in the object YAML.
@@ -384,4 +423,9 @@ Notes on memory and duty cycle:
 - Format converter: https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_image_pipeline/blob/release-3.2/isaac_ros_image_proc/src/image_format_converter_node.cpp
 - Docs (quickstart, parameters, mesh tutorials): https://nvidia-isaac-ros.github.io/v/release-3.2/repositories_and_packages/isaac_ros_pose_estimation/isaac_ros_foundationpose/index.html
 - ZED wrapper topic rename: `zed_ros2_wrapper/CHANGELOG.rst`, section v5.1.0.
+- Isaac ROS release-3.2 setup: [Getting Started](https://nvidia-isaac-ros.github.io/v/release-3.2/getting_started/index.html) (system requirements), [Compute Setup](https://nvidia-isaac-ros.github.io/v/release-3.2/getting_started/hardware_setup/compute/index.html), [Developer Environment Setup](https://nvidia-isaac-ros.github.io/v/release-3.2/getting_started/dev_env_setup.html), [Isaac Apt Repository](https://nvidia-isaac-ros.github.io/v/release-3.2/getting_started/isaac_apt_repository.html), [Jetson Setup for VPI](https://nvidia-isaac-ros.github.io/v/release-3.2/getting_started/hardware_setup/compute/jetson_vpi.html)
+- ZED SDK downloads (per-JetPack builds): https://www.stereolabs.com/developers/release
+- Stereolabs Isaac ROS integration (covers Isaac ROS 5 only): https://www.stereolabs.com/docs/isaac-ros
+- PyTorch / Ultralytics on Jetson: https://docs.ultralytics.com/guides/nvidia-jetson/ and https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform/index.html
+- Team machine setup: https://github.com/osu-uwrt/riptide_setup
 - ROS 2 composition: https://docs.ros.org/en/humble/Tutorials/Intermediate/Composition.html
