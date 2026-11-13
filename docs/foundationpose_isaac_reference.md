@@ -264,8 +264,9 @@ On TensorRT 10.3+, the engines run in FP32 (NVIDIA disabled FP16 because of prec
 | --- | --- | --- |
 | refine, 42 | 339 ms | ~1020 ms |
 | score, 252 | 1612 ms | ~4830 ms |
+| refine, 1 (≈ one tracked frame's engine time) | 9.7 ms | not measured |
 
-One estimation pass runs 252 pose hypotheses through refine in 6 batches of 42 (the `batch0`…`batch5` folders in `debug_dir`), then scores all 252 in one batch. Engine time alone is therefore ≈ 6 × 339 + 1612 ≈ **3.6 s** per estimate at `MODE_30W`. End to end, with `yolo_2d` running on every frame, the quickstart bag gave **~7.5 s** per estimate (`/foundationpose/output` ~0.13 Hz, `GR3D_FREQ` 98–99%). `debug: true` adds little (~0.11 Hz). NVIDIA's 780 ms figure is at MAXN. The gap is mostly the power mode (clock and active TPCs) plus GPU contention, not FP32 alone.
+One estimation pass runs 252 pose hypotheses through refine in 6 batches of 42 (the `batch0`…`batch5` folders in `debug_dir`), then scores all 252 in one batch. Engine time alone is therefore ≈ 6 × 339 + 1612 ≈ **3.6 s** per estimate at `MODE_30W`. End to end, with `yolo_2d` running on every frame, the quickstart bag gave **~7.5 s** per estimate (`/foundationpose/output` ~0.13 Hz, `GR3D_FREQ` 98–99%). `debug: true` adds little (~0.11 Hz). NVIDIA's 780 ms figure is at MAXN. The gap is mostly the power mode (clock and active TPCs) plus GPU contention, not FP32 alone. A single-pose refine (batch 1), the core of one tracking step, is ~370× cheaper than an estimate. That leaves room for tracking at camera rate, before rendering overhead and contention.
 
 **Install** natively from the Isaac apt repository, once it's added ([Platform and native install](#platform-and-native-install)). NVIDIA's docs run this inside `run_dev.sh`; on the Orin it runs on the host:
 ```bash
