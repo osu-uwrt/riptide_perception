@@ -292,6 +292,50 @@ Result (2026-11-13, ZED off, `rmw_zenoh_cpp`, `MODE_30W`, wrapper 5.5 topic name
 
 Look in `/tmp/foundationpose` (the debug output) for what the node did get.
 
+## 6a. Without the camera: replay an SVO
+
+The ZED wrapper can play an SVO2 recording as if it were the camera: same topics, depth computed live, so the GPU load is close to a live session (plus H.265 decoding). Used on 2026-11-16 to test gated `yolo_2d` from `/home/ros/bench_1115/s1_static.svo2`.
+
+**Stamps:** `yolo_2d`'s gated mode compares frame stamps with the node clock (`max_frame_age_sec`). Either restamp frames with system time (below, the simple option, loops) or keep the recording's stamps with `svo.use_svo_timestamps: true` + `publish_svo_clock:=true` and `use_sim_time:=true` on **every** node (no loop: the wrapper ignores `svo_loop` with SVO timestamps; `foundationpose.launch.py` has no `use_sim_time` argument yet). Use recording stamps when results must line up with recorded event cues.
+
+Override file (once):
+```bash
+cat > /home/ros/zedxm_svo.yaml <<'YAML'
+/**:
+    ros__parameters:
+        svo:
+            use_svo_timestamps: false   # stamp frames with system time
+            svo_loop: true
+            svo_realtime: true          # recorded rate, skip frames when slow, like a live camera
+        depth:
+            depth_mode: 'NEURAL_PLUS'
+            max_depth: 4.0
+YAML
+```
+ZED window (`zenv_zed.sh` adds the Isaac GXF libraries the NITROS-built wrapper needs):
+```bash
+source /home/ros/zenv_zed.sh
+ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zedxm svo_path:=/home/ros/bench_1115/s1_static.svo2 namespace:=tempest/ffc camera_name:=zed_node publish_tf:=false ros_params_override_path:=/home/ros/zedxm_svo.yaml
+```
+Check: `ros2 topic echo /tempest/ffc/zed_node/rgb/color/rect/camera_info --field header.stamp --once; date +%s` must agree within a second or two.
+
+Depth sanitizer (ZED marks invalid depth as NaN/±inf, FoundationPose needs 0; see `tensor_detector/src/depth_sanitizer.py`):
+```bash
+source /home/ros/zenv.sh
+ros2 run tensor_detector depth_sanitizer.py --ros-args -r depth:=/tempest/ffc/zed_node/depth/depth_registered -r depth_finite:=/tempest/ffc/zed_node/depth/depth_finite
+```
+Pipeline (`yolo_gated:=false` runs YOLO on every frame):
+```bash
+source /home/ros/zenv.sh
+ros2 launch tensor_detector foundationpose.launch.py robot:=tempest camera:=ffc target_class:=bottle yolo_model_path:=$HOME/models/yolo26s-seg.pt launch_foundationpose:=true models_dir:=${ISAAC_ROS_WS}/isaac_ros_assets/models/foundationpose mesh_file_path:=$HOME/osu-uwrt/development/software/src/riptide_perception/meshes/owala_textured/owala.obj object_config_path:=$(ros2 pkg prefix tensor_detector)/share/tensor_detector/config/foundationpose_owala.yaml zed_rgb_topic:=rgb/color/rect/image zed_camera_info_topic:=rgb/color/rect/camera_info zed_depth_topic:=depth/depth_finite input_type:=raw debug:=false yolo_gated:=true
+```
+Trigger by hand:
+```bash
+ros2 topic pub --once /estimate_now std_msgs/msg/Empty
+```
+
+Expected log noise: every loop (`s1_static`: every 64 s) the wrapper logs `END OF SVO FILE REACHED` and restarts from frame 0, pausing ~2 s; a gated trigger in that gap is skipped with `latest frame is ~2 s old`. `Gravity alignment issues` comes from the wrapper's positional tracking and is harmless here. The first start in a new `depth_mode` optimizes that model (10+ min at 30 W).
+
 ## 7. Afterwards
 
 - Record the → answers in [foundationpose_architecture.md](foundationpose_architecture.md): the Milestones (M1 and M2 pending items) and open questions 1–2. Tick the matching items in the ref [Checklist](foundationpose_isaac_reference.md#checklist).

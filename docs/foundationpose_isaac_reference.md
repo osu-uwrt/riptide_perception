@@ -338,7 +338,7 @@ Estimation (~780 ms per frame on AGX Orin) is the expensive step. Tracking start
 
 With the Selector, raw inputs go to the **Selector's** topics (`image`, `depth_image`, `segmentation`, `camera_info`), not to `pose_estimation/*`.
 
-**Open design conflict:** the Selector's sync includes `segmentation` even in the tracking state. It forwards a frame to the tracker only if a mask arrived for that frame. This conflicts with the design doc's "a mask requests an estimate" contract and with throttling masks for rate control. Either `yolo_2d` publishes a mask every frame while tracking, or the pipeline needs its own selector.
+**Open design conflict:** the Selector's sync includes `segmentation` even in the tracking state. It forwards a frame to the tracker only if a mask arrived for that frame. This conflicts with the design doc's "a mask requests an estimate" contract and with throttling masks for rate control. Either `yolo_2d` publishes a mask every frame while tracking, or the pipeline needs its own selector. **Direction (2026-11-16):** `yolo_2d` is now gated on `estimate_now` (architecture doc), so masks are rare and the pipeline gets its own selector. The stock Selector is still the quickest way to measure tracking on the Orin, with `yolo_2d` ungated.
 
 ---
 

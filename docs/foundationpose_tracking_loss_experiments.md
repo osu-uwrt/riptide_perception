@@ -1,6 +1,6 @@
 # FoundationPose tracking-loss experiments
 
-Status: plan, not started. Most of it needs the camera. Belongs to milestone M4 (tracking, selector, rate control) in [foundationpose_architecture.md](foundationpose_architecture.md).
+Status: plan. Prerequisite 2 (mask lag) done 2026-11-16; gated `yolo_2d` implemented. Most of the rest needs the camera. Belongs to milestone M4 (tracking, selector, rate control) in [foundationpose_architecture.md](foundationpose_architecture.md).
 
 ## Goal
 
@@ -23,11 +23,9 @@ Decide, from data, how the pipeline detects that FoundationPose tracking has los
 
 ## Design decisions this plan builds on
 
-- **Decided:** `yolo_2d` runs inference only on request. It subscribes to an "estimate now" topic. Any node may publish it: the selector (start-up, loss, periodic re-check), autonomy, mapping or a timer. Requests are not hard-coded into `yolo_2d`. Still to specify:
-  - Request semantics. Proposed: "armed" until a mask is published, or until N frames or T seconds pass.
-  - Message type: `std_msgs/Empty`, or a message carrying the target class.
-  - QoS: reliable, depth 1.
-  - What `/detections_2d` does while YOLO is idle (architecture interface contracts).
+- **Decided and implemented (2026-11-16, `27fad6a`):** `yolo_2d` can run inference only on request (`gated:=true`, launch argument `yolo_gated`). The trigger is `estimate_now` (`std_msgs/Empty`, reliable, depth 1, volatile). **One trigger = one inference** on the most recent frame; `yolo_2d` never retries. Untriggered frames are skipped, so `/detections_2d` is silent while idle. Contract: [architecture, `estimate_now`](foundationpose_architecture.md#estimate_now-std_msgsmsgempty-decided-m4).
+- **Decided:** retries belong to the trigger publisher. A trigger does not always produce a pose (see the 2026-11-16 results in prerequisite 2), so the selector must time out and trigger again.
+- **Proposed, not decided:** only the selector publishes `estimate_now`. Autonomy, mapping or a timer would ask the selector (e.g. a `request_estimate` topic) instead of triggering directly, so a request can't restart estimation behind the selector's back while it tracks. This replaces the earlier "any node may publish it".
 - **Decided:** tracking-aware logic (loss detection, triggers) lives in a separate selector node, not in `yolo_2d`.
 - **Proposed:** a custom selector instead of NVIDIA's, because of the mask-per-frame conflict above.
 
@@ -64,7 +62,7 @@ Combinations to evaluate: the free signals alone (S1+S2+S3), each of those with 
 ## Prerequisites
 
 1. **Tracking runs on this Orin.** Add the Selector and `FoundationPoseTrackingNode` to the launch, following NVIDIA's `isaac_ros_foundationpose_tracking.launch.py` [10]. Check output rate, GPU memory (`tegrastats`) and per-frame tracking time with the ZED running.
-2. **Mask lag tolerance** (architecture open question 3, second half). Find how long after its frame a mask may arrive and still be matched by Isaac's exact-stamp sync. Do this with live camera stamps: the quickstart bag has every stamp at 0. This bounds how late a triggered YOLO pass may be.
+2. **Mask lag tolerance** (architecture open question 3, second half). **Done 2026-11-16.** Gated `yolo_2d`, SVO replay of `s1_static` with system-time stamps, `MODE_30W`. Every mask produced a pose with an identical stamp: 24 of 24 across single triggers, 0.25 Hz and 0.1 Hz trigger rates, NEURAL_PLUS and NEURAL depth. So a mask arriving one YOLO inference after its frame is still matched by Isaac's own sync, and **the custom selector does not need to buffer RGB/depth for estimation.** Frame-to-pose delay (gated, NEURAL depth): 1.32–1.45 s. Side result: with the COCO model, ~30% of triggers on the still bottle gave `detections_2d` but no mask (14 processed → 10 masks). That's a property of the stand-in model, not of gating, but it's why retries are required.
 3. **Signal logger.** A node that subscribes to the tracked pose, depth, camera_info, and YOLO output when present. Each frame it logs S1–S6 with the frame stamp. It logs only and changes nothing in the pipeline.
 4. **Event markers.** A topic (e.g. `/experiment/event`, `std_msgs/String`) recorded alongside the data. The operator publishes labels such as `occlusion_start` with `ros2 topic pub --once`.
 5. **Offline YOLO reference.** YOLO on every frame of a recording, used as the visibility and location reference during analysis.
@@ -111,7 +109,7 @@ Set values for the following before looking at the results:
 - **Maximum detection delay** (e.g. ≤ N frames at 15 fps).
 - **Maximum false-alarm rate** (each false alarm costs one ~3.6–7.5 s estimate).
 - **Maximum number of wrong poses published per loss.**
-- **GPU budget** for loss detection alongside two `NEURAL_PLUS` ZED pipelines (architecture open question 4).
+- **GPU budget** for loss detection alongside the stereo depth pipelines (architecture open question 4). At `MODE_30W` the depth step, not YOLO, is the largest GPU user (2026-11-16).
 
 ## Outputs
 
