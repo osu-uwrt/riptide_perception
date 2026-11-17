@@ -33,6 +33,7 @@ def generate_launch_description():
 
     target_class = LaunchConfiguration("target_class")
     yolo_model_path = LaunchConfiguration("yolo_model_path")
+    yolo_gated = LaunchConfiguration("yolo_gated")
 
     image_width = LaunchConfiguration("image_width")
     image_height = LaunchConfiguration("image_height")
@@ -118,6 +119,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "yolo_model_path",
             description="Absolute path to the YOLO segmentation model (.pt or .engine)",
+        ),
+        DeclareLaunchArgument(
+            "yolo_gated",
+            default_value="false",
+            description="true: yolo_2d runs inference only when a message arrives on "
+            "/estimate_now (std_msgs/Empty). false: inference on every frame",
         ),
         # --- Image size and QoS (Isaac only) ---
         DeclareLaunchArgument(
@@ -242,6 +249,7 @@ def generate_launch_description():
                 "target_class": target_class,
                 "model_path": yolo_model_path,
                 "input_type": input_type,
+                "gated": yolo_gated,
             }
         ],
         remappings=[("image/compressed", image_topic), ("image", raw_image_topic)],
