@@ -68,7 +68,7 @@ class EstimatorSettings:
     # A target is confirmed (its real covariance published) after this many fresh detections while targeted, also when
     # it was already known well (then the first verify_detections must land where it was, widened by the drift since it
     # was last seen; one that lands elsewhere means it moved, and it is found again from scratch)
-    confirm_detections: int = 20
+    confirm_detections: int = 10
     verify_detections: int = 3
     # The published covariance is never below the scatter of the last spread_window detections since the last reset:
     # the filter's own covariance shrinks with every detection whether or not they agree, so on its own a target
