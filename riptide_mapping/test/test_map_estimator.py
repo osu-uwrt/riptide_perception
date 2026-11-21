@@ -461,7 +461,7 @@ def test_spread_is_the_scatter_of_the_recent_detections_since_the_reset():
     for i, p in enumerate(pts):
         assert est.observe("hole", float(i), p, iso(0.03), yaw=0.1 * (i % 2), yaw_var=0.01)[0]
     cov, yaw_var = est.spread("hole")
-    assert np.allclose(np.diag(cov), np.var(pts, axis=0, ddof=1))
+    assert np.allclose(np.diag(cov), np.var(pts[-est.settings.spread_window:], axis=0, ddof=1))  # the last window
     # the filter thinks it knows the mean far better than the detections agree with each other
     assert np.all(np.diag(est.position("hole")[1]) < np.diag(cov))
     assert yaw_var == pytest.approx(0.0025, rel=0.1)

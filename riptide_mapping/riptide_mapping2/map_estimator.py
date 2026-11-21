@@ -74,7 +74,7 @@ class EstimatorSettings:
     # the filter's own covariance shrinks with every detection whether or not they agree, so on its own a target
     # "converges" on a few correlated frames. Converged then means the detections themselves agree, as the old
     # mapping's buffer covariance did (the thresholds in the trees were tuned against that)
-    spread_window: int = 50
+    spread_window: int = 10
     # This many position rejections in a row means the estimate locked onto the wrong thing: reacquire it
     gate_max_rejects: int = 30
     # An object's first detections since a reset are held back until acquire_detections of them agree (within

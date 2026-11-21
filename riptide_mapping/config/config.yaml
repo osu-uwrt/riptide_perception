@@ -34,7 +34,7 @@
       verify_detections: 3
       # Once confirmed, the published covariance is never below the scatter of its last spread_window detections:
       # converged means the detections agree, as with the old mapping's buffer (the trees' thresholds were tuned on it)
-      spread_window: 50
+      spread_window: 10
       # An object's first detections since a reset wait until acquire_detections agree (within acquire_radius_m, over
       # acquire_window_s) and its estimate starts from those only, so a stray false detection never moves or biases it.
       # Agreeing further than acquire_prior_chi2 from where the map expects it takes acquire_far_detections over
