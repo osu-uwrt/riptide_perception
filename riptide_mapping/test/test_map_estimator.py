@@ -457,7 +457,7 @@ def test_spread_is_the_scatter_of_the_recent_detections_since_the_reset():
     est = make_estimator()
     base = est.specs["hole"].position
     rng = np.random.default_rng(1)
-    pts = base + rng.normal(0.0, 0.03, size=(est.settings.confirm_detections, 3))
+    pts = base + rng.normal(0.0, 0.03, size=(20, 3))
     for i, p in enumerate(pts):
         assert est.observe("hole", float(i), p, iso(0.03), yaw=0.1 * (i % 2), yaw_var=0.01)[0]
     cov, yaw_var = est.spread("hole")

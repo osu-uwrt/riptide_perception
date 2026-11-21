@@ -30,7 +30,7 @@
       # Until a target is confirmed its covariance stays at the old "not seen" values (error 1.73), so tree checks need
       # confirm_detections fresh detections while targeted, also when it was already known well (then the first
       # verify_detections must land where it was, widened by the drift since it was last seen)
-      confirm_detections: 10
+      confirm_detections: 4
       verify_detections: 3
       # Once confirmed, the published covariance is never below the scatter of its last spread_window detections:
       # converged means the detections agree, as with the old mapping's buffer (the trees' thresholds were tuned on it)
