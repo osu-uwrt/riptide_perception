@@ -32,7 +32,14 @@ class YoloModel:
         # Optionally export to TensorRT, then reload the freshly built engine.
         if self._export and model_path.endswith(".pt"):
             if torch.cuda.is_available():
-                self.model.export(format="engine")
+                # A failed export (e.g. Ultralytics/TensorRT version mismatch) falls back to a
+                # freshly loaded PT model, exactly as if export were disabled.
+                try:
+                    self.model.export(format="engine")
+                except Exception as error:
+                    self._warn(f"TensorRT export failed, using PT model instead: {error}")
+                    self.model = YOLO(model_path, task="segment")
+                    return
                 self._initialize(engine_model_path)
             else:
                 self._warn("export=True requested but CUDA is unavailable, skipping TensorRT export.")

@@ -16,9 +16,6 @@ import numpy as np
 
 from rclpy.time import Time
 from tf2_ros import TransformException
-from geometry_msgs.msg import Point, Vector3
-
-from location import Location
 from riptide_msgs2.srv import SetString
 
 
@@ -116,14 +113,9 @@ class BinGeometryFitter:
     def seed_bin_cad_geometry(self, x, y, z, yaw_rad, residual_m):
         # bin_cad_geometry is a bin child, pose is relative to bin
         node = self.node
-        xyz = Point(x=float(x), y=float(y), z=float(z))
-        # Location wants rpy in degrees, fit yaw is radians
-        rpy = Vector3(x=0.0, y=0.0, z=float(degrees(yaw_rad)))
-        node.objects["bin_cad_geometry"]["location"] = Location(
-            xyz, rpy,
-            int(self._param("buffer_size")),
-            tuple(self._param("quantile")),
-        )
+        node.estimator.seed("bin_cad_geometry", (float(x), float(y), float(z)), float(yaw_rad))
+        # The frame jumps to the fit instead of sliding there
+        node.output.pop("bin_cad_geometry", None)
 
         # residual-gated cov, applied in publish_pose
         cov_floor = float(self._param("bin_fit.cov_floor_m2"))
