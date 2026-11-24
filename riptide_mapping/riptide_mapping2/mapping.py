@@ -36,7 +36,8 @@ import numpy
 STALE_TIME = 2 #seconds
 BINARY_CLASSIFIER_CLASSES = {"fire", "blood", "magnet"}
 TABLE_BASKETS = ("helmet", "warning")
-MAX_TABLE_YAW_CORRECTION = math.radians(30)
+# center_table_on_baskets refuses a fit when the baskets are further than this from their config spacing (a bad basket)
+TABLE_BASKET_SPACING_TOLERANCE = 0.1  # m
 MAX_ODOM_STEP = 1.0 # m, bigger jumps between odometry messages are resets, not travel
 MOTION_HISTORY = 200 # odometry samples kept to look up the vehicle's rates at a detection's stamp
 MAX_SLEW_DT = 0.2 # s, longest step a published frame takes toward the estimate in one publish
@@ -330,11 +331,18 @@ class MappingNode(Node):
         meas_axis = math.atan2(positions[0][1] - positions[1][1], positions[0][0] - positions[1][0])
         dyaw = math.atan2(math.sin(meas_axis - cfg_axis), math.cos(meas_axis - cfg_axis))
 
+        # A bad basket shows up as the wrong spacing. The yaw can be anything: the table prior turns with the
+        # vehicle's start heading, so a big yaw correction is expected and is not a sign of a bad fit
+        cfg_spacing = math.hypot(cfg[0][0] - cfg[1][0], cfg[0][1] - cfg[1][1])
+        meas_spacing = math.hypot(positions[0][0] - positions[1][0], positions[0][1] - positions[1][1])
+        if abs(meas_spacing - cfg_spacing) > TABLE_BASKET_SPACING_TOLERANCE:
+            response.success = False
+            response.message = (f"Baskets are {meas_spacing:.2f} m apart, config has {cfg_spacing:.2f} m "
+                                f"(tolerance {TABLE_BASKET_SPACING_TOLERANCE:.2f}): not fitting the table to them")
+            self.get_logger().warn(response.message)
+            return response
+
         yaw_msg = f"yawed table {math.degrees(dyaw):.1f} deg"
-        if abs(dyaw) > MAX_TABLE_YAW_CORRECTION:
-            # Probably a bad/unmapped basket, don't swing all the table objects around on it
-            yaw_msg = f"skipped yaw correction of {math.degrees(dyaw):.1f} deg (limit {math.degrees(MAX_TABLE_YAW_CORRECTION):.0f})"
-            dyaw = 0.0
 
         # New table origin in the old table_frame: the measured basket midpoint minus the (yawed) config basket midpoint,
         # so the baskets end up at their config offsets from the table
@@ -750,6 +758,13 @@ class MappingNode(Node):
 
         return True, ProjectedDetection(trans_pose, parent, rotation, position_camera, stamp_sec), ""
 
+    def points_at_parent(self, object: str) -> bool:
+        # Its published yaw points at its parent frame's origin (point_yaw_at_parent), e.g. the table props at the table
+        parent = str(self.get_parameter("init_data.{}.parent".format(object)).value)
+        return parent != "map" and object not in self.downwards_objects \
+            and not bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(object)).value) \
+            and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value)
+
     def update_object_with_pose(self, projected: ProjectedDetection, child: str, targeted: bool = True, agreed: bool = False):
         # Fuse one detection (`targeted`: it can confirm the object; background objects only improve their estimate). A
         # detection the estimator rejects still counts as handled (it is not retried)
@@ -761,6 +776,11 @@ class MappingNode(Node):
 
         # These objects keep their orientation from config (detection yaw is unreliable)
         if bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(child)).value):
+            update_orientation = False
+
+        # Their yaw points at the parent from their position, so the detected yaw is never used. For flat props seen
+        # from above (table baskets and props) it is the azimuth of a near-vertical plane normal, which is noise
+        if self.points_at_parent(child):
             update_orientation = False
 
         # Baskets are pinned once the table has been fit to them
@@ -973,7 +993,6 @@ class MappingNode(Node):
         for object in self.objects.keys():
             parent = str(self.get_parameter("init_data.{}.parent".format(object)).value)
             lock_orientation = bool(self.get_parameter("init_data.{}.lock_orientation_to_config".format(object)).value)
-            is_downward = object in self.downwards_objects
             is_map = self.estimator.is_map_object(object)
 
             # Slide the published pose toward the estimate. Map objects slide in map (offset included) so a frame never moves
@@ -991,10 +1010,11 @@ class MappingNode(Node):
             yaw_lag = math.atan2(math.sin(target_yaw - yaw), math.cos(target_yaw - yaw))
             settling = settling or float(numpy.linalg.norm(lag)) > 1e-4 or abs(yaw_lag) > 1e-4
             # Its published yaw points at the parent (from its position), so the yaw estimate's lag says nothing about it
-            points_at_parent = parent != "map" and not lock_orientation and not is_downward \
-                and bool(self.get_parameter("init_data.{}.point_yaw_at_parent".format(object)).value)
+            # Nor does its yaw variance: the yaw follows from the position, whose covariance already carries the uncertainty
+            points_at_parent = self.points_at_parent(object)
             if points_at_parent:
                 yaw_lag = 0.0
+                yaw_var = 0.0
 
             # Map objects' frames hang off the offset frame, the rest off their parent
             translation = position - self.output_offset if is_map else position
@@ -1014,7 +1034,7 @@ class MappingNode(Node):
                 spread_cov, spread_yaw_var = self.estimator.spread(object)
                 if spread_cov is not None:
                     cov = cov + numpy.diag(numpy.maximum(numpy.diag(spread_cov) - numpy.diag(cov), 0.0))
-                if spread_yaw_var is not None and not lock_orientation:
+                if spread_yaw_var is not None and not lock_orientation and not points_at_parent:
                     yaw_var = max(yaw_var, spread_yaw_var)
 
             pose = PoseWithCovarianceStamped()
